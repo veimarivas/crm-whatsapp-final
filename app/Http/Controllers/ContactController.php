@@ -12,6 +12,49 @@ use Inertia\Response;
 
 class ContactController extends Controller
 {
+    /**
+     * Exporta contactos a CSV. Aplica los mismos filtros que el index (tag_id,
+     * q para búsqueda). El CSV se stream (chunked) para no cargar todos en RAM
+     * en cuentas con miles de contactos.
+     */
+    public function exportCsv(Request $request): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $accountId = $request->user()->account_id;
+
+        $query = Contact::forAccount($accountId)
+            ->with(['tags:id,name', 'company:id,name'])
+            ->when($request->query('tag_id'), fn ($q, $tagId) => $q->whereHas('tags', fn ($t) => $t->where('tags.id', $tagId)))
+            ->when($request->query('q'), fn ($q, $s) => $q->where(fn ($w) => $w
+                ->where('name', 'like', "%{$s}%")
+                ->orWhere('phone', 'like', "%{$s}%")
+                ->orWhere('email', 'like', "%{$s}%")))
+            ->orderBy('name');
+
+        $filename = 'contactos-'.now()->format('Y-m-d-His').'.csv';
+
+        return response()->streamDownload(function () use ($query) {
+            $out = fopen('php://output', 'w');
+            // BOM UTF-8 para que Excel lo abra bien
+            fwrite($out, "\xEF\xBB\xBF");
+            fputcsv($out, ['ID', 'Nombre', 'Teléfono', 'Email', 'Empresa', 'Tags', 'Creado'], ';');
+
+            $query->chunk(500, function ($chunk) use ($out) {
+                foreach ($chunk as $c) {
+                    fputcsv($out, [
+                        $c->id,
+                        $c->name ?? '',
+                        $c->phone ?? '',
+                        $c->email ?? '',
+                        $c->company?->name ?? $c->company ?? '',
+                        $c->tags->pluck('name')->implode(', '),
+                        $c->created_at?->format('Y-m-d H:i'),
+                    ], ';');
+                }
+            });
+            fclose($out);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
     public function index(Request $request): Response
     {
         $accountId = $request->user()->account_id;

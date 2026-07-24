@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['account_id', 'contact_id', 'user_id', 'note_text'])]
+#[Fillable(['account_id', 'contact_id', 'user_id', 'note_text', 'audio_path'])]
 class ContactNote extends Model
 {
     use BelongsToAccount, HasUuids;

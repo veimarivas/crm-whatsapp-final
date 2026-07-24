@@ -143,6 +143,79 @@ class AiController extends Controller
     }
 
     /**
+     * Analytics de tiempo de respuesta: para cada mensaje de cliente en los
+     * últimos 30 días busca el siguiente mensaje del agente/bot en la misma
+     * conversación y calcula la diferencia. Agrupa por agente (sender_id) y
+     * saca el promedio en segundos.
+     */
+    public function responseTime(Request $request): Response
+    {
+        $accountId = $request->user()->account_id;
+
+        // Subquery correlacionada: para cada msg de cliente, obtener el próximo
+        // msg agente/bot en la misma conv. Solo mensajes de los últimos 30 días.
+        $rows = \Illuminate\Support\Facades\DB::select("
+            SELECT
+                reply.sender_id,
+                reply.sender_type,
+                u.name as agent_name,
+                TIMESTAMPDIFF(SECOND, cust.created_at, reply.created_at) as diff_seconds
+            FROM messages cust
+            JOIN conversations c ON c.id = cust.conversation_id
+            JOIN LATERAL (
+                SELECT m2.sender_id, m2.sender_type, m2.created_at
+                FROM messages m2
+                WHERE m2.conversation_id = cust.conversation_id
+                  AND m2.created_at > cust.created_at
+                  AND m2.sender_type IN ('agent', 'bot')
+                ORDER BY m2.created_at ASC
+                LIMIT 1
+            ) reply ON true
+            LEFT JOIN users u ON u.id = reply.sender_id
+            WHERE cust.sender_type = 'customer'
+              AND cust.created_at >= ?
+              AND c.account_id = ?
+        ", [now()->subDays(30), $accountId]);
+
+        // Agrupar en PHP por agente
+        $byAgent = collect($rows)
+            ->groupBy(fn ($r) => $r->sender_id ?? 'bot')
+            ->map(function ($group) {
+                $first = $group->first();
+                $diffs = $group->pluck('diff_seconds')->sort()->values();
+                $avg = round($diffs->avg());
+                $median = $diffs->count() > 0 ? (int) $diffs[intval($diffs->count() / 2)] : 0;
+                return [
+                    'name' => $first->sender_type === 'bot' ? '✨ IA' : ($first->agent_name ?? 'Agente eliminado'),
+                    'is_bot' => $first->sender_type === 'bot',
+                    'count' => $group->count(),
+                    'avg_seconds' => $avg,
+                    'median_seconds' => $median,
+                    'avg_label' => $this->formatDuration($avg),
+                    'median_label' => $this->formatDuration($median),
+                ];
+            })
+            ->sortBy('avg_seconds')
+            ->values();
+
+        $overall = collect($rows)->avg('diff_seconds');
+        $overallLabel = $this->formatDuration((int) round($overall ?? 0));
+
+        return Inertia::render('Settings/ResponseTime', [
+            'byAgent' => $byAgent,
+            'overallLabel' => $overallLabel,
+            'totalReplies' => count($rows),
+        ]);
+    }
+
+    private function formatDuration(int $seconds): string
+    {
+        if ($seconds < 60) return "{$seconds}s";
+        if ($seconds < 3600) return floor($seconds / 60)."m ".($seconds % 60)."s";
+        return floor($seconds / 3600)."h ".floor(($seconds % 3600) / 60)."m";
+    }
+
+    /**
      * Página de estadísticas de la IA: contadores, tasa de éxito y las
      * últimas preguntas de clientes (para saber qué agregar al knowledge base).
      */

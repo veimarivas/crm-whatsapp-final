@@ -55,6 +55,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/inbox/quick-replies', [\App\Http\Controllers\QuickReplyController::class, 'available'])->name('inbox.quick-replies');
     Route::get('/broadcasts-metrics', [\App\Http\Controllers\BroadcastController::class, 'metrics'])->name('broadcasts.metrics');
 
+    // Exportar contactos a CSV
+    Route::get('/contacts/export', [\App\Http\Controllers\ContactController::class, 'exportCsv'])->name('contacts.export');
+
     // Detección y merge de contactos duplicados
     Route::get('/contacts/duplicates', [\App\Http\Controllers\ContactMergeController::class, 'index'])->name('contacts.duplicates');
     Route::post('/contacts/merge', [\App\Http\Controllers\ContactMergeController::class, 'merge'])->name('contacts.merge');
@@ -78,6 +81,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/settings/ai/documents/{document}', [\App\Http\Controllers\AiController::class, 'destroyDocument'])->name('settings.ai.documents.destroy');
     Route::post('/settings/ai/reindex', [\App\Http\Controllers\AiController::class, 'reindex'])->name('settings.ai.reindex');
     Route::get('/settings/ai/stats', [\App\Http\Controllers\AiController::class, 'stats'])->name('settings.ai.stats');
+    Route::get('/settings/response-time', [\App\Http\Controllers\AiController::class, 'responseTime'])->name('settings.response-time');
 
     // Equipo + API keys
     Route::get('/settings/team', [\App\Http\Controllers\TeamController::class, 'index'])->name('settings.team');

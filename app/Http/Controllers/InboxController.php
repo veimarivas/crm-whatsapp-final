@@ -281,13 +281,26 @@ class InboxController extends Controller
     {
         $this->authorizeConversation($request, $conversation);
 
-        $validated = $request->validate(['text' => 'required|string|max:2000']);
+        $validated = $request->validate([
+            'text' => 'nullable|string|max:2000',
+            'audio' => 'nullable|file|mimetypes:audio/ogg,audio/mpeg,audio/webm,audio/wav|max:5120',
+        ]);
+
+        if (empty($validated['text']) && ! $request->hasFile('audio')) {
+            return response()->json(['message' => 'Debe incluir texto o audio.'], 422);
+        }
+
+        $audioPath = null;
+        if ($request->hasFile('audio')) {
+            $audioPath = $request->file('audio')->store('voice-notes', 'public');
+        }
 
         $note = \App\Models\ContactNote::create([
             'account_id' => $conversation->account_id,
             'contact_id' => $conversation->contact_id,
             'user_id' => $request->user()->id,
-            'note_text' => $validated['text'],
+            'note_text' => $validated['text'] ?? '',
+            'audio_path' => $audioPath,
         ]);
 
         return response()->json($note->load('author:id,name'), 201);

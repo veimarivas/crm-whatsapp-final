@@ -50,6 +50,9 @@ class BroadcastController extends Controller
             'audience' => 'required|in:all,tags',
             'tag_ids' => 'required_if:audience,tags|array',
             'tag_ids.*' => 'uuid',
+            'conv_status' => 'nullable|in:open,pending,closed',
+            'last_message_days' => 'nullable|integer|min:1|max:365',
+            'source' => 'nullable|in:ad',
             'scheduled_at' => 'nullable|date|after:now',
         ]);
 

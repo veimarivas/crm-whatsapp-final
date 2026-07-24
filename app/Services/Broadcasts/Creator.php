@@ -36,9 +36,27 @@ class Creator
             throw new InvalidArgumentException('La plantilla no existe o no está aprobada.');
         }
 
+        // Segmentación combinada: tag_ids AND status_conv AND last_message_days
+        // Todos los filtros son OPCIONALES; se aplican los que estén presentes.
+        // audience='all' = sin filtro de tag (pero puede tener otros filtros).
         $contactIds = Contact::forAccount($accountId)
-            ->when($data['audience'] === 'tags', function ($query) use ($data) {
-                $query->whereHas('tags', fn ($w) => $w->whereIn('tags.id', $data['tag_ids'] ?? []));
+            ->when($data['audience'] === 'tags' && ! empty($data['tag_ids'] ?? []), function ($query) use ($data) {
+                $query->whereHas('tags', fn ($w) => $w->whereIn('tags.id', $data['tag_ids']));
+            })
+            // Filtro por estado de conversación (open/pending/closed) — al menos una conv en ese estado
+            ->when(! empty($data['conv_status'] ?? null), function ($query) use ($data) {
+                $query->whereHas('conversations', fn ($w) => $w->where('status', $data['conv_status']));
+            })
+            // Filtro por último mensaje > X días (contactos "fríos")
+            ->when(($data['last_message_days'] ?? 0) > 0, function ($query) use ($data) {
+                $cutoff = now()->subDays((int) $data['last_message_days']);
+                $query->whereHas('conversations', fn ($w) => $w->where('last_message_at', '<', $cutoff));
+            })
+            // Filtro por fuente (contactos que llegaron via ad, form, etc.) — via referral en 1er mensaje
+            ->when(! empty($data['source'] ?? null), function ($query) use ($data) {
+                if ($data['source'] === 'ad') {
+                    $query->whereHas('conversations', fn ($w) => $w->whereNotNull('entry_ad_id'));
+                }
             })
             ->pluck('id');
 

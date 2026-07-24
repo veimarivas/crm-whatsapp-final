@@ -700,6 +700,23 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
         } catch (err) { setError(err.message); }
     };
 
+    /** Enviar una nota de voz (audio blob) al endpoint como multipart. */
+    const addVoiceNote = async (audioFile) => {
+        if (!selectedId || !audioFile) return;
+        try {
+            const body = new FormData();
+            body.append('audio', audioFile);
+            const res = await fetch(route('inbox.notes.add', selectedId), {
+                method: 'POST',
+                headers: { 'X-CSRF-TOKEN': csrf(), Accept: 'application/json' },
+                credentials: 'same-origin',
+                body,
+            });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.message ?? 'Error');
+            await loadNotes(selectedId);
+        } catch (err) { setError(err.message); throw err; }
+    };
+
     const sendFile = async (file) => {
         if (!file || !selectedId || uploading) return;
         setUploading(true);
@@ -1291,7 +1308,10 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
                                 <div className="space-y-2 max-h-48 overflow-y-auto mb-2">
                                     {notes.map((n) => (
                                         <div key={n.id} className="rounded-lg bg-amber-50 border border-amber-100 p-2.5">
-                                            <p className="text-xs text-gray-700 whitespace-pre-wrap">{n.note_text}</p>
+                                            {n.note_text && <p className="text-xs text-gray-700 whitespace-pre-wrap">{n.note_text}</p>}
+                                            {n.audio_path && (
+                                                <audio controls src={`/storage/${n.audio_path}`} className="w-full mt-1 h-8" />
+                                            )}
                                             <p className="text-[10px] text-gray-400 mt-1">{n.author?.name ?? '—'} · {new Date(n.created_at).toLocaleDateString()}</p>
                                         </div>
                                     ))}
@@ -1305,9 +1325,12 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
                                         placeholder="Añadir nota…"
                                         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                                     />
-                                    <button type="submit" disabled={!noteDraft.trim()} className="w-full px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-amber-500 to-orange-500 rounded-lg hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 shadow-sm">
-                                        Guardar nota
-                                    </button>
+                                    <div className="flex gap-2">
+                                        <button type="submit" disabled={!noteDraft.trim()} className="flex-1 px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-amber-500 to-orange-500 rounded-lg hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 shadow-sm">
+                                            Guardar nota
+                                        </button>
+                                        <VoiceRecorder onSend={addVoiceNote} />
+                                    </div>
                                 </form>
                             </div>
 
