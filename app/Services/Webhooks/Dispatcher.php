@@ -16,6 +16,7 @@ class Dispatcher
         'message.received',
         'message.sent',
         'message.transcribed',
+        'ai.pending_changed',
         'contact.created',
         'broadcast.completed',
     ];

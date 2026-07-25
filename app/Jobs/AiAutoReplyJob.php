@@ -84,6 +84,7 @@ class AiAutoReplyJob implements ShouldQueue
         // Enciendo el flag efímero: la UI del Inbox pintará una burbuja
         // "IA pensando..." mientras dure este job.
         $conversation->update(['ai_pending' => true]);
+        $this->broadcastPending($conversation, true);
 
         // Typing indicator al cliente: le llega "escribiendo..." real de WA.
         // Dura ~25s. Best-effort: si falla no bloquea al bot.
@@ -94,12 +95,14 @@ class AiAutoReplyJob implements ShouldQueue
 
             if ($reply === '') {
                 $conversation->update(['ai_pending' => false]);
+            $this->broadcastPending($conversation, false);
                 return;
             }
 
             $messenger->sendText($conversation, $reply);
             $conversation->increment('ai_reply_count');
             $conversation->update(['ai_pending' => false]);
+            $this->broadcastPending($conversation, false);
         } catch (\Throwable $e) {
             Log::warning('Auto-respuesta IA falló, activando fallback', [
                 'conversation_id' => $conversation->id,
@@ -107,6 +110,7 @@ class AiAutoReplyJob implements ShouldQueue
             ]);
 
             $conversation->update(['ai_pending' => false]);
+            $this->broadcastPending($conversation, false);
             $this->deliverFallback($conversation, $messenger);
         }
     }
@@ -149,6 +153,24 @@ class AiAutoReplyJob implements ShouldQueue
                 'title' => 'La IA no pudo responder',
                 'body' => 'Fallo en la IA para '.($conversation->contact->name ?? $conversation->contact->phone).'. Se envió un mensaje automático al cliente. Tomá la conversación.',
             ]);
+        }
+    }
+
+    /**
+     * Notifica a integraciones (Komo) que la IA cambió su estado de "pensando".
+     * Komo lo usa para mostrar la misma burbuja violeta que el Inbox de wacrm.
+     * Best-effort: si falla no bloquea al bot.
+     */
+    private function broadcastPending(Conversation $conversation, bool $pending): void
+    {
+        try {
+            app(\App\Services\Webhooks\Dispatcher::class)->dispatch(
+                $conversation->account_id,
+                'ai.pending_changed',
+                ['conversation_id' => $conversation->id, 'pending' => $pending]
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Webhook ai.pending_changed falló', ['error' => $e->getMessage()]);
         }
     }
 
