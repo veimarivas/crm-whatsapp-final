@@ -205,7 +205,7 @@ class Messenger
     {
         try {
             $sender = $message->sender_id
-                ? \App\Models\User::whereKey($message->sender_id)->first(['id', 'name', 'account_role'])
+                ? \App\Models\User::whereKey($message->sender_id)->first(['id', 'name', 'email', 'account_role'])
                 : null;
 
             app(Dispatcher::class)->dispatch($conversation->account_id, 'message.sent', [
@@ -219,6 +219,10 @@ class Messenger
                     'sender_type' => $message->sender_type, // 'agent' | 'bot'
                     'sender_name' => $sender?->name,        // null si el sender fue IA
                     'sender_role' => $sender?->account_role,
+                    // El email es la llave con la que el CRM externo identifica
+                    // al usuario (el nombre se repite y se edita). Sin esto no
+                    // se puede medir quién respondió ni en cuánto tiempo.
+                    'sender_email' => $sender?->email,
                 ],
             ]);
         } catch (\Throwable $e) {
