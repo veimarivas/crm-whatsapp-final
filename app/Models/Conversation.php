@@ -12,14 +12,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'account_id', 'contact_id', 'status', 'assigned_agent_id', 'entry_ad_id',
     'last_message_text', 'last_message_at', 'unread_count',
-    'ai_autoreply_disabled', 'ai_reply_count', 'ai_pending',
+    'ai_autoreply_disabled', 'ai_reply_count', 'ai_pending', 'ai_limit_notified_at',
 ])]
 class Conversation extends Model
 {
     use BelongsToAccount, HasUuids;
 
     public const STATUS_OPEN = 'open';
+
     public const STATUS_PENDING = 'pending';
+
     public const STATUS_CLOSED = 'closed';
 
     protected function casts(): array
@@ -28,6 +30,7 @@ class Conversation extends Model
             'last_message_at' => 'datetime',
             'ai_autoreply_disabled' => 'boolean',
             'ai_pending' => 'boolean',
+            'ai_limit_notified_at' => 'datetime',
         ];
     }
 

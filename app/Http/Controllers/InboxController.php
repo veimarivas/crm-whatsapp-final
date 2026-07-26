@@ -2,12 +2,22 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AiConfig;
+use App\Models\ContactNote;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\MessageReaction;
+use App\Models\Notification;
+use App\Models\User;
 use App\Models\WhatsappConfig;
+use App\Services\Ai\ReplyGenerator;
+use App\Services\Flows\Runner;
+use App\Services\Webhooks\Dispatcher;
+use App\Services\WhatsApp\Messenger;
 use App\Services\WhatsApp\MetaApi;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -21,8 +31,8 @@ class InboxController extends Controller
             'hasWhatsappConfig' => WhatsappConfig::forAccount($accountId)
                 ->where('status', 'connected')
                 ->exists(),
-            'hasAi' => \App\Models\AiConfig::forAccount($accountId)->where('is_active', true)->exists(),
-            'members' => \App\Models\User::where('account_id', $accountId)->get(['id', 'name']),
+            'hasAi' => AiConfig::forAccount($accountId)->where('is_active', true)->exists(),
+            'members' => User::where('account_id', $accountId)->get(['id', 'name']),
         ]);
     }
 
@@ -56,7 +66,7 @@ class InboxController extends Controller
         $matches = Message::query()
             ->whereHas('conversation', fn ($qq) => $qq
                 ->where('account_id', $user->account_id)
-                ->when(! $user->hasRoleAtLeast(\App\Models\User::ROLE_ADMIN),
+                ->when(! $user->hasRoleAtLeast(User::ROLE_ADMIN),
                     fn ($x) => $x->where('assigned_agent_id', $user->id)))
             ->whereRaw('MATCH(content_text) AGAINST(? IN BOOLEAN MODE)', [$terms])
             ->with(['conversation.contact:id,name,phone,avatar_url', 'conversation.assignedAgent:id,name'])
@@ -68,6 +78,7 @@ class InboxController extends Controller
         $grouped = $matches->groupBy('conversation_id')->map(function ($msgs) use ($q) {
             $latest = $msgs->first();
             $snippet = mb_substr(str_ireplace(explode(' ', $q), array_map(fn ($w) => "«{$w}»", explode(' ', $q)), $latest->content_text ?? ''), 0, 160);
+
             return [
                 'conversation' => $latest->conversation,
                 'snippet' => $snippet,
@@ -89,7 +100,7 @@ class InboxController extends Controller
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
             // Restricción por rol: agent/viewer solo ven las conversaciones
             // asignadas a ellos. admin/owner ven todo.
-            ->when(! $user->hasRoleAtLeast(\App\Models\User::ROLE_ADMIN),
+            ->when(! $user->hasRoleAtLeast(User::ROLE_ADMIN),
                 fn ($q) => $q->where('assigned_agent_id', $user->id),
             )
             ->orderByDesc('last_message_at')
@@ -171,11 +182,11 @@ class InboxController extends Controller
 
         // Handoff del flow (chatbot cede el control), pero el modo IA/Humano
         // ahora lo controla el agente con el toggle explícito del header.
-        app(\App\Services\Flows\Runner::class)->pauseForConversation($conversation);
+        app(Runner::class)->pauseForConversation($conversation);
 
         // Notifica al Komo (y otras integraciones suscritas) que salió un mensaje.
         try {
-            app(\App\Services\Webhooks\Dispatcher::class)->dispatch($conversation->account_id, 'message.sent', [
+            app(Dispatcher::class)->dispatch($conversation->account_id, 'message.sent', [
                 'conversation_id' => $conversation->id,
                 'contact' => $conversation->contact->only(['id', 'phone', 'name', 'email', 'company']),
                 'message' => [
@@ -189,7 +200,7 @@ class InboxController extends Controller
                 ],
             ]);
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('Webhook message.sent falló', ['error' => $e->getMessage()]);
+            Log::warning('Webhook message.sent falló', ['error' => $e->getMessage()]);
         }
 
         return response()->json($message->fresh());
@@ -206,6 +217,8 @@ class InboxController extends Controller
             'ai_autoreply_disabled' => ! $validated['ai_enabled'],
             // Al reactivar IA, se reinicia el contador para permitir nuevas respuestas.
             'ai_reply_count' => $validated['ai_enabled'] ? 0 : $conversation->ai_reply_count,
+            // El contador vuelve a cero: el aviso de tope agotado tambien.
+            'ai_limit_notified_at' => $validated['ai_enabled'] ? null : $conversation->ai_limit_notified_at,
         ]);
 
         return response()->json($conversation->fresh());
@@ -254,7 +267,7 @@ class InboxController extends Controller
                 ->where('actor_id', $request->user()->id)
                 ->delete();
         } else {
-            \App\Models\MessageReaction::updateOrCreate(
+            MessageReaction::updateOrCreate(
                 ['message_id' => $message->id, 'actor_type' => 'agent', 'actor_id' => $request->user()->id],
                 ['conversation_id' => $conversation->id, 'emoji' => $emoji],
             );
@@ -269,7 +282,7 @@ class InboxController extends Controller
         $this->authorizeConversation($request, $conversation);
 
         return response()->json(
-            \App\Models\ContactNote::where('contact_id', $conversation->contact_id)
+            ContactNote::where('contact_id', $conversation->contact_id)
                 ->with('author:id,name')
                 ->orderByDesc('created_at')
                 ->limit(50)
@@ -295,7 +308,7 @@ class InboxController extends Controller
             $audioPath = $request->file('audio')->store('voice-notes', 'public');
         }
 
-        $note = \App\Models\ContactNote::create([
+        $note = ContactNote::create([
             'account_id' => $conversation->account_id,
             'contact_id' => $conversation->contact_id,
             'user_id' => $request->user()->id,
@@ -319,7 +332,7 @@ class InboxController extends Controller
         $file = $validated['file'];
 
         try {
-            $message = app(\App\Services\WhatsApp\Messenger::class)->sendMedia(
+            $message = app(Messenger::class)->sendMedia(
                 $conversation,
                 $file->get(),
                 $file->getMimeType() ?? 'application/octet-stream',
@@ -332,7 +345,7 @@ class InboxController extends Controller
             return response()->json(['message' => $e->getMessage()], 502);
         }
 
-        app(\App\Services\Flows\Runner::class)->pauseForConversation($conversation);
+        app(Runner::class)->pauseForConversation($conversation);
 
         return response()->json($message);
     }
@@ -346,7 +359,7 @@ class InboxController extends Controller
         $agentId = $validated['agent_id'] ?? null;
 
         if ($agentId !== null) {
-            $isMember = \App\Models\User::where('id', $agentId)
+            $isMember = User::where('id', $agentId)
                 ->where('account_id', $request->user()->account_id)
                 ->exists();
             abort_unless($isMember, 422);
@@ -355,7 +368,7 @@ class InboxController extends Controller
         $conversation->update(['assigned_agent_id' => $agentId]);
 
         if ($agentId && $agentId !== $request->user()->id) {
-            \App\Models\Notification::create([
+            Notification::create([
                 'account_id' => $conversation->account_id,
                 'user_id' => $agentId,
                 'type' => 'conversation_assigned',
@@ -378,7 +391,7 @@ class InboxController extends Controller
 
         $request->merge(['conversation_id' => $conversation->id]);
 
-        return app(AiController::class)->draft($request, app(\App\Services\Ai\ReplyGenerator::class));
+        return app(AiController::class)->draft($request, app(ReplyGenerator::class));
     }
 
     /** Cambia el estado (open / pending / closed). */
@@ -403,7 +416,7 @@ class InboxController extends Controller
      */
     public function bulkAction(Request $request): JsonResponse
     {
-        abort_unless($request->user()->hasRoleAtLeast(\App\Models\User::ROLE_ADMIN), 403);
+        abort_unless($request->user()->hasRoleAtLeast(User::ROLE_ADMIN), 403);
 
         $validated = $request->validate([
             'conversation_ids' => 'required|array|min:1|max:200',
@@ -424,10 +437,11 @@ class InboxController extends Controller
             'assign' => (function () use ($validated, $accountId) {
                 if ($validated['agent_id']) {
                     abort_unless(
-                        \App\Models\User::where('id', $validated['agent_id'])->where('account_id', $accountId)->exists(),
+                        User::where('id', $validated['agent_id'])->where('account_id', $accountId)->exists(),
                         422
                     );
                 }
+
                 return ['assigned_agent_id' => $validated['agent_id']];
             })(),
         };
@@ -445,7 +459,7 @@ class InboxController extends Controller
 
         // Restricción por rol: agent/viewer solo pueden interactuar con
         // conversaciones que tienen asignadas. admin/owner sin restricción.
-        if (! $user->hasRoleAtLeast(\App\Models\User::ROLE_ADMIN)) {
+        if (! $user->hasRoleAtLeast(User::ROLE_ADMIN)) {
             abort_if($conversation->assigned_agent_id !== $user->id, 403,
                 'No tienes acceso a esta conversación. Pídele al admin que te la asigne.');
         }

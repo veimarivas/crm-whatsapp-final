@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /**
@@ -59,7 +60,7 @@ class TeamApiController extends Controller
         }
 
         // Sin password: generamos una random (el user tendrá que resetear)
-        $password = $validated['password'] ?? \Illuminate\Support\Str::random(24);
+        $password = $validated['password'] ?? Str::random(24);
 
         $user = User::create([
             'name' => $validated['name'],
@@ -115,6 +116,8 @@ class TeamApiController extends Controller
         $conversation->update([
             'ai_autoreply_disabled' => ! $validated['ai_enabled'],
             'ai_reply_count' => $validated['ai_enabled'] ? 0 : $conversation->ai_reply_count,
+            // El contador vuelve a cero: el aviso de tope agotado tambien.
+            'ai_limit_notified_at' => $validated['ai_enabled'] ? null : $conversation->ai_limit_notified_at,
         ]);
 
         return response()->json(['ok' => true, 'ai_enabled' => $validated['ai_enabled']]);

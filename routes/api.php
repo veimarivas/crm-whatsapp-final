@@ -40,6 +40,11 @@ Route::prefix('v1')->middleware('throttle:public-api')->group(function () {
     Route::get('/media/{id}', [ApiController::class, 'downloadMedia'])
         ->middleware('api.key:conversations:read');
 
+    // Estado de la IA: Komo lo pinta en su header (disponible / caída / fuera
+    // de horario). Mismo scope de lectura que las conversaciones.
+    Route::get('/ai/status', [\App\Http\Controllers\Api\V1\AiStatusApiController::class, 'show'])
+        ->middleware('api.key:conversations:read');
+
     Route::middleware('api.key:broadcasts:read')->group(function () {
         Route::get('/broadcasts', [ApiController::class, 'broadcasts']);
         Route::get('/broadcasts/{id}', [ApiController::class, 'showBroadcast']);

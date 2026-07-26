@@ -13,13 +13,36 @@ use RuntimeException;
  */
 class Client
 {
-    public function __construct(private readonly AiConfig $config)
-    {
-    }
+    public function __construct(private readonly AiConfig $config) {}
 
     public static function for(AiConfig $config): self
     {
         return new self($config);
+    }
+
+    /**
+     * ¿El proveedor está alcanzable ahora mismo?
+     *
+     * Ollama corre en el mismo servidor y es el que se cae o se queda sin RAM,
+     * así que se lo consulta de verdad (`/api/tags`, barato, sin inferencia)
+     * con timeout corto: esto se llama desde el render de una página.
+     *
+     * Para los proveedores cloud no se gasta una llamada — se comprueba que
+     * haya API key, que es el modo realista de que estén mal configurados.
+     */
+    public function isReachable(): bool
+    {
+        try {
+            if ($this->config->provider === 'ollama') {
+                $baseUrl = rtrim($this->config->base_url ?: 'http://127.0.0.1:11434', '/');
+
+                return Http::timeout(3)->get($baseUrl.'/api/tags')->successful();
+            }
+
+            return filled($this->config->api_key);
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /**

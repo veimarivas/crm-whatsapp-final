@@ -2,9 +2,12 @@
 
 namespace App\Services\WhatsApp;
 
+use App\Jobs\AiAutoReplyJob;
 use App\Jobs\ProcessAutomationEventJob;
-use App\Models\BroadcastRecipient;
+use App\Jobs\ProcessFlowMessageJob;
+use App\Jobs\TranscribeAudioJob;
 use App\Models\AutoTagRule;
+use App\Models\BroadcastRecipient;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Deal;
@@ -12,6 +15,7 @@ use App\Models\Message;
 use App\Models\MessageReaction;
 use App\Models\Pipeline;
 use App\Models\WhatsappConfig;
+use App\Services\Webhooks\Dispatcher;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -133,6 +137,7 @@ class InboundProcessor
                 // al máximo en la ráfaga anterior. El máximo sigue evitando
                 // loops si el cliente manda muchos mensajes seguidos.
                 'ai_reply_count' => 0,
+                'ai_limit_notified_at' => null,
             ]);
 
             // Correlaciona respuestas con broadcasts (replied tracking).
@@ -156,7 +161,7 @@ class InboundProcessor
             $this->applyAutoTags($contact, $text, $isNewContact);
         }
 
-        $dispatcher = app(\App\Services\Webhooks\Dispatcher::class);
+        $dispatcher = app(Dispatcher::class);
         $contactData = $contact->only(['id', 'phone', 'name', 'email', 'company']);
 
         // ORDEN IMPORTANTE — la cola es FIFO. Priorizamos:
@@ -186,13 +191,13 @@ class InboundProcessor
 
         // Si es un audio, encolamos la transcripción (asincrónico, no bloquea nada).
         if ($storedMessage->content_type === 'audio' && $storedMessage->media_url) {
-            \App\Jobs\TranscribeAudioJob::dispatch($storedMessage->id);
+            TranscribeAudioJob::dispatch($storedMessage->id);
         }
 
         // Ahora sí, dispatch de flow + automations + AI (en ese orden).
         // Todo esto pasa DESPUÉS que el webhook a Komo ya está encolado,
         // así el mensaje aparece en Komo en 1-2s aunque Ollama tarde 60s.
-        \App\Jobs\ProcessFlowMessageJob::dispatch($contact->id, $conversation->id, $storedMessage->id);
+        ProcessFlowMessageJob::dispatch($contact->id, $conversation->id, $storedMessage->id);
 
         if ($isNewContact) {
             $this->createLeadDeal($contact, $conversation);
@@ -207,7 +212,7 @@ class InboundProcessor
 
         // Bot IA al final: es el job más lento (30-60s con Qwen). Se abstiene
         // si hay un flow activo (el chatbot estructurado tiene prioridad).
-        \App\Jobs\AiAutoReplyJob::dispatch($conversation->id);
+        AiAutoReplyJob::dispatch($conversation->id);
     }
 
     /** @return array{0:string,1:?string,2:?string,3:?string} [content_type, content_text, media_id, interactive_reply_id] */

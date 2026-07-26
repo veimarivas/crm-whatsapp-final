@@ -27,8 +27,33 @@ class Message extends Model
     }
 
     public const SENDER_CUSTOMER = 'customer';
+
     public const SENDER_AGENT = 'agent';
+
     public const SENDER_BOT = 'bot';
+
+    protected static function booted(): void
+    {
+        // Si contesta un humano, la IA se calla en esa conversación.
+        //
+        // Es la regla que promete la UI de Ajustes ("Si un agente responde, el
+        // bot se apaga en esa conversación") y que estaba sin implementar: el
+        // test que la cubre venía fallando. Sin esto el bot seguía respondiendo
+        // por encima del agente que ya había tomado el chat.
+        //
+        // Va en el modelo y no en Messenger porque hay tres caminos de envío
+        // (el Inbox arma el Message a mano, la API pública y Messenger) y solo
+        // uno pasaba por el servicio.
+        static::created(function (Message $message) {
+            if ($message->sender_type !== self::SENDER_AGENT) {
+                return;
+            }
+
+            Conversation::whereKey($message->conversation_id)
+                ->where('ai_autoreply_disabled', false)
+                ->update(['ai_autoreply_disabled' => true]);
+        });
+    }
 
     public function conversation(): BelongsTo
     {

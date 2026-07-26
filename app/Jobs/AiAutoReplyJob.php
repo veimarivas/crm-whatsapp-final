@@ -6,10 +6,13 @@ use App\Models\AiConfig;
 use App\Models\Conversation;
 use App\Models\FlowRun;
 use App\Models\Message;
+use App\Models\Notification;
+use App\Models\User;
 use App\Models\WhatsappConfig;
 use App\Services\Ai\ReplyGenerator;
-use App\Services\WhatsApp\MetaApi;
+use App\Services\Webhooks\Dispatcher;
 use App\Services\WhatsApp\Messenger;
+use App\Services\WhatsApp\MetaApi;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -24,21 +27,19 @@ use Illuminate\Support\Facades\Log;
  * Ronda 14 (2026-07-23):
  *  - Marca conversation.ai_pending=true al arrancar (UI muestra "IA pensando...").
  *  - Envía typing indicator a WhatsApp para que el cliente vea "escribiendo...".
- *  - Si Ollama tarda >120s o falla, envía mensaje fallback al cliente y notifica
- *    al agente responsable (o al owner si no hay asignado).
+ *  - Si Ollama tarda >120s o falla, NO le manda nada al cliente: apaga la IA
+ *    en esa conversación y avisa al agente responsable (o al owner) para que
+ *    conteste un humano. Lo mismo cuando se agota el tope de respuestas.
  */
 class AiAutoReplyJob implements ShouldQueue
 {
     use Queueable;
 
     public int $tries = 1;
+
     public int $timeout = 130; // 10s de margen sobre los 120s del Ollama Client
 
-    private const FALLBACK_TEXT = 'Un asesor te atenderá en breve. Gracias por tu paciencia. 🙏';
-
-    public function __construct(public readonly string $conversationId)
-    {
-    }
+    public function __construct(public readonly string $conversationId) {}
 
     public function handle(ReplyGenerator $generator, Messenger $messenger): void
     {
@@ -53,7 +54,22 @@ class AiAutoReplyJob implements ShouldQueue
             ->where('auto_reply_enabled', true)
             ->first();
 
-        if (! $config || $conversation->ai_reply_count >= $config->auto_reply_max_per_conversation) {
+        if (! $config) {
+            return;
+        }
+
+        // Tope agotado: el cliente sigue escribiendo y el bot ya no contesta.
+        // Es exactamente el momento en que un humano tiene que entrar, así que
+        // se avisa (una sola vez) en vez de quedarse callado.
+        if ($conversation->ai_reply_count >= $config->auto_reply_max_per_conversation) {
+            $this->notifyHumanNeeded(
+                $conversation,
+                'limit_reached',
+                'La IA llegó a su tope en esta conversación',
+                'La IA ya respondió '.$conversation->ai_reply_count.' veces a '
+                    .$this->contactLabel($conversation).' y no responderá más. Seguí vos la conversación.',
+            );
+
             return;
         }
 
@@ -78,6 +94,7 @@ class AiAutoReplyJob implements ShouldQueue
                     Log::warning('After-hours message falló', ['conv_id' => $conversation->id, 'error' => $e->getMessage()]);
                 }
             }
+
             return;
         }
 
@@ -95,7 +112,8 @@ class AiAutoReplyJob implements ShouldQueue
 
             if ($reply === '') {
                 $conversation->update(['ai_pending' => false]);
-            $this->broadcastPending($conversation, false);
+                $this->broadcastPending($conversation, false);
+
                 return;
             }
 
@@ -111,49 +129,87 @@ class AiAutoReplyJob implements ShouldQueue
 
             $conversation->update(['ai_pending' => false]);
             $this->broadcastPending($conversation, false);
-            $this->deliverFallback($conversation, $messenger);
+            $this->deliverFallback($conversation);
         }
     }
 
     /**
-     * Al fallar la IA: envía un mensaje al cliente para que no quede en el aire,
-     * apaga la IA en esa conversación (evita loop de fallos), y notifica al
-     * agente responsable (o al owner) para que un humano tome la conversación.
+     * Al fallar la IA: NO se le manda nada al cliente.
+     *
+     * Antes se enviaba un "Un asesor te atenderá en breve": delataba que
+     * detrás había un bot y dejaba al cliente con una respuesta de relleno
+     * en vez de una de verdad. Ahora la conversación queda tal cual y el
+     * responsable se entera para contestar él.
+     *
+     * También apaga la IA en esa conversación: evita reintentos que fallarían
+     * igual. El agente que la tome puede reactivar el toggle IA/Humano.
      */
-    private function deliverFallback(Conversation $conversation, Messenger $messenger): void
+    private function deliverFallback(Conversation $conversation): void
     {
-        // 1. Mensaje automático al cliente por WhatsApp.
-        try {
-            $messenger->sendText($conversation, self::FALLBACK_TEXT);
-        } catch (\Throwable $e) {
-            Log::error('Fallback de IA también falló al enviar por WhatsApp', [
-                'conversation_id' => $conversation->id,
-                'error' => $e->getMessage(),
-            ]);
-            // Aunque el envío falle, seguimos con la notificación al agente.
-        }
-
-        // 2. Apaga la IA en esta conversación: evita reintentos que fallen igual.
-        //    El agente que la tome puede reactivar el toggle IA/Humano manualmente.
         $conversation->update(['ai_autoreply_disabled' => true]);
 
-        // 3. Notifica al agente responsable (o al owner si no hay asignado).
+        $this->notifyHumanNeeded(
+            $conversation,
+            'failed',
+            'La IA no pudo responder',
+            'Falló la IA con '.$this->contactLabel($conversation)
+                .'. Al cliente no se le envió nada: contestale vos.',
+        );
+    }
+
+    /**
+     * Avisa que esta conversación necesita un humano — al agente asignado, o
+     * al owner si todavía no tiene responsable — y reenvía el evento al CRM
+     * externo (Komo) para que le llegue también al responsable del lead.
+     *
+     * `limit_reached` se avisa una sola vez por conversación: el tope se sigue
+     * superando en cada mensaje nuevo y no queremos repetir el aviso.
+     */
+    private function notifyHumanNeeded(Conversation $conversation, string $reason, string $title, string $body): void
+    {
+        if ($reason === 'limit_reached') {
+            if ($conversation->ai_limit_notified_at) {
+                return;
+            }
+            $conversation->update(['ai_limit_notified_at' => now()]);
+        }
+
         $recipientId = $conversation->assigned_agent_id
-            ?? \App\Models\User::where('account_id', $conversation->account_id)
-                ->where('account_role', \App\Models\User::ROLE_OWNER)
+            ?? User::where('account_id', $conversation->account_id)
+                ->where('account_role', User::ROLE_OWNER)
                 ->value('id');
 
         if ($recipientId) {
-            \App\Models\Notification::create([
+            Notification::create([
                 'account_id' => $conversation->account_id,
                 'user_id' => $recipientId,
                 'type' => 'ai_fallback',
                 'conversation_id' => $conversation->id,
                 'contact_id' => $conversation->contact_id,
-                'title' => 'La IA no pudo responder',
-                'body' => 'Fallo en la IA para '.($conversation->contact->name ?? $conversation->contact->phone).'. Se envió un mensaje automático al cliente. Tomá la conversación.',
+                'title' => $title,
+                'body' => $body,
             ]);
         }
+
+        try {
+            app(Dispatcher::class)->dispatch(
+                $conversation->account_id,
+                'ai.unavailable',
+                [
+                    'conversation_id' => $conversation->id,
+                    'reason' => $reason, // 'failed' | 'limit_reached'
+                    'title' => $title,
+                    'body' => $body,
+                ],
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Webhook ai.unavailable falló', ['error' => $e->getMessage()]);
+        }
+    }
+
+    private function contactLabel(Conversation $conversation): string
+    {
+        return $conversation->contact->name ?: $conversation->contact->phone;
     }
 
     /**
@@ -164,7 +220,7 @@ class AiAutoReplyJob implements ShouldQueue
     private function broadcastPending(Conversation $conversation, bool $pending): void
     {
         try {
-            app(\App\Services\Webhooks\Dispatcher::class)->dispatch(
+            app(Dispatcher::class)->dispatch(
                 $conversation->account_id,
                 'ai.pending_changed',
                 ['conversation_id' => $conversation->id, 'pending' => $pending]
