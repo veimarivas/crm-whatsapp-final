@@ -5,11 +5,14 @@ namespace App\Http\Controllers;
 use App\Models\AiConfig;
 use App\Models\AiKnowledgeDocument;
 use App\Models\Conversation;
+use App\Models\Message;
+use App\Models\Notification;
 use App\Services\Ai\Chunker;
 use App\Services\Ai\ReplyGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -154,7 +157,7 @@ class AiController extends Controller
 
         // Subquery correlacionada: para cada msg de cliente, obtener el próximo
         // msg agente/bot en la misma conv. Solo mensajes de los últimos 30 días.
-        $rows = \Illuminate\Support\Facades\DB::select("
+        $rows = DB::select("
             SELECT
                 reply.sender_id,
                 reply.sender_type,
@@ -185,6 +188,7 @@ class AiController extends Controller
                 $diffs = $group->pluck('diff_seconds')->sort()->values();
                 $avg = round($diffs->avg());
                 $median = $diffs->count() > 0 ? (int) $diffs[intval($diffs->count() / 2)] : 0;
+
                 return [
                     'name' => $first->sender_type === 'bot' ? '✨ IA' : ($first->agent_name ?? 'Agente eliminado'),
                     'is_bot' => $first->sender_type === 'bot',
@@ -210,9 +214,14 @@ class AiController extends Controller
 
     private function formatDuration(int $seconds): string
     {
-        if ($seconds < 60) return "{$seconds}s";
-        if ($seconds < 3600) return floor($seconds / 60)."m ".($seconds % 60)."s";
-        return floor($seconds / 3600)."h ".floor(($seconds % 3600) / 60)."m";
+        if ($seconds < 60) {
+            return "{$seconds}s";
+        }
+        if ($seconds < 3600) {
+            return floor($seconds / 60).'m '.($seconds % 60).'s';
+        }
+
+        return floor($seconds / 3600).'h '.floor(($seconds % 3600) / 60).'m';
     }
 
     /**
@@ -224,20 +233,20 @@ class AiController extends Controller
         $accountId = $request->user()->account_id;
 
         // Contadores de respuestas de la IA (sender_type='bot').
-        $botRepliesLast7d = \App\Models\Message::whereHas('conversation', fn ($q) => $q->where('account_id', $accountId))
+        $botRepliesLast7d = Message::whereHas('conversation', fn ($q) => $q->where('account_id', $accountId))
             ->where('sender_type', 'bot')
             ->where('messages.created_at', '>=', now()->subDays(7))
             ->count();
-        $botRepliesLast30d = \App\Models\Message::whereHas('conversation', fn ($q) => $q->where('account_id', $accountId))
+        $botRepliesLast30d = Message::whereHas('conversation', fn ($q) => $q->where('account_id', $accountId))
             ->where('sender_type', 'bot')
             ->where('messages.created_at', '>=', now()->subDays(30))
             ->count();
-        $botRepliesTotal = \App\Models\Message::whereHas('conversation', fn ($q) => $q->where('account_id', $accountId))
+        $botRepliesTotal = Message::whereHas('conversation', fn ($q) => $q->where('account_id', $accountId))
             ->where('sender_type', 'bot')
             ->count();
 
         // Fallbacks (notificaciones tipo ai_fallback) — la IA no pudo responder.
-        $fallbacksLast30d = \App\Models\Notification::where('account_id', $accountId)
+        $fallbacksLast30d = Notification::where('account_id', $accountId)
             ->where('type', 'ai_fallback')
             ->where('created_at', '>=', now()->subDays(30))
             ->count();
@@ -248,7 +257,7 @@ class AiController extends Controller
             : 100;
 
         // Serie diaria últimos 14 días: cuántas respuestas IA por día
-        $daily = \App\Models\Message::whereHas('conversation', fn ($q) => $q->where('account_id', $accountId))
+        $daily = Message::whereHas('conversation', fn ($q) => $q->where('account_id', $accountId))
             ->where('sender_type', 'bot')
             ->where('messages.created_at', '>=', now()->subDays(13)->startOfDay())
             ->selectRaw('DATE(messages.created_at) as day, COUNT(*) as count')
@@ -259,6 +268,7 @@ class AiController extends Controller
 
         $chart = collect(range(13, 0))->map(function ($daysAgo) use ($daily) {
             $day = now()->subDays($daysAgo)->toDateString();
+
             return [
                 'day' => $day,
                 'label' => now()->subDays($daysAgo)->translatedFormat('D d/m'),
@@ -268,9 +278,9 @@ class AiController extends Controller
 
         // Últimas preguntas del cliente (para ver qué le preguntan a la IA
         // y saber qué agregar al knowledge base). Solo msgs de customer con IA activa.
-        $recentQuestions = \App\Models\Message::whereHas('conversation', fn ($q) => $q
-                ->where('account_id', $accountId)
-                ->where('ai_autoreply_disabled', false))
+        $recentQuestions = Message::whereHas('conversation', fn ($q) => $q
+            ->where('account_id', $accountId)
+            ->where('ai_autoreply_disabled', false))
             ->where('sender_type', 'customer')
             ->whereNotNull('content_text')
             ->with('conversation.contact:id,name,phone')

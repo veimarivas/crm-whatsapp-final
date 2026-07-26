@@ -1,4 +1,5 @@
 import { Head, Link } from '@inertiajs/react';
+import ServiceWindowBadge from '@/Components/ServiceWindowBadge';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { usePage } from '@inertiajs/react';
 
@@ -287,9 +288,12 @@ function ConversationRow({ conv }) {
                         <span className="font-semibold text-gray-900 text-sm">
                             {contactName}
                         </span>
-                        {conv.contact?.name && conv.contact?.phone && (
-                            <p className="text-[11px] text-gray-400 mt-0.5">{conv.contact.phone}</p>
-                        )}
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            {conv.contact?.name && conv.contact?.phone && (
+                                <p className="text-[11px] text-gray-400">{conv.contact.phone}</p>
+                            )}
+                            <ServiceWindowBadge window={conv.service_window} />
+                        </div>
                     </div>
                 </Link>
             </td>

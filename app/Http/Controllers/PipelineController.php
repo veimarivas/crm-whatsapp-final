@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Contact;
 use App\Models\Pipeline;
 use App\Models\PipelineStage;
+use App\Services\WhatsApp\ServiceWindow;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -40,6 +41,13 @@ class PipelineController extends Controller
                 ->orderByDesc('created_at')
                 ->get()
             : collect();
+
+        // Ventana de servicio del contacto de cada deal: en el pipeline es lo
+        // que dice si todavía se le puede escribir sin costo para cerrarlo.
+        $windows = app(ServiceWindow::class)
+            ->forContacts($deals->pluck('contact_id')->filter()->unique()->values()->all());
+
+        $deals->each(fn ($d) => $d->setAttribute('service_window', $windows[$d->contact_id] ?? null));
 
         return Inertia::render('Pipelines/Index', [
             'pipelines' => $pipelines->map(fn ($p) => ['id' => $p->id, 'name' => $p->name]),

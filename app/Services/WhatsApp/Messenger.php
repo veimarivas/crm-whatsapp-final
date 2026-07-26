@@ -5,8 +5,10 @@ namespace App\Services\WhatsApp;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\User;
 use App\Models\WhatsappConfig;
 use App\Services\Webhooks\Dispatcher;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
@@ -205,7 +207,7 @@ class Messenger
     {
         try {
             $sender = $message->sender_id
-                ? \App\Models\User::whereKey($message->sender_id)->first(['id', 'name', 'email', 'account_role'])
+                ? User::whereKey($message->sender_id)->first(['id', 'name', 'email', 'account_role'])
                 : null;
 
             app(Dispatcher::class)->dispatch($conversation->account_id, 'message.sent', [
@@ -226,7 +228,7 @@ class Messenger
                 ],
             ]);
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('Webhook message.sent falló', ['error' => $e->getMessage()]);
+            Log::warning('Webhook message.sent falló', ['error' => $e->getMessage()]);
         }
     }
 

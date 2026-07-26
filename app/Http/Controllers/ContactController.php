@@ -2,13 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\ProcessAutomationEventJob;
 use App\Models\Contact;
 use App\Models\CustomField;
 use App\Models\Tag;
+use App\Services\Webhooks\Dispatcher;
+use App\Services\WhatsApp\ServiceWindow;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ContactController extends Controller
 {
@@ -17,7 +22,7 @@ class ContactController extends Controller
      * q para búsqueda). El CSV se stream (chunked) para no cargar todos en RAM
      * en cuentas con miles de contactos.
      */
-    public function exportCsv(Request $request): \Symfony\Component\HttpFoundation\StreamedResponse
+    public function exportCsv(Request $request): StreamedResponse
     {
         $accountId = $request->user()->account_id;
 
@@ -75,6 +80,13 @@ class ContactController extends Controller
             ->paginate(25)
             ->withQueryString();
 
+        // Ventana de servicio de cada contacto (la de su conversación más
+        // reciente): en lote sobre la página actual, no una query por fila.
+        $windows = app(ServiceWindow::class)
+            ->forContacts($contacts->pluck('id')->all());
+
+        $contacts->each(fn (Contact $c) => $c->setAttribute('service_window', $windows[$c->id] ?? null));
+
         return Inertia::render('Contacts/Index', [
             'contacts' => $contacts,
             'tags' => Tag::forAccount($accountId)->orderBy('name')->get(),
@@ -96,8 +108,8 @@ class ContactController extends Controller
 
         $this->syncRelations($contact, $validated);
 
-        \App\Jobs\ProcessAutomationEventJob::dispatch('new_contact', $contact->id);
-        app(\App\Services\Webhooks\Dispatcher::class)->dispatch($accountId, 'contact.created', [
+        ProcessAutomationEventJob::dispatch('new_contact', $contact->id);
+        app(Dispatcher::class)->dispatch($accountId, 'contact.created', [
             'contact' => $contact->only(['id', 'phone', 'name', 'email', 'company']),
         ]);
 
@@ -195,7 +207,7 @@ class ContactController extends Controller
             ->exists();
 
         if ($duplicate) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
+            throw ValidationException::withMessages([
                 'phone' => 'Ya existe un contacto con ese teléfono.',
             ]);
         }

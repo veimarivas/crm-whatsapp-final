@@ -2,14 +2,20 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Account;
 use App\Models\AccountInvitation;
 use App\Models\ApiKey;
+use App\Models\MemberPresence;
 use App\Models\User;
+use App\Models\WebhookEndpoint;
+use App\Services\Webhooks\Dispatcher;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -20,7 +26,7 @@ class TeamController extends Controller
     {
         $user = $request->user();
 
-        $onlineIds = \App\Models\MemberPresence::forAccount($user->account_id)
+        $onlineIds = MemberPresence::forAccount($user->account_id)
             ->where('last_seen_at', '>=', now()->subMinutes(2))
             ->pluck('user_id');
 
@@ -40,10 +46,10 @@ class TeamController extends Controller
             'apiKeys' => ApiKey::forAccount($user->account_id)
                 ->orderByDesc('created_at')
                 ->get(['id', 'name', 'key_prefix', 'scopes', 'last_used_at', 'revoked_at', 'created_at']),
-            'webhooks' => \App\Models\WebhookEndpoint::forAccount($user->account_id)
+            'webhooks' => WebhookEndpoint::forAccount($user->account_id)
                 ->orderByDesc('created_at')
                 ->get(['id', 'url', 'events', 'is_active', 'last_delivery_at', 'failure_count', 'created_at']),
-            'webhookEvents' => \App\Services\Webhooks\Dispatcher::EVENTS,
+            'webhookEvents' => Dispatcher::EVENTS,
             'isAdmin' => $user->hasRoleAtLeast(User::ROLE_ADMIN),
             'isOwner' => $user->isOwner(),
             'newInviteUrl' => session('invite_url'),
@@ -114,7 +120,7 @@ class TeamController extends Controller
             return back()->withErrors(['member' => 'Ya eres el owner.']);
         }
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($owner, $member) {
+        DB::transaction(function () use ($owner, $member) {
             $owner->account->update(['owner_user_id' => $member->id]);
             $member->update(['account_role' => User::ROLE_OWNER]);
             $owner->update(['account_role' => User::ROLE_ADMIN]);
@@ -137,7 +143,7 @@ class TeamController extends Controller
         }
 
         // Sale del equipo: recupera una cuenta propia vacía.
-        $account = \App\Models\Account::create(['name' => $member->name, 'owner_user_id' => $member->id]);
+        $account = Account::create(['name' => $member->name, 'owner_user_id' => $member->id]);
         $member->update(['account_id' => $account->id, 'account_role' => User::ROLE_OWNER]);
 
         return back()->with('success', 'Miembro expulsado.');
@@ -176,7 +182,7 @@ class TeamController extends Controller
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
                 'email' => 'required|string|lowercase|email|max:255|unique:users,email',
-                'password' => ['required', 'confirmed', \Illuminate\Validation\Rules\Password::defaults()],
+                'password' => ['required', 'confirmed', Password::defaults()],
             ]);
 
             $user = User::create([
@@ -252,12 +258,12 @@ class TeamController extends Controller
         $validated = $request->validate([
             'url' => 'required|url:https|max:2048',
             'events' => 'required|array|min:1',
-            'events.*' => Rule::in(\App\Services\Webhooks\Dispatcher::EVENTS),
+            'events.*' => Rule::in(Dispatcher::EVENTS),
         ]);
 
         $secret = 'whsec_'.Str::random(40);
 
-        \App\Models\WebhookEndpoint::create([
+        WebhookEndpoint::create([
             'account_id' => $request->user()->account_id,
             'created_by' => $request->user()->id,
             'url' => $validated['url'],
@@ -269,7 +275,7 @@ class TeamController extends Controller
         return back()->with('webhook_secret', $secret);
     }
 
-    public function toggleWebhook(Request $request, \App\Models\WebhookEndpoint $webhook): RedirectResponse
+    public function toggleWebhook(Request $request, WebhookEndpoint $webhook): RedirectResponse
     {
         $this->requireAdmin($request);
         abort_if($webhook->account_id !== $request->user()->account_id, 403);
@@ -284,7 +290,7 @@ class TeamController extends Controller
     }
 
     /** Actualiza url y/o eventos del webhook (el secreto NO se cambia). */
-    public function updateWebhook(Request $request, \App\Models\WebhookEndpoint $webhook): RedirectResponse
+    public function updateWebhook(Request $request, WebhookEndpoint $webhook): RedirectResponse
     {
         $this->requireAdmin($request);
         abort_if($webhook->account_id !== $request->user()->account_id, 403);
@@ -292,7 +298,7 @@ class TeamController extends Controller
         $validated = $request->validate([
             'url' => 'required|url:https|max:2048',
             'events' => 'required|array|min:1',
-            'events.*' => Rule::in(\App\Services\Webhooks\Dispatcher::EVENTS),
+            'events.*' => Rule::in(Dispatcher::EVENTS),
         ]);
 
         $webhook->update([
@@ -303,7 +309,7 @@ class TeamController extends Controller
         return back()->with('success', 'Webhook actualizado.');
     }
 
-    public function destroyWebhook(Request $request, \App\Models\WebhookEndpoint $webhook): RedirectResponse
+    public function destroyWebhook(Request $request, WebhookEndpoint $webhook): RedirectResponse
     {
         $this->requireAdmin($request);
         abort_if($webhook->account_id !== $request->user()->account_id, 403);

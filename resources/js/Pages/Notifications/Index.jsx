@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import ServiceWindowBadge from '@/Components/ServiceWindowBadge';
 import { Head, Link, router } from '@inertiajs/react';
 
 const TYPE_META = {
@@ -107,6 +108,13 @@ export default function Index({ notifications }) {
                                                                 <p className="font-semibold text-gray-900 text-sm">{n.title}</p>
                                                                 <span className="text-xs text-gray-400 tabular-nums whitespace-nowrap shrink-0">{timeAgo(n.created_at)}</span>
                                                             </div>
+                                                            {/* Cuánto queda para contestarle gratis: decide si
+                                                                se atiende ahora o puede esperar. */}
+                                                            {n.service_window && (
+                                                                <div className="mt-1.5">
+                                                                    <ServiceWindowBadge window={n.service_window} showOrigin />
+                                                                </div>
+                                                            )}
                                                             {n.body && (
                                                                 <p className="mt-1 text-sm text-gray-600 leading-relaxed">{n.body}</p>
                                                             )}

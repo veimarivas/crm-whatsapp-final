@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Contact;
+use App\Models\ContactNote;
+use App\Models\Deal;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -64,6 +66,7 @@ class ContactMergeController extends Controller
 
         $groupsData = $groups->map(function ($g) use ($contactsById) {
             $contacts = collect($g['ids'])->map(fn ($id) => $contactsById[$id] ?? null)->filter()->values();
+
             return [
                 'reason' => $g['reason'],
                 'label' => $g['label'],
@@ -116,11 +119,11 @@ class ContactMergeController extends Controller
                 }
 
                 // Reasignar notas
-                \App\Models\ContactNote::where('contact_id', $dup->id)->update(['contact_id' => $primary->id]);
+                ContactNote::where('contact_id', $dup->id)->update(['contact_id' => $primary->id]);
 
                 // Reasignar deals (si existen)
-                if (class_exists(\App\Models\Deal::class)) {
-                    \App\Models\Deal::where('contact_id', $dup->id)->update(['contact_id' => $primary->id]);
+                if (class_exists(Deal::class)) {
+                    Deal::where('contact_id', $dup->id)->update(['contact_id' => $primary->id]);
                 }
 
                 // Borrar duplicado

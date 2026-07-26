@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import ServiceWindowBadge from '@/Components/ServiceWindowBadge';
 import Modal from '@/Components/Modal';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
@@ -585,6 +586,7 @@ export default function Index({ contacts, tags, customFields, filters }) {
                                                     {(contact.name || contact.phone || '?').charAt(0).toUpperCase()}
                                                 </div>
                                                 <span className="font-semibold text-gray-900">{contact.name || <span className="italic text-gray-400">Sin nombre</span>}</span>
+                                                <ServiceWindowBadge window={contact.service_window} />
                                             </div>
                                         </td>
                                         <td className="px-5 sm:px-6 py-4 text-gray-600 font-medium tabular-nums">{contact.phone}</td>

@@ -5,6 +5,7 @@ namespace App\Services\WhatsApp;
 use App\Models\WhatsappConfig;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
@@ -13,9 +14,7 @@ use RuntimeException;
  */
 class MetaApi
 {
-    public function __construct(private readonly WhatsappConfig $config)
-    {
-    }
+    public function __construct(private readonly WhatsappConfig $config) {}
 
     public static function for(WhatsappConfig $config): self
     {
@@ -182,7 +181,7 @@ class MetaApi
             ]);
         } catch (\Throwable $e) {
             // Los typing indicators son best-effort: log y seguir.
-            \Illuminate\Support\Facades\Log::info('Typing indicator falló (best-effort)', ['error' => $e->getMessage()]);
+            Log::info('Typing indicator falló (best-effort)', ['error' => $e->getMessage()]);
         }
     }
 

@@ -4,13 +4,19 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Account;
+use App\Models\Broadcast;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\Notification;
+use App\Models\QuickReply;
 use App\Models\WhatsappConfig;
+use App\Services\Broadcasts\Creator;
 use App\Services\WhatsApp\Messenger;
+use App\Services\WhatsApp\MetaApi;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * API pública v1 — equivalente a /api/v1 del original.
@@ -126,7 +132,7 @@ class ApiController extends Controller
     public function broadcasts(Request $request): JsonResponse
     {
         return response()->json(
-            \App\Models\Broadcast::forAccount($this->accountId($request))
+            Broadcast::forAccount($this->accountId($request))
                 ->orderByDesc('created_at')
                 ->paginate(min((int) $request->query('per_page', 25), 100)),
         );
@@ -134,7 +140,7 @@ class ApiController extends Controller
 
     public function showBroadcast(Request $request, string $id): JsonResponse
     {
-        $broadcast = \App\Models\Broadcast::forAccount($this->accountId($request))->findOrFail($id);
+        $broadcast = Broadcast::forAccount($this->accountId($request))->findOrFail($id);
 
         return response()->json([
             ...$broadcast->toArray(),
@@ -146,7 +152,7 @@ class ApiController extends Controller
     }
 
     /** Crea y envía (o programa) un broadcast con una plantilla aprobada. */
-    public function storeBroadcast(Request $request, \App\Services\Broadcasts\Creator $creator): JsonResponse
+    public function storeBroadcast(Request $request, Creator $creator): JsonResponse
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -190,7 +196,7 @@ class ApiController extends Controller
         $accountId = $this->accountId($request);
         $userId = $key->created_by; // notifs del user "dueño" de la key (el hub)
 
-        $query = \App\Models\Notification::forAccount($accountId)
+        $query = Notification::forAccount($accountId)
             ->when($userId, fn ($q) => $q->where('user_id', $userId))
             ->when($request->query('since'), fn ($q, $since) => $q->where('created_at', '>=', $since))
             ->orderByDesc('created_at')
@@ -300,7 +306,7 @@ class ApiController extends Controller
      * Usado por integraciones (Komo) para servir audio/imagen desde su dominio.
      * Requiere que el media_id pertenezca a algún mensaje de la cuenta.
      */
-    public function downloadMedia(Request $request, string $mediaId): \Symfony\Component\HttpFoundation\Response
+    public function downloadMedia(Request $request, string $mediaId): Response
     {
         $accountId = $this->accountId($request);
 
@@ -313,7 +319,7 @@ class ApiController extends Controller
         $config = WhatsappConfig::forAccount($accountId)->where('status', 'connected')->first();
         abort_unless($config, 422, 'WhatsApp no conectado.');
 
-        $api = \App\Services\WhatsApp\MetaApi::for($config);
+        $api = MetaApi::for($config);
         $url = $api->getMediaUrl($mediaId);
         abort_unless($url, 502, 'Meta no devolvió URL para este media.');
 
@@ -331,7 +337,7 @@ class ApiController extends Controller
         $accountId = $this->accountId($request);
 
         return response()->json(
-            \App\Models\QuickReply::forAccount($accountId)
+            QuickReply::forAccount($accountId)
                 ->whereNull('user_id') // solo las compartidas del equipo (por API no filtramos por user)
                 ->orderBy('shortcut')
                 ->get(['id', 'shortcut', 'content'])

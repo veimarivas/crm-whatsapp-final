@@ -9,8 +9,9 @@ use App\Models\Conversation;
 use App\Models\Deal;
 use App\Models\Flow;
 use App\Models\Message;
+use App\Services\WhatsApp\ServiceWindow;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -59,12 +60,31 @@ class DashboardController extends Controller
                     ->count(),
             ],
             'chart' => $chart,
-            'recentConversations' => Conversation::forAccount($accountId)
-                ->with('contact:id,name,phone')
-                ->orderByDesc('last_message_at')
-                ->limit(6)
-                ->get(['id', 'contact_id', 'status', 'last_message_text', 'last_message_at', 'unread_count']),
+            'recentConversations' => $this->withServiceWindow(
+                Conversation::forAccount($accountId)
+                    ->with('contact:id,name,phone')
+                    ->orderByDesc('last_message_at')
+                    ->limit(6)
+                    ->get(['id', 'contact_id', 'status', 'last_message_text', 'last_message_at', 'unread_count'])
+            ),
             'currency' => $request->user()->account->default_currency,
         ]);
+    }
+
+    /**
+     * Adjunta la ventana de servicio a cada conversación del listado, para
+     * ver de un vistazo a quién todavía se le puede escribir sin costo.
+     *
+     * @param  Collection<int, Conversation>  $conversations
+     * @return Collection<int, Conversation>
+     */
+    private function withServiceWindow($conversations)
+    {
+        $windows = app(ServiceWindow::class)
+            ->forMany($conversations->pluck('id')->all());
+
+        return $conversations->each(
+            fn (Conversation $c) => $c->setAttribute('service_window', $windows[$c->id] ?? null)
+        );
     }
 }

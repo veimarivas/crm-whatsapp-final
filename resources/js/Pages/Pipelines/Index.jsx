@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import ServiceWindowBadge from '@/Components/ServiceWindowBadge';
 import Modal from '@/Components/Modal';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
@@ -76,6 +77,7 @@ function DealCard({ deal, currency, selected, onToggleSelect, anySelected }) {
 
                 <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-50 gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">
+                        <ServiceWindowBadge window={deal.service_window} />
                         {deal.assignee ? (
                             <span className="text-[10px] text-gray-500 truncate flex items-center gap-1">
                                 <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

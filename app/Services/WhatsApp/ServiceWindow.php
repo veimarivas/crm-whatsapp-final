@@ -111,6 +111,44 @@ class ServiceWindow
     }
 
     /**
+     * Ventana por CONTACTO (no por conversación): la de su conversación con
+     * actividad más reciente. La usan las vistas que listan contactos o deals
+     * —contactos, pipelines, dashboard— donde no hay una conversación a mano.
+     *
+     * @param  array<int, string>  $contactIds
+     * @return array<string, array<string, mixed>>
+     */
+    public function forContacts(array $contactIds): array
+    {
+        if ($contactIds === []) {
+            return [];
+        }
+
+        $latest = fn (bool $onlyAds) => Message::query()
+            ->join('conversations', 'conversations.id', '=', 'messages.conversation_id')
+            ->whereIn('conversations.contact_id', $contactIds)
+            ->where('messages.sender_type', Message::SENDER_CUSTOMER)
+            ->when($onlyAds, fn ($q) => $q->whereNotNull('messages.referral'))
+            ->selectRaw('conversations.contact_id as cid, MAX(messages.created_at) as last_at')
+            ->groupBy('conversations.contact_id')
+            ->pluck('last_at', 'cid');
+
+        $lastInbound = $latest(false);
+        $lastAd = $latest(true);
+
+        $out = [];
+
+        foreach ($contactIds as $id) {
+            $out[$id] = $this->build(
+                isset($lastInbound[$id]) ? Carbon::parse($lastInbound[$id]) : null,
+                isset($lastAd[$id]) ? Carbon::parse($lastAd[$id]) : null,
+            );
+        }
+
+        return $out;
+    }
+
+    /**
      * Versión en lote para listados: una query para todas las conversaciones
      * en vez de dos por cada una.
      *

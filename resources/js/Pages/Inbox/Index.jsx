@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import ServiceWindowBadge from '@/Components/ServiceWindowBadge';
 import { Head, Link, usePage } from '@inertiajs/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Recorder from 'opus-recorder';
@@ -47,6 +48,7 @@ function dayLabel(iso) {
 }
 
 const STATUS_LABELS = { open: 'Abierta', pending: 'Pendiente', closed: 'Cerrada' };
+
 const STATUS_META = {
     open: { dot: 'bg-emerald-500', ring: 'ring-emerald-200', text: 'text-emerald-700', bg: 'bg-emerald-50' },
     pending: { dot: 'bg-amber-500', ring: 'ring-amber-200', text: 'text-amber-700', bg: 'bg-amber-50' },
@@ -951,6 +953,7 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
                                             <div className="mt-1.5 flex items-center gap-1.5">
                                                 <span className={`w-1.5 h-1.5 rounded-full ${STATUS_META[conv.status]?.dot ?? 'bg-gray-300'}`} />
                                                 <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{STATUS_LABELS[conv.status]}</span>
+                                                <ServiceWindowBadge window={conv.service_window} />
                                                 {conv.assigned_agent && (
                                                     <span className="ml-auto text-[10px] text-gray-400 truncate">👤 {conv.assigned_agent.name}</span>
                                                 )}
@@ -1061,6 +1064,7 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
                                                 )}
                                             </button>
                                         )}
+                                        <ServiceWindowBadge window={selected.service_window} size="md" />
                                         <span
                                             title={isAdmin ? 'La asignación se cambia desde el lead en Komo' : 'Solo el admin puede reasignar (desde Komo)'}
                                             className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold border ${

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\QuickReply;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -88,7 +89,7 @@ class QuickReplyController extends Controller
         abort_if($quickReply->account_id !== $request->user()->account_id, 403);
 
         $user = $request->user();
-        $isAdmin = $user->hasRoleAtLeast(\App\Models\User::ROLE_ADMIN);
+        $isAdmin = $user->hasRoleAtLeast(User::ROLE_ADMIN);
 
         if ($quickReply->user_id === null) {
             abort_unless($isAdmin, 403, 'Solo admin puede editar plantillas compartidas.');

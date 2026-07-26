@@ -10,6 +10,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -185,14 +186,14 @@ class AutomationController extends Controller
     private function validateStepsTree(array $steps, int $depth): void
     {
         if ($depth > 3) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
+            throw ValidationException::withMessages([
                 'steps' => 'Máximo 3 niveles de condiciones anidadas.',
             ]);
         }
 
         foreach ($steps as $step) {
             if (! in_array($step['type'] ?? '', Engine::STEP_TYPES, true)) {
-                throw \Illuminate\Validation\ValidationException::withMessages([
+                throw ValidationException::withMessages([
                     'steps' => 'Tipo de paso inválido: '.($step['type'] ?? '?'),
                 ]);
             }

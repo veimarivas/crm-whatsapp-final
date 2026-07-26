@@ -7,6 +7,7 @@ use App\Models\Contact;
 use App\Models\MessageTemplate;
 use App\Models\Tag;
 use App\Models\WhatsappConfig;
+use App\Services\Broadcasts\Creator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -38,7 +39,7 @@ class BroadcastController extends Controller
         ]);
     }
 
-    public function store(Request $request, \App\Services\Broadcasts\Creator $creator): RedirectResponse
+    public function store(Request $request, Creator $creator): RedirectResponse
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -129,6 +130,7 @@ class BroadcastController extends Controller
 
         $chart = collect(range(29, 0))->map(function ($daysAgo) use ($daily) {
             $day = now()->subDays($daysAgo)->toDateString();
+
             return [
                 'day' => $day,
                 'label' => now()->subDays($daysAgo)->translatedFormat('d/m'),
