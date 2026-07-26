@@ -150,6 +150,9 @@ export default function AuthenticatedLayout({ header, children }) {
         return route().current(pattern);
     };
 
+    const mainNav = navigation.slice(0, 4);
+    const configNav = navigation.slice(4);
+
     return (
         <div className="min-h-screen bg-gray-50">
             <div className="flex h-screen overflow-hidden">
@@ -172,46 +175,87 @@ export default function AuthenticatedLayout({ header, children }) {
                             </Link>
                         </div>
 
-                        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-thin">
-                            {navigation.map((item) => {
-                                const active = isActive(item.pattern);
-                                return (
-                                    <Link
-                                        key={item.name}
-                                        href={route(item.routeName)}
-                                        onClick={() => setSidebarOpen(false)}
-                                        className={`group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                                            sidebarCollapsed ? 'justify-center' : ''
-                                        } ${
-                                            active
-                                                ? 'bg-[#045474]/30 text-white shadow-sm'
-                                                : 'text-gray-300 hover:bg-white/5 hover:text-white'
-                                        }`}
-                                        title={sidebarCollapsed ? item.name : undefined}
-                                    >
-                                        {active && !sidebarCollapsed && (
-                                            <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r-full bg-[#e6dd5e]" />
-                                        )}
-                                        <span
-                                            className={`flex-shrink-0 ${
+                        <nav className="flex-1 px-3 py-4 overflow-y-auto scrollbar-none">
+                            <div className="space-y-1">
+                                {mainNav.map((item) => {
+                                    const active = isActive(item.pattern);
+                                    return (
+                                        <Link
+                                            key={item.name}
+                                            href={route(item.routeName)}
+                                            onClick={() => setSidebarOpen(false)}
+                                            className={`group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                                                sidebarCollapsed ? 'justify-center' : ''
+                                            } ${
                                                 active
-                                                    ? 'text-[#e6dd5e]'
-                                                    : 'text-gray-400 group-hover:text-gray-200'
+                                                    ? 'bg-[#045474]/30 text-white shadow-sm'
+                                                    : 'text-gray-300 hover:bg-white/5 hover:text-white'
                                             }`}
+                                            title={sidebarCollapsed ? item.name : undefined}
                                         >
-                                            {item.icon}
+                                            {active && !sidebarCollapsed && (
+                                                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r-full bg-[#e6dd5e]" />
+                                            )}
+                                            <span
+                                                className={`flex-shrink-0 ${
+                                                    active
+                                                        ? 'text-[#e6dd5e]'
+                                                        : 'text-gray-400 group-hover:text-gray-200'
+                                                }`}
+                                            >
+                                                {item.icon}
+                                            </span>
+                                            {!sidebarCollapsed && (
+                                                <>
+                                                    <span className="truncate">{item.name}</span>
+                                                    {active && (
+                                                        <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[#e6dd5e]" />
+                                                    )}
+                                                </>
+                                            )}
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+
+                            {!sidebarCollapsed && configNav.length > 0 && (
+                                <div className="mt-6 pt-4 border-t border-white/10">
+                                    <div className="px-3 mb-1.5">
+                                        <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                                            Configuración
                                         </span>
-                                        {!sidebarCollapsed && (
-                                            <>
-                                                <span className="truncate">{item.name}</span>
-                                                {active && (
-                                                    <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[#e6dd5e]" />
-                                                )}
-                                            </>
-                                        )}
-                                    </Link>
-                                );
-                            })}
+                                    </div>
+                                    <div className="space-y-0.5">
+                                        {configNav.map((item) => {
+                                            const active = isActive(item.pattern);
+                                            return (
+                                                <Link
+                                                    key={item.name}
+                                                    href={route(item.routeName)}
+                                                    onClick={() => setSidebarOpen(false)}
+                                                    className={`group relative flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 ${
+                                                        active
+                                                            ? 'bg-[#045474]/20 text-white/90 shadow-sm'
+                                                            : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
+                                                    }`}
+                                                >
+                                                    {active && (
+                                                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-4 rounded-r-full bg-[#e6dd5e]/80" />
+                                                    )}
+                                                    <span
+                                                        className={`flex-shrink-0 ${
+                                                            active ? 'text-[#e6dd5e]/80' : 'text-gray-500 group-hover:text-gray-300'
+                                                        }`}
+                                                    >
+                                                        {item.icon}
+                                                    </span>
+                                                    <span className="truncate">{item.name}</span>
+                                                </Link>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
                         </nav>
 
                         <div className={`p-3 border-t border-white/10 ${sidebarCollapsed ? 'text-center' : ''}`}>
