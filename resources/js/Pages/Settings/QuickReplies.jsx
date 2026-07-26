@@ -2,7 +2,15 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 
-export default function QuickReplies({ replies }) {
+/** Un color por grupo del pack sugerido, para leerlo de un vistazo. */
+const GROUP_DOT = {
+    'Información': 'bg-sky-500',
+    'Promoción': 'bg-violet-500',
+    'Cierre de inscripciones': 'bg-amber-500',
+    'Seguimiento': 'bg-emerald-500',
+};
+
+export default function QuickReplies({ replies, suggested = [] }) {
     const { flash, auth } = usePage().props;
     const isAdmin = auth?.user?.account_role === 'owner' || auth?.user?.account_role === 'admin';
     const [editingId, setEditingId] = useState(null);
@@ -44,6 +52,76 @@ export default function QuickReplies({ replies }) {
                 {flash?.success && (
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 shadow-sm">
                         {flash.success}
+                    </div>
+                )}
+
+                {/* El dato que decide si esto cuesta plata o no. */}
+                <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 sm:p-5">
+                    <div className="flex items-start gap-3">
+                        <span className="text-xl leading-none">💡</span>
+                        <div className="text-sm text-amber-900 space-y-2">
+                            <p className="font-bold">Estas plantillas son gratis, pero solo dentro de la ventana.</p>
+                            <p className="leading-relaxed">
+                                Son mensajes de <strong>texto libre</strong>, así que WhatsApp solo las entrega mientras la
+                                ventana de servicio esté abierta: <strong>24 h</strong> desde el último mensaje del contacto,
+                                o <strong>72 h</strong> si llegó por un anuncio de Facebook. Dentro de ese plazo no tienen costo.
+                            </p>
+                            <p className="leading-relaxed">
+                                Con la ventana <strong className="text-red-700">cerrada, Meta las rechaza</strong> — no es que
+                                cuesten más, es que no salen. Para escribir fuera de plazo hace falta una{' '}
+                                <a href={route('templates.index')} className="underline font-semibold">plantilla aprobada de Meta</a>,
+                                y esa sí se factura.
+                            </p>
+                            <p className="text-xs text-amber-700">
+                                En el Inbox tenés el contador de la ventana al lado de cada contacto: si está en verde, cualquiera
+                                de estas sale sin costo.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Pack sugerido */}
+                {isAdmin && suggested.length > 0 && (
+                    <div className="rounded-2xl border border-[#045474]/20 bg-[#045474]/5 p-5 sm:p-6">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div className="min-w-0">
+                                <h3 className="text-sm font-bold text-gray-900">Plantillas sugeridas para inscripciones</h3>
+                                <p className="text-xs text-gray-500 mt-1 max-w-xl leading-relaxed">
+                                    {suggested.length} plantillas listas para informar, promocionar, avisar del cierre de
+                                    inscripciones y cerrar la venta. Se cargan compartidas para todo el equipo.
+                                    <strong className="text-gray-700"> Revisá los campos entre [CORCHETES]</strong> (fechas,
+                                    montos, datos bancarios) antes de usarlas.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => router.post(route('quick-replies.load-suggested'), {}, { preserveScroll: true })}
+                                className="px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-[#045474] to-[#1c486c] shadow-lg shadow-[#045474]/20 hover:opacity-90 transition-all shrink-0"
+                            >
+                                Cargar {suggested.length} plantillas
+                            </button>
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap gap-1.5">
+                            {suggested.map((s) => (
+                                <span
+                                    key={s.shortcut}
+                                    title={s.content}
+                                    className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white border border-gray-200 text-[11px]"
+                                >
+                                    <span className={`w-1.5 h-1.5 rounded-full ${GROUP_DOT[s.group] ?? 'bg-gray-400'}`} />
+                                    <code className="font-mono font-bold text-[#045474]">/{s.shortcut}</code>
+                                </span>
+                            ))}
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+                            {Object.entries(GROUP_DOT).map(([group, dot]) => (
+                                <span key={group} className="inline-flex items-center gap-1.5 text-[11px] text-gray-500">
+                                    <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+                                    {group}
+                                </span>
+                            ))}
+                        </div>
                     </div>
                 )}
 

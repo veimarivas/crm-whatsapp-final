@@ -71,6 +71,7 @@ Route::middleware('auth')->group(function () {
     // Plantillas rápidas (settings)
     Route::get('/settings/quick-replies', [\App\Http\Controllers\QuickReplyController::class, 'index'])->name('quick-replies.index');
     Route::post('/settings/quick-replies', [\App\Http\Controllers\QuickReplyController::class, 'store'])->name('quick-replies.store');
+    Route::post('/settings/quick-replies/load-suggested', [\App\Http\Controllers\QuickReplyController::class, 'loadSuggested'])->name('quick-replies.load-suggested');
     Route::patch('/settings/quick-replies/{quickReply}', [\App\Http\Controllers\QuickReplyController::class, 'update'])->name('quick-replies.update');
     Route::delete('/settings/quick-replies/{quickReply}', [\App\Http\Controllers\QuickReplyController::class, 'destroy'])->name('quick-replies.destroy');
 

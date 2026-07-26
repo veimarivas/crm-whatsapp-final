@@ -2,10 +2,21 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import ServiceWindowBadge from '@/Components/ServiceWindowBadge';
 import { Head, Link, router } from '@inertiajs/react';
 
+/**
+ * Cada tipo de aviso con su color propio: `gradient` para el icono y `badge`
+ * para la etiqueta, que antes no existía. El color agrupa por urgencia:
+ * rojo = algo se rompió · ámbar = ojo con esto · verde = trabajo nuevo.
+ */
 const TYPE_META = {
-    conversation_assigned: { icon: '💬', gradient: 'from-emerald-500 to-teal-600' },
-    ai_fallback: { icon: '🤖', gradient: 'from-amber-500 to-orange-600' },
+    conversation_assigned: { icon: '💬', gradient: 'from-emerald-500 to-teal-600', label: 'Conversación asignada', badge: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
+    ai_fallback: { icon: '🤖', gradient: 'from-amber-500 to-orange-600', label: 'La IA necesita ayuda', badge: 'bg-amber-50 text-amber-700 ring-amber-200' },
+    new_message: { icon: '📩', gradient: 'from-sky-500 to-indigo-600', label: 'Mensaje nuevo', badge: 'bg-sky-50 text-sky-700 ring-sky-200' },
+    broadcast_finished: { icon: '📣', gradient: 'from-purple-500 to-violet-600', label: 'Broadcast enviado', badge: 'bg-purple-50 text-purple-700 ring-purple-200' },
+    deal_won: { icon: '🏆', gradient: 'from-emerald-500 to-green-600', label: 'Negocio ganado', badge: 'bg-green-50 text-green-700 ring-green-200' },
+    deal_lost: { icon: '✕', gradient: 'from-red-500 to-rose-600', label: 'Negocio perdido', badge: 'bg-red-50 text-red-700 ring-red-200' },
 };
+
+const FALLBACK_TYPE = { icon: '🔔', gradient: 'from-[#045474] to-[#1c486c]', label: 'Aviso', badge: 'bg-gray-100 text-gray-500 ring-gray-200' };
 
 /** Estado de la conversación: se lee antes que el texto del aviso. */
 const CONVERSATION_STATUS = {
@@ -47,7 +58,7 @@ function ContactAvatar({ name }) {
  * grilla de tarjetas, que obligaba a leer en zigzag y descuadraba las alturas.
  */
 function NotificationRow({ n }) {
-    const meta = TYPE_META[n.type] ?? { icon: '🔔', gradient: 'from-[#045474] to-[#1c486c]' };
+    const meta = TYPE_META[n.type] ?? FALLBACK_TYPE;
     const status = n.conversation ? CONVERSATION_STATUS[n.conversation.status] : null;
     const unread = !n.read_at;
     const contactName = n.contact?.name || n.contact?.phone;
@@ -62,6 +73,9 @@ function NotificationRow({ n }) {
                 </div>
                 <div className="min-w-0">
                     <p className={`text-sm ${unread ? 'font-bold text-gray-900' : 'font-semibold text-gray-600'}`}>{n.title}</p>
+                    <span className={`inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-lg text-[11px] font-bold ring-1 ${meta.badge}`}>
+                        {meta.icon} {meta.label}
+                    </span>
                     {n.actor && (
                         <span className="inline-flex items-center gap-1 mt-1 text-[11px] text-gray-400">
                             <span className="w-4 h-4 rounded-full bg-gradient-to-br from-[#045474] to-[#1c486c] text-white text-[8px] font-bold flex items-center justify-center">
