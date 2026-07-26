@@ -1,7 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import Modal from '@/Components/Modal';
-import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { useState } from 'react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
+import { useEffect, useState } from 'react';
 
 function money(value, currency) {
     return new Intl.NumberFormat('es', {
@@ -11,64 +11,210 @@ function money(value, currency) {
     }).format(value || 0);
 }
 
-const STATUS_BADGES = {
-    won: { label: 'Ganado', style: 'bg-emerald-50 text-emerald-700 ring-emerald-200', dot: 'bg-emerald-500' },
-    lost: { label: 'Perdido', style: 'bg-red-50 text-red-700 ring-red-200', dot: 'bg-red-500' },
+const AVATAR_COLORS = ['from-emerald-500 to-teal-600', 'from-blue-500 to-indigo-600', 'from-purple-500 to-pink-600', 'from-amber-500 to-orange-600', 'from-rose-500 to-red-600', 'from-cyan-500 to-sky-600'];
+function avatarFor(name) {
+    const label = (name || '?').trim();
+    const initials = label.split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+    let hash = 0;
+    for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) | 0;
+    return { initials, gradient: AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length] };
+}
+
+const STATUS_META = {
+    won: { icon: '🏆', label: 'Ganado', style: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
+    lost: { icon: '✕', label: 'Perdido', style: 'bg-red-50 text-red-700 border-red-200', dot: 'bg-red-500' },
 };
 
-function DealCard({ deal, onEdit, currency }) {
+function DealCard({ deal, currency, selected, onToggleSelect, anySelected }) {
+    const contactName = deal.contact?.name || deal.contact?.phone || 'Sin contacto';
+    const av = avatarFor(contactName);
+
     return (
         <div
-            draggable
-            onDragStart={(e) => {
-                e.dataTransfer.setData('text/deal-id', deal.id);
-                e.dataTransfer.effectAllowed = 'move';
-            }}
-            onClick={() => onEdit(deal)}
-            className={`group cursor-grab active:cursor-grabbing rounded-xl border bg-white p-3.5 shadow-sm hover:shadow-md hover:border-gray-300 transition-all ${
-                deal.status !== 'open' ? 'opacity-60' : 'border-gray-100'
+            draggable={!anySelected}
+            onDragStart={(e) => { e.dataTransfer.setData('text/deal-id', deal.id); e.dataTransfer.effectAllowed = 'move'; }}
+            className={`group relative rounded-xl border bg-white p-3 shadow-sm hover:shadow-md transition-all ${anySelected ? '' : 'cursor-grab active:cursor-grabbing'} ${
+                selected
+                    ? 'border-emerald-400 ring-2 ring-emerald-200 bg-emerald-50/30'
+                    : deal.status !== 'open'
+                    ? 'border-gray-100 opacity-60 hover:opacity-80'
+                    : 'border-gray-100 hover:border-gray-300'
             }`}
         >
-            <div className="flex items-start justify-between gap-2 mb-2">
-                <p className="text-sm font-semibold text-gray-900 group-hover:text-emerald-700 transition-colors line-clamp-2">{deal.title}</p>
-                {STATUS_BADGES[deal.status] && (
-                    <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ring-1 ${STATUS_BADGES[deal.status].style}`}>
-                        <span className={`w-1 h-1 rounded-full ${STATUS_BADGES[deal.status].dot}`} />
-                        {STATUS_BADGES[deal.status].label}
+            <div className={`absolute top-2 left-2 z-10 transition-opacity ${selected || anySelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={(e) => { e.stopPropagation(); onToggleSelect(deal.id); }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 shadow"
+                />
+            </div>
+            <div className="block" onClick={(e) => { if (anySelected) { e.preventDefault(); onToggleSelect(deal.id); } }}>
+                <div className="flex items-center gap-2 mb-2 pl-5">
+                    <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${av.gradient} flex items-center justify-center text-white text-[10px] font-bold shrink-0 shadow-sm`}>
+                        {av.initials}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-gray-800 truncate">{contactName}</p>
+                    </div>
+                    {STATUS_META[deal.status] && (
+                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${STATUS_META[deal.status].style}`}>
+                            <span className={`w-1 h-1 rounded-full ${STATUS_META[deal.status].dot}`} />
+                            {STATUS_META[deal.status].label}
+                        </span>
+                    )}
+                </div>
+
+                <p className="text-sm font-bold text-gray-900 group-hover:text-emerald-700 transition-colors line-clamp-2 leading-snug">
+                    {deal.title}
+                </p>
+
+                <p className="text-base font-extrabold text-gray-900 tabular-nums mt-1">
+                    {money(deal.value, deal.currency || currency)}
+                </p>
+
+                <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-50 gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                        {deal.assignee ? (
+                            <span className="text-[10px] text-gray-500 truncate flex items-center gap-1">
+                                <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                {deal.assignee.name.split(' ')[0]}
+                            </span>
+                        ) : (
+                            <span className="text-[10px] text-sky-600 font-semibold">Sin asignar</span>
+                        )}
+                    </div>
+                    {deal.expected_close_date && (
+                        <span className="text-[10px] text-gray-400 tabular-nums shrink-0">
+                            {new Date(deal.expected_close_date).toLocaleDateString('es', { day: 'numeric', month: 'short' })}
+                        </span>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function DealRow({ deal, currency, selected, onToggleSelect, anySelected }) {
+    const contactName = deal.contact?.name || deal.contact?.phone || 'Sin contacto';
+    const av = avatarFor(contactName);
+
+    return (
+        <div className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors border-l-4 ${
+            selected ? 'border-emerald-500 bg-emerald-50/40' : deal.status !== 'open' ? 'border-gray-200 bg-gray-50/40' : 'border-transparent'
+        }`}>
+            <input
+                type="checkbox"
+                checked={selected}
+                onChange={() => onToggleSelect(deal.id)}
+                className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
+            />
+            <div onClick={(e) => { if (anySelected) { e.preventDefault(); onToggleSelect(deal.id); } }} className="flex items-center gap-3 flex-1 min-w-0">
+                <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${av.gradient} flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-sm`}>
+                    {av.initials}
+                </div>
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-0.5">
+                        <p className="font-semibold text-sm text-gray-900 truncate">{contactName}</p>
+                        {deal.status !== 'open' && (
+                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${STATUS_META[deal.status]?.style}`}>
+                                {STATUS_META[deal.status]?.icon} {STATUS_META[deal.status]?.label}
+                            </span>
+                        )}
+                    </div>
+                    <p className="text-xs text-gray-600 truncate">{deal.title}</p>
+                </div>
+                {Number(deal.value) > 0 && (
+                    <span className="text-sm font-bold text-gray-900 tabular-nums shrink-0 hidden sm:inline">
+                        {money(deal.value, deal.currency || currency)}
+                    </span>
+                )}
+                <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-gray-500 shrink-0 w-24 truncate">
+                    {deal.assignee ? (
+                        <>👤 {deal.assignee.name.split(' ')[0]}</>
+                    ) : (
+                        <span className="text-sky-600 font-semibold">Sin asignar</span>
+                    )}
+                </div>
+                {deal.expected_close_date && (
+                    <span className="text-[11px] text-gray-400 tabular-nums shrink-0 hidden sm:inline">
+                        📅 {new Date(deal.expected_close_date).toLocaleDateString('es', { day: 'numeric', month: 'short' })}
                     </span>
                 )}
             </div>
+        </div>
+    );
+}
 
-            <p className="text-lg font-extrabold text-gray-900 tabular-nums mb-2">
-                {money(deal.value, deal.currency || currency)}
-            </p>
+function BulkBar({ count, onClear, pipeline, members }) {
+    const [mode, setMode] = useState(null);
 
-            {deal.contact && (
-                <div className="flex items-center gap-2 mb-2">
-                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-[#045474] to-[#1c486c] flex items-center justify-center text-white text-[10px] font-bold">
-                        {(deal.contact.name || deal.contact.phone || '?').charAt(0).toUpperCase()}
-                    </div>
-                    <span className="text-xs text-gray-600 truncate">{deal.contact.name || deal.contact.phone}</span>
+    const perform = (action, payload) => {
+        const ids = Array.from(count.ids);
+        if (action === 'delete') {
+            ids.forEach((id) => router.delete(route('deals.destroy', id), { preserveScroll: true }));
+        } else if (action === 'move') {
+            ids.forEach((id) => router.patch(route('deals.update', id), { stage_id: payload.stage_id }, { preserveScroll: true }));
+        } else if (action === 'assign') {
+            ids.forEach((id) => router.patch(route('deals.update', id), { assigned_to: payload.assigned_to }, { preserveScroll: true }));
+        }
+        onClear();
+        setMode(null);
+    };
+
+    return (
+        <div className="fixed inset-x-0 bottom-4 z-40 pointer-events-none flex justify-center">
+            <div className="pointer-events-auto bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700 px-4 py-3 flex flex-wrap items-center gap-2 max-w-3xl mx-4">
+                <div className="flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-lg bg-emerald-500 flex items-center justify-center text-xs font-bold">{count.n}</span>
+                    <span className="text-sm font-semibold">seleccionados</span>
                 </div>
-            )}
-
-            <div className="flex items-center justify-between text-[10px] text-gray-400 pt-2 border-t border-gray-50">
-                {deal.assignee ? (
-                    <span className="flex items-center gap-1">
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                        {deal.assignee.name}
-                    </span>
-                ) : <span />}
-                {deal.expected_close_date && (
-                    <span className="flex items-center gap-1">
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-                        </svg>
-                        {new Date(deal.expected_close_date).toLocaleDateString('es', { day: 'numeric', month: 'short' })}
-                    </span>
-                )}
+                <div className="h-6 w-px bg-slate-700 mx-1" />
+                {mode === null ? (
+                    <>
+                        <button onClick={() => setMode('move')} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 transition-colors">
+                            ➡ Mover a etapa
+                        </button>
+                        <button onClick={() => setMode('assign')} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 transition-colors">
+                            👤 Asignar
+                        </button>
+                        <button
+                            onClick={() => { if (confirm(`¿Eliminar ${count.n} deals?`)) perform('delete', {}); }}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-700 hover:bg-red-600 transition-colors"
+                        >
+                            🗑 Eliminar
+                        </button>
+                    </>
+                ) : mode === 'move' ? (
+                    <>
+                        <select
+                            onChange={(e) => e.target.value && perform('move', { stage_id: e.target.value })}
+                            defaultValue=""
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                        >
+                            <option value="" disabled>Elegir etapa…</option>
+                            {pipeline?.stages?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                        <button onClick={() => setMode(null)} className="text-xs text-slate-400 hover:text-white px-2">← Volver</button>
+                    </>
+                ) : mode === 'assign' ? (
+                    <>
+                        <select
+                            onChange={(e) => e.target.value && perform('assign', { assigned_to: e.target.value })}
+                            defaultValue=""
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                        >
+                            <option value="" disabled>Elegir responsable…</option>
+                            {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        </select>
+                        <button onClick={() => setMode(null)} className="text-xs text-slate-400 hover:text-white px-2">← Volver</button>
+                    </>
+                ) : null}
+                <div className="h-6 w-px bg-slate-700 mx-1" />
+                <button onClick={onClear} className="text-xs text-slate-400 hover:text-white px-2">Cancelar</button>
             </div>
         </div>
     );
@@ -90,11 +236,7 @@ function DealFormModal({ open, onClose, deal, pipeline, contacts, members, curre
         status: deal?.status ?? 'open',
     });
 
-    const close = () => {
-        reset();
-        clearErrors();
-        onClose();
-    };
+    const close = () => { reset(); clearErrors(); onClose(); };
 
     const submit = (e) => {
         e.preventDefault();
@@ -206,7 +348,7 @@ function DealFormModal({ open, onClose, deal, pipeline, contacts, members, curre
                             Eliminar deal
                         </button>
                     ) : <span />}
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 ml-auto">
                         <button type="button" onClick={close} className="px-4 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all shadow-sm">
                             Cancelar
                         </button>
@@ -311,14 +453,49 @@ function StageManagerModal({ open, onClose, pipeline }) {
 }
 
 export default function Index({ pipelines, pipeline, deals, members, contacts, currency }) {
-    const { flash } = usePage().props;
+    const { flash, auth } = usePage().props;
     const [modal, setModal] = useState(null);
     const [dragOver, setDragOver] = useState(null);
+    const [view, setView] = useState(() => localStorage.getItem('pipelines.view') || 'kanban');
+    const [query, setQuery] = useState('');
+    const [filterResponsible, setFilterResponsible] = useState('');
+    const [filterStatus, setFilterStatus] = useState('');
+    const [selectedIds, setSelectedIds] = useState(() => new Set());
     const newPipelineForm = useForm({ name: '' });
 
+    const toggleSelect = (id) => setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+    });
+    const clearSelection = () => setSelectedIds(new Set());
+    const anySelected = selectedIds.size > 0;
+
+    useEffect(() => { localStorage.setItem('pipelines.view', view); }, [view]);
+
+    const [debouncedQuery, setDebouncedQuery] = useState('');
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedQuery(query), 300);
+        return () => clearTimeout(t);
+    }, [query]);
+
+    const filteredDeals = deals.filter((d) => {
+        if (debouncedQuery) {
+            const q = debouncedQuery.toLowerCase();
+            const contactName = d.contact?.name?.toLowerCase() || '';
+            const contactPhone = d.contact?.phone || '';
+            const title = d.title?.toLowerCase() || '';
+            if (!contactName.includes(q) && !contactPhone.includes(q) && !title.includes(q)) return false;
+        }
+        if (filterResponsible === 'none') { if (d.assigned_to) return false; }
+        else if (filterResponsible && d.assigned_to !== filterResponsible) return false;
+        if (filterStatus && d.status !== filterStatus) return false;
+        return true;
+    });
+
     const openDeals = deals.filter((d) => d.status === 'open');
-    const wonDeals = deals.filter((d) => d.status === 'won');
     const totalOpen = openDeals.reduce((sum, d) => sum + Number(d.value || 0), 0);
+    const wonDeals = deals.filter((d) => d.status === 'won');
     const totalWon = wonDeals.reduce((sum, d) => sum + Number(d.value || 0), 0);
 
     const dropOnStage = (e, stageId) => {
@@ -334,32 +511,65 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
     const createPipeline = (e) => {
         e.preventDefault();
         newPipelineForm.post(route('pipelines.store'), {
-            onSuccess: () => {
-                newPipelineForm.reset();
-                setModal(null);
-            },
+            onSuccess: () => { newPipelineForm.reset(); setModal(null); },
         });
     };
 
     return (
-        <AuthenticatedLayout header={<h2 className="text-lg font-semibold text-gray-900">Pipelines</h2>}>
+        <AuthenticatedLayout>
             <Head title="Pipelines" />
 
-            <div className="mx-auto max-w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-                    <div>
-                        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Pipelines de ventas</h1>
-                        <p className="text-sm text-gray-400 mt-1">Arrastra las tarjetas entre etapas para mover deals</p>
+            <div className="mx-auto max-w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-5">
+                {/* Header */}
+                <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20 shrink-0">
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Pipelines</h1>
+                            <p className="text-sm text-gray-500 mt-1 flex flex-wrap gap-x-3 gap-y-1 items-center">
+                                <span><strong className="text-gray-800">{openDeals.length}</strong> abiertos</span>
+                                <span className="text-gray-300">·</span>
+                                <span><strong className="text-gray-800">{money(totalOpen, currency)}</strong> en juego</span>
+                                {wonDeals.length > 0 && (
+                                    <>
+                                        <span className="text-gray-300">·</span>
+                                        <span><strong className="text-gray-800">{wonDeals.length}</strong> ganados</span>
+                                        <span className="text-gray-300">·</span>
+                                        <span><strong className="text-emerald-600">{money(totalWon, currency)}</strong> cerrados</span>
+                                    </>
+                                )}
+                            </p>
+                        </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
+                        <div className="inline-flex bg-white border border-gray-200 rounded-xl shadow-sm p-0.5">
+                            <button
+                                onClick={() => setView('kanban')}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all inline-flex items-center gap-1 ${view === 'kanban' ? 'bg-gradient-to-r from-[#045474] to-[#1c486c] text-white shadow' : 'text-gray-600'}`}
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" /></svg>
+                                Kanban
+                            </button>
+                            <button
+                                onClick={() => setView('list')}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all inline-flex items-center gap-1 ${view === 'list' ? 'bg-gradient-to-r from-[#045474] to-[#1c486c] text-white shadow' : 'text-gray-600'}`}
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 17.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" /></svg>
+                                Lista
+                            </button>
+                        </div>
                         <select
                             value={pipeline?.id ?? ''}
                             onChange={(e) => router.get(route('pipelines.index'), { pipeline: e.target.value })}
-                            className="px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm font-medium bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all shadow-sm"
+                            className="px-3 py-2 border border-gray-200 rounded-xl text-sm font-medium bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 shadow-sm"
                         >
                             {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
-                        <button onClick={() => setModal('new-pipeline')} className="px-3.5 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm flex items-center gap-1.5">
+                        <button onClick={() => setModal('new-pipeline')} className="px-3 py-2 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 shadow-sm inline-flex items-center gap-1.5">
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                             </svg>
@@ -367,22 +577,56 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                         </button>
                         {pipeline && (
                             <>
-                                <button onClick={() => setModal('stages')} className="px-3.5 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm flex items-center gap-1.5">
+                                <button onClick={() => setModal('stages')} className="px-3 py-2 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 shadow-sm inline-flex items-center gap-1.5">
                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
                                     </svg>
                                     Etapas
                                 </button>
-                                <button onClick={() => setModal('new-deal')} className="px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl hover:from-emerald-500 hover:to-teal-500 transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-1.5">
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                    </svg>
-                                    Nuevo deal
+                                <button onClick={() => setModal('new-deal')} className="px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl hover:from-emerald-500 hover:to-teal-500 shadow-lg shadow-emerald-500/20 inline-flex items-center gap-1.5">
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                                    Nuevo
                                 </button>
                             </>
                         )}
                     </div>
                 </div>
+
+                {/* Barra de filtros */}
+                {pipeline && (
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 flex flex-wrap gap-2 items-center">
+                        <div className="relative flex-1 min-w-[200px] max-w-xs">
+                            <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                            </svg>
+                            <input
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                placeholder="Buscar por nombre, título, teléfono…"
+                                className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:bg-white"
+                            />
+                        </div>
+                        <select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-emerald-500/30">
+                            <option value="">Todos los responsables</option>
+                            <option value="none">Sin asignar</option>
+                            {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        </select>
+                        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-emerald-500/30">
+                            <option value="">Todos los estados</option>
+                            <option value="open">Abiertos</option>
+                            <option value="won">Ganados</option>
+                            <option value="lost">Perdidos</option>
+                        </select>
+                        {(debouncedQuery || filterResponsible || filterStatus) && (
+                            <button
+                                onClick={() => { setQuery(''); setDebouncedQuery(''); setFilterResponsible(''); setFilterStatus(''); }}
+                                className="text-xs font-semibold text-gray-500 hover:text-gray-700 px-2 underline"
+                            >
+                                Limpiar
+                            </button>
+                        )}
+                    </div>
+                )}
 
                 {flash?.success && (
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 flex items-center gap-3 shadow-sm">
@@ -395,47 +639,6 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                     </div>
                 )}
 
-                {pipeline && (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-5">
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 mb-3">
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" />
-                                </svg>
-                            </div>
-                            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Deals abiertos</p>
-                            <p className="text-2xl sm:text-3xl font-extrabold text-gray-900 mt-1 tabular-nums">{openDeals.length}</p>
-                        </div>
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center text-white shadow-lg shadow-purple-500/20 mb-3">
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4" />
-                                </svg>
-                            </div>
-                            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Valor en juego</p>
-                            <p className="text-2xl sm:text-3xl font-extrabold text-gray-900 mt-1 tabular-nums">{money(totalOpen, currency)}</p>
-                        </div>
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20 mb-3">
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                            </div>
-                            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Ganados</p>
-                            <p className="text-2xl sm:text-3xl font-extrabold text-gray-900 mt-1 tabular-nums">{wonDeals.length}</p>
-                        </div>
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center text-white shadow-lg shadow-rose-500/20 mb-3">
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
-                                </svg>
-                            </div>
-                            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Ingresos ganados</p>
-                            <p className="text-2xl sm:text-3xl font-extrabold text-gray-900 mt-1 tabular-nums">{money(totalWon, currency)}</p>
-                        </div>
-                    </div>
-                )}
-
                 {!pipeline ? (
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-16 text-center">
                         <div className="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center mb-4">
@@ -443,16 +646,16 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22" />
                             </svg>
                         </div>
-                        <p className="text-sm font-medium text-gray-600">No tienes pipelines todavía</p>
-                        <p className="text-xs text-gray-400 mt-1">Crea el primero — se siembra con 5 etapas típicas de venta</p>
+                        <p className="text-sm font-semibold text-gray-900">No tienes pipelines todavía</p>
+                        <p className="text-xs text-gray-500 mt-1">Crea el primero — se siembra con 5 etapas típicas de venta</p>
                         <button onClick={() => setModal('new-pipeline')} className="mt-4 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl hover:from-emerald-500 hover:to-teal-500 transition-all shadow-lg shadow-emerald-500/20">
                             Crear pipeline
                         </button>
                     </div>
-                ) : (
+                ) : view === 'kanban' ? (
                     <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
                         {pipeline.stages.map((stage) => {
-                            const stageDeals = deals.filter((d) => d.stage_id === stage.id);
+                            const stageDeals = filteredDeals.filter((d) => d.stage_id === stage.id);
                             const stageTotal = stageDeals.filter((d) => d.status === 'open').reduce((sum, d) => sum + Number(d.value || 0), 0);
 
                             return (
@@ -461,9 +664,7 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                                     onDragOver={(e) => { e.preventDefault(); setDragOver(stage.id); }}
                                     onDragLeave={() => setDragOver(null)}
                                     onDrop={(e) => dropOnStage(e, stage.id)}
-                                    className={`flex w-80 shrink-0 flex-col rounded-2xl bg-gray-50 border-2 transition-all ${
-                                        dragOver === stage.id ? 'border-emerald-400 bg-emerald-50/50 scale-[1.02]' : 'border-transparent'
-                                    }`}
+                                    className={`flex w-72 shrink-0 flex-col rounded-2xl border-2 transition-all bg-gray-50 ${dragOver === stage.id ? 'border-emerald-400 bg-emerald-50/50 scale-[1.02]' : 'border-transparent'}`}
                                 >
                                     <div className="rounded-t-2xl px-4 py-3 text-white" style={{ background: `linear-gradient(135deg, ${stage.color} 0%, ${stage.color}dd 100%)` }}>
                                         <div className="flex items-center justify-between">
@@ -472,8 +673,8 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                                         </div>
                                         <p className="text-xs font-medium text-white/80 mt-1 tabular-nums">{money(stageTotal, currency)}</p>
                                     </div>
-                                    <div className="flex flex-1 flex-col gap-2 p-2.5 min-h-[200px]">
-                                        {stageDeals.map((deal) => <DealCard key={deal.id} deal={deal} onEdit={setModal} currency={currency} />)}
+                                    <div className="flex flex-1 flex-col gap-2 p-2.5 min-h-[180px]">
+                                        {stageDeals.map((deal) => <DealCard key={deal.id} deal={deal} currency={currency} selected={selectedIds.has(deal.id)} onToggleSelect={toggleSelect} anySelected={anySelected} />)}
                                         {stageDeals.length === 0 && (
                                             <p className="py-8 text-center text-xs text-gray-400 font-medium">Arrastra deals aquí</p>
                                         )}
@@ -481,6 +682,16 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                                 </div>
                             );
                         })}
+                    </div>
+                ) : (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        {filteredDeals.length === 0 ? (
+                            <div className="p-14 text-center text-sm text-gray-400">Sin deals con estos filtros</div>
+                        ) : (
+                            <ul className="divide-y divide-gray-50">
+                                {filteredDeals.map((d) => <li key={d.id}><DealRow deal={d} currency={currency} selected={selectedIds.has(d.id)} onToggleSelect={toggleSelect} anySelected={anySelected} /></li>)}
+                            </ul>
+                        )}
                     </div>
                 )}
 
@@ -549,6 +760,15 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                 members={members}
                 currency={currency}
             />
+
+            {anySelected && (
+                <BulkBar
+                    count={{ n: selectedIds.size, ids: selectedIds }}
+                    onClear={clearSelection}
+                    pipeline={pipeline}
+                    members={members}
+                />
+            )}
         </AuthenticatedLayout>
     );
 }
