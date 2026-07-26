@@ -201,34 +201,32 @@ function Chart({ data }) {
                             const isToday = new Date(d.day + 'T00:00:00').toDateString() === new Date().toDateString();
                             return (
                                 <div key={d.day} className="flex-1 flex flex-col items-center justify-end h-full group relative">
-                                    <div className="w-full flex items-end justify-center gap-1.5 relative" style={{ height: hasData ? '100%' : '12%' }}>
-                                        <div className="relative w-full max-w-[32px] flex flex-col justify-end" style={{ height: '100%' }}>
-                                            {d.inbound > 0 && (
-                                                <div className="group/bar w-full">
-                                                    <div
-                                                        className="w-full rounded-t-md transition-all duration-500 ease-out group-hover/bar:brightness-110"
-                                                        style={{
-                                                            height: `${inboundPct}%`,
-                                                            minHeight: d.inbound > 0 ? '6px' : '0',
-                                                            background: 'linear-gradient(180deg, #34d399 0%, #059669 100%)',
-                                                        }}
-                                                    />
-                                                </div>
-                                            )}
-                                            {d.outbound > 0 && (
-                                                <div className="group/bar w-full">
-                                                    <div
-                                                        className="w-full rounded-t-md transition-all duration-500 ease-out group-hover/bar:brightness-110"
-                                                        style={{
-                                                            height: `${outboundPct}%`,
-                                                            minHeight: d.outbound > 0 ? '6px' : '0',
-                                                            background: 'linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%)',
-                                                        }}
-                                                    />
-                                                </div>
-                                            )}
-                                            {!hasData && <div className="w-full h-full rounded-t-md bg-gray-100" />}
-                                        </div>
+                                    <div className="w-full flex items-end justify-center gap-1.5 relative h-full">
+                                        {d.inbound > 0 && (
+                                            <div className="relative w-full max-w-[32px] group/bar h-full flex flex-col justify-end">
+                                                <div
+                                                    className="w-full rounded-t-md transition-all duration-500 ease-out group-hover/bar:brightness-110"
+                                                    style={{
+                                                        height: `${inboundPct}%`,
+                                                        minHeight: d.inbound > 0 ? '6px' : '0',
+                                                        background: 'linear-gradient(180deg, #34d399 0%, #059669 100%)',
+                                                    }}
+                                                />
+                                            </div>
+                                        )}
+                                        {d.outbound > 0 && (
+                                            <div className="relative w-full max-w-[32px] group/bar h-full flex flex-col justify-end">
+                                                <div
+                                                    className="w-full rounded-t-md transition-all duration-500 ease-out group-hover/bar:brightness-110"
+                                                    style={{
+                                                        height: `${outboundPct}%`,
+                                                        minHeight: d.outbound > 0 ? '6px' : '0',
+                                                        background: 'linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%)',
+                                                    }}
+                                                />
+                                            </div>
+                                        )}
+                                        {!hasData && <div className="w-full max-w-[32px] h-full rounded-t-md bg-gray-100" />}
                                     </div>
                                     <span className={`text-[11px] font-semibold mt-3 w-full text-center ${isToday ? 'text-emerald-600' : 'text-gray-400'}`}>
                                         {isToday ? 'Hoy' : days[new Date(d.day + 'T00:00:00').getDay()]}
