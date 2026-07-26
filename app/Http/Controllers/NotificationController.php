@@ -14,7 +14,9 @@ class NotificationController extends Controller
     public function index(Request $request): Response
     {
         $notifications = Notification::where('user_id', $request->user()->id)
-            ->with(['contact:id,name,phone', 'actor:id,name'])
+            // El estado de la conversación viaja para poder pintarlo en la
+            // lista sin tener que abrir el aviso.
+            ->with(['contact:id,name,phone', 'actor:id,name', 'conversation:id,status'])
             ->orderByDesc('created_at')
             ->paginate(30);
 

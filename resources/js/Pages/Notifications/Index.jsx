@@ -7,6 +7,110 @@ const TYPE_META = {
     ai_fallback: { icon: '🤖', gradient: 'from-amber-500 to-orange-600' },
 };
 
+/** Estado de la conversación: se lee antes que el texto del aviso. */
+const CONVERSATION_STATUS = {
+    open: { label: 'Abierta', icon: '⏳', className: 'bg-sky-50 text-sky-700 ring-sky-200' },
+    pending: { label: 'Pendiente', icon: '⏸', className: 'bg-amber-50 text-amber-700 ring-amber-200' },
+    closed: { label: 'Cerrada', icon: '✓', className: 'bg-gray-100 text-gray-600 ring-gray-200' },
+};
+
+/**
+ * Avatar del contacto con color derivado del nombre. El mismo contacto
+ * siempre sale del mismo color, así se lo reconoce recorriendo la lista sin
+ * tener que leer.
+ */
+const AVATAR_COLORS = [
+    'from-emerald-500 to-teal-600',
+    'from-blue-500 to-indigo-600',
+    'from-purple-500 to-pink-600',
+    'from-amber-500 to-orange-600',
+    'from-rose-500 to-red-600',
+    'from-cyan-500 to-sky-600',
+];
+
+function ContactAvatar({ name }) {
+    const label = (name || '?').trim();
+    const initials = label.split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+    let hash = 0;
+    for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) | 0;
+    const gradient = AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+
+    return (
+        <span className={`w-8 h-8 shrink-0 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center text-white text-[11px] font-bold shadow-sm`}>
+            {initials}
+        </span>
+    );
+}
+
+/**
+ * Una fila en tres columnas: qué pasó / de quién es / cuándo. Reemplaza a la
+ * grilla de tarjetas, que obligaba a leer en zigzag y descuadraba las alturas.
+ */
+function NotificationRow({ n }) {
+    const meta = TYPE_META[n.type] ?? { icon: '🔔', gradient: 'from-[#045474] to-[#1c486c]' };
+    const status = n.conversation ? CONVERSATION_STATUS[n.conversation.status] : null;
+    const unread = !n.read_at;
+    const contactName = n.contact?.name || n.contact?.phone;
+
+    return (
+        <li className={`group relative grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_18rem_9rem] gap-x-6 gap-y-3 px-5 py-4 transition-colors hover:bg-gray-50/80 ${unread ? 'bg-emerald-50/30' : ''}`}>
+            {unread && <span className="absolute left-0 inset-y-0 w-1 bg-emerald-500" />}
+
+            <div className="flex items-start gap-4 min-w-0">
+                <div className={`w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br ${meta.gradient} flex items-center justify-center text-white text-lg shadow-sm`}>
+                    {meta.icon}
+                </div>
+                <div className="min-w-0">
+                    <p className={`text-sm ${unread ? 'font-bold text-gray-900' : 'font-semibold text-gray-600'}`}>{n.title}</p>
+                    {n.actor && (
+                        <span className="inline-flex items-center gap-1 mt-1 text-[11px] text-gray-400">
+                            <span className="w-4 h-4 rounded-full bg-gradient-to-br from-[#045474] to-[#1c486c] text-white text-[8px] font-bold flex items-center justify-center">
+                                {n.actor.name.charAt(0).toUpperCase()}
+                            </span>
+                            {n.actor.name}
+                        </span>
+                    )}
+                    {n.body && <p className="mt-2 text-sm text-gray-600 leading-relaxed whitespace-pre-line">{n.body}</p>}
+                </div>
+            </div>
+
+            <div className="min-w-0 lg:pl-0 pl-14">
+                {contactName ? (
+                    <Link href={route('inbox')} className="flex items-start gap-2.5 group/c">
+                        <ContactAvatar name={contactName} />
+                        <div className="min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 truncate group-hover/c:text-emerald-700 transition-colors">
+                                {contactName}
+                            </p>
+                            {status && (
+                                <span className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-lg text-[11px] font-bold ring-1 ${status.className}`}>
+                                    {status.icon} {status.label}
+                                </span>
+                            )}
+                            {n.service_window && (
+                                <div className="mt-1">
+                                    <ServiceWindowBadge window={n.service_window} showOrigin />
+                                </div>
+                            )}
+                        </div>
+                    </Link>
+                ) : (
+                    <span className="text-xs text-gray-300 italic">Sin contacto asociado</span>
+                )}
+            </div>
+
+            <div className="flex lg:flex-col lg:items-end items-center gap-2 lg:pl-0 pl-14">
+                <span className="text-xs text-gray-400 tabular-nums whitespace-nowrap">{timeAgo(n.created_at)}</span>
+                {n.conversation_id && (
+                    <Link href={route('inbox')} className="text-xs font-semibold text-emerald-600 hover:text-emerald-800 whitespace-nowrap">
+                        Ir a la conversación →
+                    </Link>
+                )}
+            </div>
+        </li>
+    );
+}
+
 function timeAgo(iso) {
     const diff = (Date.now() - new Date(iso).getTime()) / 1000;
     if (diff < 60) return 'hace un momento';
@@ -50,7 +154,10 @@ export default function Index({ notifications }) {
         <AuthenticatedLayout>
             <Head title="Notificaciones" />
 
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
+            {/* Ancho completo: cada fila reparte el espacio en columnas
+                (qué pasó / de quién es / cuándo), así que aprovecha el ancho
+                en vez de estirar una sola línea de texto. */}
+            <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
@@ -87,63 +194,9 @@ export default function Index({ notifications }) {
                                     <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
                                         {GROUP_LABELS[key]}
                                     </h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                                        {items.map((n) => {
-                                            const meta = TYPE_META[n.type] ?? { icon: '🔔', gradient: 'from-[#045474] to-[#1c486c]' };
-                                            return (
-                                                <div
-                                                    key={n.id}
-                                                    className={`group rounded-2xl border transition-all hover:shadow-md ${
-                                                        n.read_at
-                                                            ? 'bg-white border-gray-100 hover:border-gray-200'
-                                                            : 'bg-gradient-to-r from-emerald-50/80 to-teal-50/80 border-emerald-200 hover:border-emerald-300'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-start gap-4 p-4">
-                                                        <div className={`w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br ${meta.gradient} flex items-center justify-center text-white text-lg shadow-md`}>
-                                                            {meta.icon}
-                                                        </div>
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="flex items-start justify-between gap-2">
-                                                                <p className="font-semibold text-gray-900 text-sm">{n.title}</p>
-                                                                <span className="text-xs text-gray-400 tabular-nums whitespace-nowrap shrink-0">{timeAgo(n.created_at)}</span>
-                                                            </div>
-                                                            {/* Cuánto queda para contestarle gratis: decide si
-                                                                se atiende ahora o puede esperar. */}
-                                                            {n.service_window && (
-                                                                <div className="mt-1.5">
-                                                                    <ServiceWindowBadge window={n.service_window} showOrigin />
-                                                                </div>
-                                                            )}
-                                                            {n.body && (
-                                                                <p className="mt-1 text-sm text-gray-600 leading-relaxed">{n.body}</p>
-                                                            )}
-                                                            <div className="flex items-center justify-between mt-2">
-                                                                <div className="flex items-center gap-2 text-xs text-gray-400">
-                                                                    {n.actor && (
-                                                                        <span className="flex items-center gap-1">
-                                                                            <span className="w-4 h-4 rounded-full bg-gradient-to-br from-[#045474] to-[#1c486c] text-white text-[8px] font-bold flex items-center justify-center">
-                                                                                {n.actor.name.charAt(0).toUpperCase()}
-                                                                            </span>
-                                                                            {n.actor.name}
-                                                                        </span>
-                                                                    )}
-                                                                    {n.conversation_id && (
-                                                                        <Link href={route('inbox')} className="text-emerald-600 font-medium hover:text-emerald-700">
-                                                                            Ir a la conversación →
-                                                                        </Link>
-                                                                    )}
-                                                                </div>
-                                                                {!n.read_at && (
-                                                                    <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-400/50 shrink-0" />
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
+                                    <ul className="bg-white rounded-2xl shadow-sm border border-gray-100 divide-y divide-gray-50 overflow-hidden">
+                                        {items.map((n) => <NotificationRow key={n.id} n={n} />)}
+                                    </ul>
                                 </div>
                             ),
                     )}
