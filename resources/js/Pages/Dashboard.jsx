@@ -141,75 +141,106 @@ const activities = [
 function Chart({ data }) {
     const max = Math.max(1, ...data.map((d) => d.inbound + d.outbound));
     const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
     const totalInbound = data.reduce((s, d) => s + d.inbound, 0);
     const totalOutbound = data.reduce((s, d) => s + d.outbound, 0);
+    const weekLabel = data.length > 0
+        ? `${new Date(data[0].day + 'T00:00:00').getDate()} ${months[new Date(data[0].day + 'T00:00:00').getMonth()]} – ${new Date(data[data.length - 1].day + 'T00:00:00').getDate()} ${months[new Date(data[data.length - 1].day + 'T00:00:00').getMonth()]}`
+        : '';
+    const gridLines = [25, 50, 75];
 
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <div>
-                    <h4 className="text-sm font-bold text-gray-900">Mensajes — últimos 7 días</h4>
-                    <p className="text-xs text-gray-400 mt-0.5">Entrantes vs salientes</p>
+                <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-sm shrink-0">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h4 className="text-sm font-bold text-gray-900">Mensajes — últimos 7 días</h4>
+                        <p className="text-xs text-gray-400 mt-0.5">{weekLabel || 'Entrantes vs salientes'}</p>
+                    </div>
                 </div>
                 <div className="flex flex-wrap gap-3 text-xs font-medium text-gray-500">
-                    <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50">
-                        <span className="w-2 h-2 rounded-sm bg-emerald-500" />
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200/50">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-200" />
                         {totalInbound} Entrantes
                     </span>
-                    <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50">
-                        <span className="w-2 h-2 rounded-sm bg-amber-500" />
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200/50">
+                        <span className="w-2 h-2 rounded-full bg-amber-500 ring-2 ring-amber-200" />
                         {totalOutbound} Salientes
                     </span>
                 </div>
             </div>
             {data.length === 0 ? (
-                <div className="h-56 flex items-center justify-center text-sm text-gray-400">Sin datos esta semana</div>
+                <div className="h-56 flex flex-col items-center justify-center gap-3 text-sm text-gray-400">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
+                        <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+                        </svg>
+                    </div>
+                    <div className="text-center">
+                        <p className="text-sm font-semibold text-gray-900">Sin datos esta semana</p>
+                        <p className="text-xs text-gray-500 mt-0.5">Los mensajes aparecerán aquí cuando tengas actividad</p>
+                    </div>
+                </div>
             ) : (
                 <div className="relative h-56">
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none">
+                        {gridLines.map((pct) => (
+                            <line key={pct} x1="0" y1={`${(1 - pct / 100) * 100}%`} x2="100%" y2={`${(1 - pct / 100) * 100}%`} stroke="#f1f5f9" strokeWidth="1" />
+                        ))}
+                    </svg>
                     <div className="absolute inset-0 flex items-end gap-2">
                         {data.map((d, i) => {
                             const inboundPct = (d.inbound / max) * 100;
                             const outboundPct = (d.outbound / max) * 100;
                             const hasData = d.inbound > 0 || d.outbound > 0;
                             const barH = Math.max(inboundPct || 0, outboundPct || 0);
+                            const isToday = new Date(d.day + 'T00:00:00').toDateString() === new Date().toDateString();
                             return (
-                                <div key={d.day} className="flex-1 flex flex-col items-center justify-end h-full group">
-                                    <div className="w-full flex items-end justify-center gap-0.5 relative" style={{ height: barH > 0 ? `${barH}%` : '8%' }}>
+                                <div key={d.day} className="flex-1 flex flex-col items-center justify-end h-full group relative">
+                                    <div className="w-full flex items-end justify-center gap-1 relative" style={{ height: barH > 0 ? `${barH}%` : '10%' }}>
                                         {d.inbound > 0 && (
-                                            <div className="relative w-full max-w-[10px] group/bar">
+                                            <div className="relative w-full max-w-[14px] group/bar">
                                                 <div
-                                                    className="w-full rounded-t-[3px] transition-all duration-500 group-hover/bar:brightness-110 group-hover/bar:scale-y-105 origin-bottom"
+                                                    className="w-full rounded-t-sm transition-all duration-500 ease-out group-hover/bar:brightness-110 group-hover/bar:scale-y-105 origin-bottom"
                                                     style={{
                                                         height: `${inboundPct}%`,
-                                                        minHeight: d.inbound > 0 ? '3px' : '0',
+                                                        minHeight: d.inbound > 0 ? '4px' : '0',
                                                         background: 'linear-gradient(180deg, #34d399 0%, #059669 100%)',
                                                     }}
                                                 />
-                                                <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-bold text-emerald-600 opacity-0 group-hover/bar:opacity-100 transition-opacity whitespace-nowrap">
-                                                    {d.inbound}
-                                                </span>
                                             </div>
                                         )}
                                         {d.outbound > 0 && (
-                                            <div className="relative w-full max-w-[10px] group/bar">
+                                            <div className="relative w-full max-w-[14px] group/bar">
                                                 <div
-                                                    className="w-full rounded-t-[3px] transition-all duration-500 group-hover/bar:brightness-110 group-hover/bar:scale-y-105 origin-bottom"
+                                                    className="w-full rounded-t-sm transition-all duration-500 ease-out group-hover/bar:brightness-110 group-hover/bar:scale-y-105 origin-bottom"
                                                     style={{
                                                         height: `${outboundPct}%`,
-                                                        minHeight: d.outbound > 0 ? '3px' : '0',
+                                                        minHeight: d.outbound > 0 ? '4px' : '0',
                                                         background: 'linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%)',
                                                     }}
                                                 />
-                                                <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-bold text-amber-600 opacity-0 group-hover/bar:opacity-100 transition-opacity whitespace-nowrap">
-                                                    {d.outbound}
-                                                </span>
                                             </div>
                                         )}
-                                        {!hasData && <div className="w-full max-w-[10px] h-full rounded-t-[3px] bg-gray-100" />}
+                                        {!hasData && <div className="w-full max-w-[14px] h-full rounded-t-sm bg-gray-100" />}
                                     </div>
-                                    <span className="text-[10px] font-semibold text-gray-400 mt-2 w-full text-center">
-                                        {days[new Date(d.day + 'T00:00:00').getDay()]}
+                                    <span className={`text-[10px] font-semibold mt-2 w-full text-center ${isToday ? 'text-emerald-600' : 'text-gray-400'}`}>
+                                        {isToday ? 'Hoy' : days[new Date(d.day + 'T00:00:00').getDay()]}
                                     </span>
+                                    {hasData && (
+                                        <div className="absolute -top-1 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none z-10">
+                                            <div className="bg-gray-900 text-white text-[10px] font-bold rounded-lg px-2.5 py-1.5 shadow-xl whitespace-nowrap flex gap-3">
+                                                <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />{d.inbound}</span>
+                                                <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" />{d.outbound}</span>
+                                            </div>
+                                            <div className="w-2 h-2 bg-gray-900 rotate-45 mx-auto -mt-1" />
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
@@ -220,17 +251,42 @@ function Chart({ data }) {
     );
 }
 
+const AVATAR_COLORS = ['from-emerald-500 to-teal-600', 'from-blue-500 to-indigo-600', 'from-purple-500 to-pink-600', 'from-amber-500 to-orange-600', 'from-rose-500 to-red-600', 'from-cyan-500 to-sky-600'];
+function avatarFor(name) {
+    const label = (name || '?').trim();
+    const initials = label.split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+    let hash = 0;
+    for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) | 0;
+    return { initials, gradient: AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length] };
+}
+
+function timeAgo(dateStr) {
+    if (!dateStr) return '';
+    const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+    if (diff < 60) return 'ahora';
+    if (diff < 3600) return `hace ${Math.floor(diff / 60)}m`;
+    if (diff < 86400) return `hace ${Math.floor(diff / 3600)}h`;
+    const d = new Date(dateStr);
+    const days = Math.floor(diff / 86400);
+    if (days === 1) return 'ayer';
+    if (days < 7) return `hace ${days}d`;
+    return d.toLocaleDateString('es', { day: 'numeric', month: 'short' });
+}
+
 function ConversationRow({ conv }) {
+    const contactName = conv.contact?.name || conv.contact?.phone || 'Desconocido';
+    const av = avatarFor(contactName);
+
     return (
-        <tr className="group hover:bg-gray-50 transition-colors">
-            <td className="px-5 py-4">
+        <tr className="group transition-all duration-150">
+            <td className="px-4 sm:px-6 py-3.5">
                 <Link href={route('inbox')} className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#045474] to-[#1c486c] flex items-center justify-center text-white text-xs font-bold shadow-sm">
-                        {(conv.contact?.name || conv.contact?.phone || '?').charAt(0).toUpperCase()}
+                    <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${av.gradient} flex items-center justify-center text-white text-xs font-bold shadow-sm shrink-0`}>
+                        {av.initials}
                     </div>
                     <div>
                         <span className="font-semibold text-gray-900 text-sm">
-                            {conv.contact?.name || conv.contact?.phone || 'Desconocido'}
+                            {contactName}
                         </span>
                         {conv.contact?.name && conv.contact?.phone && (
                             <p className="text-[11px] text-gray-400 mt-0.5">{conv.contact.phone}</p>
@@ -238,31 +294,28 @@ function ConversationRow({ conv }) {
                     </div>
                 </Link>
             </td>
-            <td className="px-5 py-4 text-sm text-gray-500 max-w-[220px] truncate">
-                {conv.last_message_text || <span className="italic text-gray-300">Sin mensajes</span>}
+            <td className="px-4 sm:px-6 py-3.5 max-w-[200px]">
+                <p className="text-sm text-gray-500 truncate group-hover:text-gray-700 transition-colors">
+                    {conv.last_message_text || <span className="italic text-gray-300">Sin mensajes</span>}
+                </p>
             </td>
-            <td className="px-5 py-4 text-right">
+            <td className="px-4 sm:px-6 py-3.5 text-right">
                 {conv.unread_count > 0 ? (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ring-2 ring-emerald-200 animate-pulse" />
                         {conv.unread_count} sin leer
                     </span>
                 ) : (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500 ring-1 ring-gray-200">
-                        <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium bg-gray-50 text-gray-500 border border-gray-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
                         Leído
                     </span>
                 )}
             </td>
-            <td className="px-5 py-4 text-right text-xs text-gray-400 whitespace-nowrap font-medium">
-                {conv.last_message_at
-                    ? new Date(conv.last_message_at).toLocaleDateString('es', {
-                          day: 'numeric',
-                          month: 'short',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                      })
-                    : '—'}
+            <td className="px-4 sm:px-6 py-3.5 text-right">
+                <span className="text-xs text-gray-400 whitespace-nowrap font-medium tabular-nums">
+                    {timeAgo(conv.last_message_at)}
+                </span>
             </td>
         </tr>
     );
@@ -340,9 +393,16 @@ export default function Dashboard({ stats, chart, recentConversations, currency 
                     </div>
 
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
-                        <div className="mb-5">
-                            <h4 className="text-sm font-bold text-gray-900">Actividad</h4>
-                            <p className="text-xs text-gray-400 mt-0.5">Resumen del sistema</p>
+                        <div className="flex items-center gap-3 mb-5">
+                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center text-white shadow-sm shrink-0">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h4 className="text-sm font-bold text-gray-900">Actividad</h4>
+                                <p className="text-xs text-gray-400 mt-0.5">Resumen del sistema</p>
+                            </div>
                         </div>
                         <div className="space-y-2">
                             {activities.map((a) => {
@@ -394,39 +454,38 @@ export default function Dashboard({ stats, chart, recentConversations, currency 
                             </Link>
                         </div>
                     </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="bg-gray-50/80">
-                                    <th className="text-left px-5 sm:px-6 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Contacto</th>
-                                    <th className="text-left px-5 sm:px-6 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Último mensaje</th>
-                                    <th className="text-right px-5 sm:px-6 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider w-32">Estado</th>
-                                    <th className="text-right px-5 sm:px-6 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider w-28">Fecha</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                                {recentConversations.map((conv) => (
-                                    <ConversationRow key={conv.id} conv={conv} />
-                                ))}
-                                {recentConversations.length === 0 && (
-                                    <tr>
-                                        <td colSpan={4} className="px-6 py-16 text-center">
-                                            <div className="flex flex-col items-center gap-3">
-                                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
-                                                    <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
-                                                    </svg>
-                                                </div>
-                                                <div>
-                                                    <p className="text-sm font-semibold text-gray-900">Sin conversaciones</p>
-                                                    <p className="text-xs text-gray-500 mt-0.5">Las conversaciones aparecerán aquí cuando tengas actividad</p>
-                                                </div>
-                                            </div>
-                                        </td>
+                    <div className="divide-y divide-gray-50">
+                        {recentConversations.length === 0 ? (
+                            <div className="px-6 py-16 text-center">
+                                <div className="flex flex-col items-center gap-3">
+                                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
+                                        <svg className="w-7 h-7 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-semibold text-gray-900">Sin conversaciones</p>
+                                        <p className="text-xs text-gray-500 mt-0.5">Las conversaciones aparecerán aquí cuando tengas actividad</p>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b border-gray-100">
+                                        <th className="text-left px-4 sm:px-6 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Contacto</th>
+                                        <th className="text-left px-4 sm:px-6 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Último mensaje</th>
+                                        <th className="text-right px-4 sm:px-6 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Estado</th>
+                                        <th className="text-right px-4 sm:px-6 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Fecha</th>
                                     </tr>
-                                )}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody className="divide-y divide-gray-50">
+                                    {recentConversations.map((conv) => (
+                                        <ConversationRow key={conv.id} conv={conv} />
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
                     </div>
                 </div>
             </div>
