@@ -15,7 +15,7 @@ return new class extends Migration
             $table->uuid('id')->primary();
             $table->string('name');
             $table->foreignUuid('owner_user_id')->constrained('users')->restrictOnDelete();
-            $table->string('default_currency', 3)->default('USD');
+            $table->string('default_currency', 3)->default('BOB');
             $table->timestamps();
         });
 

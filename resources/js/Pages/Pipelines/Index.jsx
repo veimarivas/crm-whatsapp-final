@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 function money(value, currency) {
     return new Intl.NumberFormat('es', {
         style: 'currency',
-        currency: currency || 'USD',
+        currency: currency || 'BOB',
         maximumFractionDigits: 0,
     }).format(value || 0);
 }
@@ -182,7 +182,7 @@ function BulkBar({ count, onClear, pipeline, members }) {
                             👤 Asignar
                         </button>
                         <button
-                            onClick={() => { if (confirm(`¿Eliminar ${count.n} deals?`)) perform('delete', {}); }}
+                            onClick={() => { if (confirm(`¿Eliminar ${count.n} oportunidades?`)) perform('delete', {}); }}
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-700 hover:bg-red-600 transition-colors"
                         >
                             🗑 Eliminar
@@ -230,7 +230,7 @@ function DealFormModal({ open, onClose, deal, pipeline, contacts, members, curre
         assigned_to: deal?.assigned_to ?? '',
         title: deal?.title ?? '',
         value: deal?.value ?? '',
-        currency: deal?.currency ?? currency ?? 'USD',
+        currency: deal?.currency ?? currency ?? 'BOB',
         notes: deal?.notes ?? '',
         expected_close_date: deal?.expected_close_date?.slice(0, 10) ?? '',
         status: deal?.status ?? 'open',
@@ -253,7 +253,7 @@ function DealFormModal({ open, onClose, deal, pipeline, contacts, members, curre
     };
 
     const remove = () => {
-        if (confirm('¿Eliminar este deal?')) {
+        if (confirm('¿Eliminar esta oportunidad?')) {
             router.delete(route('deals.destroy', deal.id), { preserveScroll: true, onSuccess: close });
         }
     };
@@ -565,7 +565,7 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                         <select
                             value={pipeline?.id ?? ''}
                             onChange={(e) => router.get(route('pipelines.index'), { pipeline: e.target.value })}
-                            className="px-3 py-2 border border-gray-200 rounded-xl text-sm font-medium bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 shadow-sm"
+                            className="px-3 py-2 border border-gray-200 rounded-xl text-sm font-medium bg-gray-50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 shadow-sm transition-all cursor-pointer"
                         >
                             {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
@@ -573,7 +573,7 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                             </svg>
-                            Pipeline
+                            Nuevo pipeline
                         </button>
                         {pipeline && (
                             <>
@@ -603,15 +603,15 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                                 value={query}
                                 onChange={(e) => setQuery(e.target.value)}
                                 placeholder="Buscar por nombre, título, teléfono…"
-                                className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:bg-white"
+                                className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 focus:bg-white transition-all"
                             />
                         </div>
-                        <select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-emerald-500/30">
+                        <select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-gray-50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all cursor-pointer">
                             <option value="">Todos los responsables</option>
                             <option value="none">Sin asignar</option>
                             {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                         </select>
-                        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-emerald-500/30">
+                        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-gray-50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all cursor-pointer">
                             <option value="">Todos los estados</option>
                             <option value="open">Abiertos</option>
                             <option value="won">Ganados</option>
@@ -676,7 +676,7 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                                     <div className="flex flex-1 flex-col gap-2 p-2.5 min-h-[180px]">
                                         {stageDeals.map((deal) => <DealCard key={deal.id} deal={deal} currency={currency} selected={selectedIds.has(deal.id)} onToggleSelect={toggleSelect} anySelected={anySelected} />)}
                                         {stageDeals.length === 0 && (
-                                            <p className="py-8 text-center text-xs text-gray-400 font-medium">Arrastra deals aquí</p>
+                                            <p className="py-8 text-center text-xs text-gray-400 font-medium">Arrastra oportunidades aquí</p>
                                         )}
                                     </div>
                                 </div>
@@ -686,7 +686,7 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                 ) : (
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                         {filteredDeals.length === 0 ? (
-                            <div className="p-14 text-center text-sm text-gray-400">Sin deals con estos filtros</div>
+                            <div className="p-14 text-center text-sm text-gray-400">Sin oportunidades con estos filtros</div>
                         ) : (
                             <ul className="divide-y divide-gray-50">
                                 {filteredDeals.map((d) => <li key={d.id}><DealRow deal={d} currency={currency} selected={selectedIds.has(d.id)} onToggleSelect={toggleSelect} anySelected={anySelected} /></li>)}
@@ -699,7 +699,7 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                     <div className="flex justify-end">
                         <button
                             onClick={() => {
-                                if (confirm('¿Eliminar este pipeline con todos sus deals?')) {
+                                if (confirm('¿Eliminar este pipeline con todas sus oportunidades?')) {
                                     router.delete(route('pipelines.destroy', pipeline.id));
                                 }
                             }}

@@ -4,7 +4,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 function money(value, currency) {
     return new Intl.NumberFormat('es', {
         style: 'currency',
-        currency: currency || 'USD',
+        currency: currency || 'BOB',
         maximumFractionDigits: 0,
     }).format(value || 0);
 }
