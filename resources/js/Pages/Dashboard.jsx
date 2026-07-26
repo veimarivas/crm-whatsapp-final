@@ -1,5 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { usePage } from '@inertiajs/react';
 
 function money(value, currency) {
     return new Intl.NumberFormat('es', {
@@ -7,6 +8,13 @@ function money(value, currency) {
         currency: currency || 'BOB',
         maximumFractionDigits: 0,
     }).format(value || 0);
+}
+
+function greeting() {
+    const h = new Date().getHours();
+    if (h < 12) return 'Buenos días';
+    if (h < 18) return 'Buenas tardes';
+    return 'Buenas noches';
 }
 
 const statItems = [
@@ -64,7 +72,7 @@ const statItems = [
     },
     {
         key: 'dealsWon',
-        label: 'Deals ganados',
+        label: 'Ganados',
         icon: (
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
@@ -90,10 +98,10 @@ const activities = [
     },
     {
         key: 'automations',
-        label: 'Automatizaciones activas',
+        label: 'Automatizaciones',
         icon: (
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
             </svg>
         ),
         gradient: 'from-blue-500 to-indigo-600',
@@ -120,7 +128,7 @@ const activities = [
     },
     {
         key: 'aiReplies',
-        label: 'Respuestas IA (7 días)',
+        label: 'Respuestas IA (7d)',
         icon: (
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
@@ -133,71 +141,81 @@ const activities = [
 function Chart({ data }) {
     const max = Math.max(1, ...data.map((d) => d.inbound + d.outbound));
     const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    const totalInbound = data.reduce((s, d) => s + d.inbound, 0);
+    const totalOutbound = data.reduce((s, d) => s + d.outbound, 0);
 
     return (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-            <div className="flex items-center justify-between mb-6">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
                     <h4 className="text-sm font-bold text-gray-900">Mensajes — últimos 7 días</h4>
-                    <p className="text-xs text-gray-400 mt-0.5">Actividad de mensajes entrantes y salientes</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Entrantes vs salientes</p>
                 </div>
-                <div className="flex gap-4 text-xs font-medium text-gray-500">
-                    <span className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-sm bg-gradient-to-br from-emerald-500 to-teal-600" />
-                        Entrantes
+                <div className="flex flex-wrap gap-3 text-xs font-medium text-gray-500">
+                    <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50">
+                        <span className="w-2 h-2 rounded-sm bg-emerald-500" />
+                        {totalInbound} Entrantes
                     </span>
-                    <span className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-sm bg-gradient-to-br from-amber-400 to-orange-500" />
-                        Salientes
+                    <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50">
+                        <span className="w-2 h-2 rounded-sm bg-amber-500" />
+                        {totalOutbound} Salientes
                     </span>
                 </div>
             </div>
-            <div className="relative h-56">
-                <div className="absolute inset-0 flex items-end gap-2">
-                    {data.map((d, i) => {
-                        const total = d.inbound + d.outbound;
-                        const inboundPct = (d.inbound / max) * 100;
-                        const outboundPct = (d.outbound / max) * 100;
-                        return (
-                            <div key={d.day} className="flex-1 flex flex-col items-center justify-end h-full group">
-                                <div className="w-full flex items-end justify-center gap-1 relative" style={{ height: `${Math.max(inboundPct || 4, outboundPct || 4)}%` }}>
-                                    {d.inbound > 0 && (
-                                        <div
-                                            className="w-3 rounded-t-md transition-all duration-500 group-hover:brightness-110 relative"
-                                            style={{
-                                                height: `${inboundPct}%`,
-                                                minHeight: d.inbound > 0 ? '4px' : '0',
-                                                background: 'linear-gradient(180deg, #10b981 0%, #059669 100%)',
-                                            }}
-                                        >
-                                            <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-bold text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                {d.inbound}
-                                            </span>
-                                        </div>
-                                    )}
-                                    {d.outbound > 0 && (
-                                        <div
-                                            className="w-3 rounded-t-md transition-all duration-500 group-hover:brightness-110 relative"
-                                            style={{
-                                                height: `${outboundPct}%`,
-                                                minHeight: d.outbound > 0 ? '4px' : '0',
-                                                background: 'linear-gradient(180deg, #fbbf24 0%, #f97316 100%)',
-                                            }}
-                                        >
-                                            <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-bold text-amber-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                {d.outbound}
-                                            </span>
-                                        </div>
-                                    )}
+            {data.length === 0 ? (
+                <div className="h-56 flex items-center justify-center text-sm text-gray-400">Sin datos esta semana</div>
+            ) : (
+                <div className="relative h-56">
+                    <div className="absolute inset-0 flex items-end gap-2">
+                        {data.map((d, i) => {
+                            const inboundPct = (d.inbound / max) * 100;
+                            const outboundPct = (d.outbound / max) * 100;
+                            const hasData = d.inbound > 0 || d.outbound > 0;
+                            const barH = Math.max(inboundPct || 0, outboundPct || 0);
+                            return (
+                                <div key={d.day} className="flex-1 flex flex-col items-center justify-end h-full group">
+                                    <div className="w-full flex items-end justify-center gap-0.5 relative" style={{ height: barH > 0 ? `${barH}%` : '8%' }}>
+                                        {d.inbound > 0 && (
+                                            <div className="relative w-full max-w-[10px] group/bar">
+                                                <div
+                                                    className="w-full rounded-t-[3px] transition-all duration-500 group-hover/bar:brightness-110 group-hover/bar:scale-y-105 origin-bottom"
+                                                    style={{
+                                                        height: `${inboundPct}%`,
+                                                        minHeight: d.inbound > 0 ? '3px' : '0',
+                                                        background: 'linear-gradient(180deg, #34d399 0%, #059669 100%)',
+                                                    }}
+                                                />
+                                                <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-bold text-emerald-600 opacity-0 group-hover/bar:opacity-100 transition-opacity whitespace-nowrap">
+                                                    {d.inbound}
+                                                </span>
+                                            </div>
+                                        )}
+                                        {d.outbound > 0 && (
+                                            <div className="relative w-full max-w-[10px] group/bar">
+                                                <div
+                                                    className="w-full rounded-t-[3px] transition-all duration-500 group-hover/bar:brightness-110 group-hover/bar:scale-y-105 origin-bottom"
+                                                    style={{
+                                                        height: `${outboundPct}%`,
+                                                        minHeight: d.outbound > 0 ? '3px' : '0',
+                                                        background: 'linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%)',
+                                                    }}
+                                                />
+                                                <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-bold text-amber-600 opacity-0 group-hover/bar:opacity-100 transition-opacity whitespace-nowrap">
+                                                    {d.outbound}
+                                                </span>
+                                            </div>
+                                        )}
+                                        {!hasData && <div className="w-full max-w-[10px] h-full rounded-t-[3px] bg-gray-100" />}
+                                    </div>
+                                    <span className="text-[10px] font-semibold text-gray-400 mt-2 w-full text-center">
+                                        {days[new Date(d.day + 'T00:00:00').getDay()]}
+                                    </span>
                                 </div>
-                                <span className="text-[10px] font-semibold text-gray-400 mt-3 pt-0.5 border-t border-gray-100 w-full text-center">
-                                    {days[new Date(d.day + 'T00:00:00').getDay()]}
-                                </span>
-                            </div>
-                        );
-                    })}
+                            );
+                        })}
+                    </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 }
@@ -207,7 +225,7 @@ function ConversationRow({ conv }) {
         <tr className="group hover:bg-gray-50 transition-colors">
             <td className="px-5 py-4">
                 <Link href={route('inbox')} className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#045474] to-[#1c486c] flex items-center justify-center text-white text-xs font-bold shadow-sm shadow-[#045474]/20">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#045474] to-[#1c486c] flex items-center justify-center text-white text-xs font-bold shadow-sm">
                         {(conv.contact?.name || conv.contact?.phone || '?').charAt(0).toUpperCase()}
                     </div>
                     <div>
@@ -251,6 +269,8 @@ function ConversationRow({ conv }) {
 }
 
 export default function Dashboard({ stats, chart, recentConversations, currency }) {
+    const { auth } = usePage().props;
+    const userName = auth?.user?.name?.split(' ')[0] || '';
     const resolveStatValue = (item) => {
         if (item.key === 'pipelineValue') return money(stats.pipelineValue, currency);
         if (item.key === 'unreadTotal') return stats.unreadTotal;
@@ -263,9 +283,18 @@ export default function Dashboard({ stats, chart, recentConversations, currency 
 
             <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
                 {/* Header */}
-                <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Dashboard</h1>
-                    <p className="text-sm text-gray-400 mt-1">Resumen general de tu CRM</p>
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#045474] to-[#1c486c] flex items-center justify-center text-white shadow-lg shadow-[#045474]/20 shrink-0">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5m.75-9l3-3 2.148 2.148A12.061 12.061 0 0116.5 7.605" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+                            {greeting()}{userName ? `, ${userName}` : ''}
+                        </h1>
+                        <p className="text-sm text-gray-500 mt-1">Resumen general de tu CRM</p>
+                    </div>
                 </div>
 
                 {/* Stat Cards */}
@@ -310,7 +339,7 @@ export default function Dashboard({ stats, chart, recentConversations, currency 
                         <Chart data={chart} />
                     </div>
 
-                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
                         <div className="mb-5">
                             <h4 className="text-sm font-bold text-gray-900">Actividad</h4>
                             <p className="text-xs text-gray-400 mt-0.5">Resumen del sistema</p>
@@ -343,13 +372,20 @@ export default function Dashboard({ stats, chart, recentConversations, currency 
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                     <div className="px-5 sm:px-6 py-4 sm:py-5 border-b border-gray-100">
                         <div className="flex items-center justify-between">
-                            <div>
-                                <h4 className="text-sm font-bold text-gray-900">Conversaciones recientes</h4>
-                                <p className="text-xs text-gray-400 mt-0.5">Últimas interacciones con contactos</p>
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-sm">
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h4 className="text-sm font-bold text-gray-900">Conversaciones recientes</h4>
+                                    <p className="text-xs text-gray-400 mt-0.5">Últimas interacciones con contactos</p>
+                                </div>
                             </div>
                             <Link
                                 href={route('inbox')}
-                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#045474] hover:text-[#1c486c] transition-colors bg-[#045474]/5 hover:bg-[#045474]/10 px-3 py-1.5 rounded-lg"
+                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg"
                             >
                                 Ver todas
                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -375,11 +411,16 @@ export default function Dashboard({ stats, chart, recentConversations, currency 
                                 {recentConversations.length === 0 && (
                                     <tr>
                                         <td colSpan={4} className="px-6 py-16 text-center">
-                                            <div className="flex flex-col items-center gap-2">
-                                                <svg className="w-10 h-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
-                                                </svg>
-                                                <p className="text-sm font-medium text-gray-300">Aún no hay conversaciones</p>
+                                            <div className="flex flex-col items-center gap-3">
+                                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
+                                                    <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
+                                                    </svg>
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-semibold text-gray-900">Sin conversaciones</p>
+                                                    <p className="text-xs text-gray-500 mt-0.5">Las conversaciones aparecerán aquí cuando tengas actividad</p>
+                                                </div>
                                             </div>
                                         </td>
                                     </tr>
