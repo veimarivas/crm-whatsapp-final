@@ -174,6 +174,31 @@ Mejoras aplicadas sobre el port base:
 
 `InboundProcessor` (transacción: contacto→conversación→mensaje→broadcast replied) y después del commit despacha en cola: `ProcessFlowMessageJob` (el flow activo consume el mensaje o se evalúan triggers) → `ProcessAutomationEventJob` (new_contact / inbound_message / keyword) → `AiAutoReplyJob` (se abstiene si hay flow activo).
 
+## Ventana de servicio de WhatsApp (2026-07-26) — control de gasto
+
+`Services\WhatsApp\ServiceWindow` calcula cuánto queda para escribirle a un contacto **sin que Meta cobre**. Existe el gemelo `Services\WhatsApp\ServiceWindow` en el Komo, que hace el mismo cálculo sobre `lead_events` — **si cambia una regla hay que tocar los dos** (y sus dos `ServiceWindowTest`).
+
+Las reglas de Meta. **Las dos ventanas NO se comportan igual — confundirlas cuesta plata:**
+
+- **24 h de servicio — SE REINICIA con cada mensaje.** Cada entrante del cliente abre/renueva 24 h de texto libre gratis contadas desde ese mensaje. Vencidas, solo se puede escribir con plantilla aprobada, y eso se factura.
+- **72 h de free entry point — NO se reinicia.** Corren desde el clic en el anuncio Click-to-WhatsApp y punto: que el cliente siga escribiendo no las estira. Dentro de esas 72 h **todo es gratis, incluidas las plantillas**. Meta lo marca con `messages.referral`, así que solo un clic NUEVO en un anuncio abre otras 72 h — por eso se toma `MAX(created_at)` de los entrantes con referral, no el primero.
+- **Corren en paralelo, vale la que venza más tarde.** El caso que hay que tener claro: el cliente toca el anuncio y escribe recién en la **hora 71**; al vencer las 72 h la conversación NO se corta, quedan las 24 h estándar desde su último mensaje — o sea hasta la **hora 95**. Por eso no alcanza con mirar el último mensaje, ni con mirar solo el anuncio: se toma el máximo de las dos.
+- Los cuatro casos límite están fijados en `ServiceWindowTest`: la hora 71, que las 72 h no se reinician al escribir, que un clic nuevo sí abre otras 72 h, y el cruce inverso.
+
+Implementación y UI:
+
+- Sale de `messages.referral`, que `InboundProcessor` ya guardaba: no se consulta a Meta. `forMany()` (por conversación) y `forContacts()` (por contacto, con join) resuelven un listado entero en dos queries.
+- `Components/ServiceWindowBadge.jsx` en `/inbox` (header del chat + lista), `/dashboard`, `/contacts`, `/pipelines` y `/notifications`. Verde / ámbar (< 4 h) / rojo (cerrada). El rojo es el que importa: ahí escribir cuesta.
+- `GET /api/v1/ai/status` no tiene que ver con esto; la ventana no se expone por API porque Komo la calcula sola.
+
+## Plantillas rápidas sugeridas
+
+`Services\WhatsApp\SuggestedQuickReplies` — pack de 17 plantillas para un instituto que inscribe por WhatsApp, en 4 grupos (Información / Promoción / Cierre de inscripciones / Seguimiento). Botón admin-only en `/settings/quick-replies` (`quick-replies.load-suggested`), **idempotente por shortcut**: no duplica ni pisa lo que el equipo ya escribió.
+
+**Son texto libre, no plantillas aprobadas de Meta**: solo salen dentro de la ventana de servicio. Con la ventana cerrada Meta las rechaza — no es que cuesten más, es que no se entregan. Eso está explicado en la propia pantalla para que nadie asuma que sirven para reactivar contactos fríos; para eso hace falta una plantilla aprobada (`/templates`), que sí se factura.
+
+**Bug arreglado de paso**: `QuickReply` no tenía la relación `user` que el listado carga con `with('user:id,name')`. Con cero plantillas Eloquent ni la resuelve, pero con una sola la pantalla devolvía 500 — o sea que Ajustes → Plantillas rápidas estaba roto en cuanto alguien creaba la primera. Hay test de regresión.
+
 ## Pendiente menor
 
 i18n (la UI está en español fijo; el original usaba next-intl), grabación de audio en el inbox (requiere opus-recorder — Meta solo acepta ogg/opus y MediaRecorder de Chrome produce webm; hoy se puede adjuntar el audio como archivo), y para producción: SMTP real (hoy driver log), HTTPS, cron `schedule:run` y supervisión de `queue:work`/`reverb:start`.

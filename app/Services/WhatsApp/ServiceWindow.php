@@ -11,21 +11,23 @@ use Illuminate\Support\Carbon;
  * Ventana de servicio de WhatsApp: cuánto tiempo queda para escribirle al
  * contacto SIN que Meta cobre.
  *
- * Las dos reglas de Meta que importan acá:
+ * Las dos reglas de Meta, que se comportan DISTINTO:
  *
- *  - **24 h de servicio**: cada mensaje entrante del cliente abre (o renueva)
- *    una ventana de 24 h en la que el negocio puede responder texto libre sin
- *    costo. Vencida, solo se puede escribir con una plantilla aprobada, y eso
- *    sí se cobra.
- *  - **72 h de free entry point**: si el cliente llegó tocando un anuncio
- *    Click-to-WhatsApp, esa conversación es gratuita durante 72 h. Meta lo
- *    marca con un `referral` en el mensaje entrante.
+ *  - **24 h de servicio — se reinicia con cada mensaje.** Cada entrante del
+ *    cliente abre (o renueva) 24 h en las que el negocio responde texto libre
+ *    sin costo, contadas desde ese mensaje. Vencida, solo se puede escribir
+ *    con plantilla aprobada, y eso sí se cobra.
+ *  - **72 h de free entry point — NO se reinicia.** Corren desde el clic en
+ *    el anuncio Click-to-WhatsApp y punto: que el cliente siga escribiendo no
+ *    las estira. Dentro de esas 72 h todo es gratis, incluidas las plantillas.
+ *    Meta lo marca con un `referral` en el mensaje entrante, así que solo un
+ *    clic NUEVO en un anuncio abre otras 72 h.
  *
  * Ambas corren a la vez, así que la ventana real es **la que venza más
- * tarde**: un clic en el anuncio hace hace 60 h todavía cubre aunque el
- * último mensaje del cliente sea de hace 2 h... y al revés, un mensaje de
- * hace 2 h cubre aunque el anuncio ya haya vencido. Por eso se toma el
- * máximo de las dos y no solo la del último mensaje.
+ * tarde**. El caso que hay que tener claro: si el cliente toca el anuncio y
+ * escribe recién en la hora 71, al vencer las 72 h la conversación NO se
+ * corta — quedan las 24 h estándar desde su último mensaje, o sea hasta la
+ * hora 95. Por eso se toma el máximo de las dos y no solo la del anuncio.
  *
  * Todo se calcula desde los mensajes ya guardados: no se consulta a Meta.
  */

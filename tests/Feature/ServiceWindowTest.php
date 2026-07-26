@@ -123,6 +123,50 @@ class ServiceWindowTest extends TestCase
         $this->assertEqualsWithDelta(23.83 * 3600, $w['remaining_seconds'], 120);
     }
 
+    public function test_el_mensaje_de_la_hora_71_deja_24h_mas_al_vencer_el_anuncio(): void
+    {
+        // El caso que hay que tener claro: el cliente toca el anuncio (72 h
+        // gratis) y escribe recién en la hora 71. Cuando el anuncio vence en
+        // la hora 72, NO se corta: quedan las 24 h estándar contadas desde su
+        // último mensaje, o sea hasta la hora 95.
+        $click = now()->subHours(71);
+        $this->inbound($click->toDateTimeString(), ['source_id' => 'ad-1']);
+        $this->inbound(now()->toDateTimeString()); // mensaje en la hora 71
+
+        // Nos paramos en la hora 73: el anuncio ya vencio.
+        $this->travel(2)->hours();
+
+        $w = $this->window();
+
+        $this->assertTrue($w['is_open'], 'Sigue abierta por la ventana estandar.');
+        $this->assertSame('whatsapp', $w['source']);
+        $this->assertSame(24, $w['window_hours']);
+        $this->assertEqualsWithDelta(22 * 3600, $w['remaining_seconds'], 120);
+    }
+
+    public function test_las_72h_no_se_reinician_cuando_el_cliente_escribe(): void
+    {
+        // Regla clave del free entry point: solo un clic NUEVO en el anuncio
+        // reabre las 72 h. Que el cliente siga escribiendo no las estira.
+        $this->inbound(now()->subHours(50)->toDateTimeString(), ['source_id' => 'ad-1']);
+        $this->inbound(now()->subHours(40)->toDateTimeString());
+        $this->inbound(now()->subHours(30)->toDateTimeString());
+
+        // 50 h desde el clic → quedan 22 h de las 72, no 72 otra vez.
+        $this->assertEqualsWithDelta(22 * 3600, $this->window()['remaining_seconds'], 120);
+    }
+
+    public function test_un_clic_nuevo_en_el_anuncio_si_abre_otras_72h(): void
+    {
+        $this->inbound(now()->subHours(70)->toDateTimeString(), ['source_id' => 'ad-1']);
+        $this->inbound(now()->subHour()->toDateTimeString(), ['source_id' => 'ad-1']);
+
+        $w = $this->window();
+
+        $this->assertSame('meta_ad', $w['source']);
+        $this->assertEqualsWithDelta(71 * 3600, $w['remaining_seconds'], 120);
+    }
+
     public function test_sin_mensajes_del_cliente_no_hay_ventana(): void
     {
         $w = $this->window();
