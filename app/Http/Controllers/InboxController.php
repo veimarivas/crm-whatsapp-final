@@ -15,6 +15,7 @@ use App\Services\Flows\Runner;
 use App\Services\Webhooks\Dispatcher;
 use App\Services\WhatsApp\Messenger;
 use App\Services\WhatsApp\MetaApi;
+use App\Services\WhatsApp\ServiceWindow;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -106,6 +107,15 @@ class InboxController extends Controller
             ->orderByDesc('last_message_at')
             ->limit(100)
             ->get();
+
+        // Ventana de servicio: cuánto queda para escribir sin que Meta cobre.
+        // En lote — una query para las 100, no dos por cada una.
+        $windows = app(ServiceWindow::class)
+            ->forMany($conversations->pluck('id')->all());
+
+        $conversations->each(function (Conversation $c) use ($windows) {
+            $c->setAttribute('service_window', $windows[$c->id] ?? null);
+        });
 
         return response()->json($conversations);
     }
