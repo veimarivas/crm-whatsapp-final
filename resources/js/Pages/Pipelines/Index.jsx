@@ -193,7 +193,8 @@ function BulkBar({ count, onClear, pipeline, members }) {
                         <select
                             onChange={(e) => e.target.value && perform('move', { stage_id: e.target.value })}
                             defaultValue=""
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                            className="px-3 py-1.5 pe-7 rounded-lg text-xs font-semibold bg-slate-800 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 appearance-none bg-no-repeat cursor-pointer"
+                            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%239ca3af' stroke-width='1.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M5 8l5 5 5-5'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.4rem center', backgroundSize: '1rem' }}
                         >
                             <option value="" disabled>Elegir etapa…</option>
                             {pipeline?.stages?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -205,7 +206,8 @@ function BulkBar({ count, onClear, pipeline, members }) {
                         <select
                             onChange={(e) => e.target.value && perform('assign', { assigned_to: e.target.value })}
                             defaultValue=""
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                            className="px-3 py-1.5 pe-7 rounded-lg text-xs font-semibold bg-slate-800 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 appearance-none bg-no-repeat cursor-pointer"
+                            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%239ca3af' stroke-width='1.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M5 8l5 5 5-5'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.4rem center', backgroundSize: '1rem' }}
                         >
                             <option value="" disabled>Elegir responsable…</option>
                             {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -262,6 +264,10 @@ function DealFormModal({ open, onClose, deal, pipeline, contacts, members, curre
         errors[field] ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50 hover:bg-white focus:bg-white'
     }`;
 
+    const selectClass = (field) => `w-full px-3.5 py-2.5 pe-9 border rounded-xl text-sm appearance-none bg-no-repeat focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all cursor-pointer ${
+        errors[field] ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50 hover:bg-white focus:bg-white'
+    }`;
+
     return (
         <Modal show={open} onClose={close} maxWidth="lg">
             <form onSubmit={submit}>
@@ -298,7 +304,7 @@ function DealFormModal({ open, onClose, deal, pipeline, contacts, members, curre
                         </div>
                         <div>
                             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Etapa</label>
-                            <select value={data.stage_id} onChange={(e) => setData('stage_id', e.target.value)} className={inputClass('stage_id')}>
+                            <select value={data.stage_id} onChange={(e) => setData('stage_id', e.target.value)} className={selectClass('stage_id')} style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%236b7280' stroke-width='1.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M5 8l5 5 5-5'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.6rem center', backgroundSize: '1.1rem' }}>
                                 {pipeline?.stages?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                             </select>
                         </div>
@@ -307,14 +313,14 @@ function DealFormModal({ open, onClose, deal, pipeline, contacts, members, curre
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Contacto</label>
-                            <select value={data.contact_id} onChange={(e) => setData('contact_id', e.target.value)} className={inputClass('contact_id')}>
+                            <select value={data.contact_id} onChange={(e) => setData('contact_id', e.target.value)} className={selectClass('contact_id')} style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%236b7280' stroke-width='1.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M5 8l5 5 5-5'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.6rem center', backgroundSize: '1.1rem' }}>
                                 <option value="">— Sin contacto —</option>
                                 {contacts.map((c) => <option key={c.id} value={c.id}>{c.name || c.phone}</option>)}
                             </select>
                         </div>
                         <div>
                             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Asignado a</label>
-                            <select value={data.assigned_to} onChange={(e) => setData('assigned_to', e.target.value)} className={inputClass('assigned_to')}>
+                            <select value={data.assigned_to} onChange={(e) => setData('assigned_to', e.target.value)} className={selectClass('assigned_to')} style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%236b7280' stroke-width='1.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M5 8l5 5 5-5'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.6rem center', backgroundSize: '1.1rem' }}>
                                 <option value="">— Nadie —</option>
                                 {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                             </select>
@@ -328,7 +334,7 @@ function DealFormModal({ open, onClose, deal, pipeline, contacts, members, curre
                         </div>
                         <div>
                             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Estado</label>
-                            <select value={data.status} onChange={(e) => setData('status', e.target.value)} className={inputClass('status')}>
+                            <select value={data.status} onChange={(e) => setData('status', e.target.value)} className={selectClass('status')} style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%236b7280' stroke-width='1.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M5 8l5 5 5-5'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.6rem center', backgroundSize: '1.1rem' }}>
                                 <option value="open">Abierto</option>
                                 <option value="won">Ganado</option>
                                 <option value="lost">Perdido</option>
@@ -565,7 +571,8 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                         <select
                             value={pipeline?.id ?? ''}
                             onChange={(e) => router.get(route('pipelines.index'), { pipeline: e.target.value })}
-                            className="px-3 py-2 border border-gray-200 rounded-xl text-sm font-medium bg-gray-50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 shadow-sm transition-all cursor-pointer"
+                            className="px-3 py-2 pe-9 border border-gray-200 rounded-xl text-sm font-medium bg-gray-50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 shadow-sm transition-all cursor-pointer appearance-none bg-no-repeat"
+                            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%236b7280' stroke-width='1.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M5 8l5 5 5-5'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.6rem center', backgroundSize: '1.1rem' }}
                         >
                             {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
@@ -606,12 +613,12 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                                 className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 focus:bg-white transition-all"
                             />
                         </div>
-                        <select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-gray-50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all cursor-pointer">
+                        <select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)} className="px-3 py-2 pe-8 border border-gray-200 rounded-xl text-sm bg-gray-50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all cursor-pointer appearance-none bg-no-repeat" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%236b7280' stroke-width='1.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M5 8l5 5 5-5'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.5rem center', backgroundSize: '1rem' }}>
                             <option value="">Todos los responsables</option>
                             <option value="none">Sin asignar</option>
                             {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                         </select>
-                        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-gray-50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all cursor-pointer">
+                        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 pe-8 border border-gray-200 rounded-xl text-sm bg-gray-50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all cursor-pointer appearance-none bg-no-repeat" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%236b7280' stroke-width='1.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M5 8l5 5 5-5'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.5rem center', backgroundSize: '1rem' }}>
                             <option value="">Todos los estados</option>
                             <option value="open">Abiertos</option>
                             <option value="won">Ganados</option>
