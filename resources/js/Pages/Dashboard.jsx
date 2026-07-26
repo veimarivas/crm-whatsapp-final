@@ -175,7 +175,7 @@ function Chart({ data }) {
                 </div>
             </div>
             {data.length === 0 ? (
-                <div className="h-56 flex flex-col items-center justify-center gap-3 text-sm text-gray-400">
+                <div className="h-64 flex flex-col items-center justify-center gap-3 text-sm text-gray-400">
                     <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
                         <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
@@ -187,14 +187,14 @@ function Chart({ data }) {
                     </div>
                 </div>
             ) : (
-                <div className="relative h-56">
+                <div className="relative h-64">
                     <svg className="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none">
                         {gridLines.map((pct) => (
                             <line key={pct} x1="0" y1={`${(1 - pct / 100) * 100}%`} x2="100%" y2={`${(1 - pct / 100) * 100}%`} stroke="#f1f5f9" strokeWidth="1" />
                         ))}
                     </svg>
-                    <div className="absolute inset-0 flex items-end gap-2">
-                        {data.map((d, i) => {
+                    <div className="absolute inset-0 flex items-end gap-3 sm:gap-4 px-2">
+                        {data.map((d) => {
                             const inboundPct = (d.inbound / max) * 100;
                             const outboundPct = (d.outbound / max) * 100;
                             const hasData = d.inbound > 0 || d.outbound > 0;
@@ -202,38 +202,38 @@ function Chart({ data }) {
                             const isToday = new Date(d.day + 'T00:00:00').toDateString() === new Date().toDateString();
                             return (
                                 <div key={d.day} className="flex-1 flex flex-col items-center justify-end h-full group relative">
-                                    <div className="w-full flex items-end justify-center gap-1 relative" style={{ height: barH > 0 ? `${barH}%` : '10%' }}>
+                                    <div className="w-full flex items-end justify-center gap-1.5 relative" style={{ height: barH > 0 ? `${barH}%` : '12%' }}>
                                         {d.inbound > 0 && (
-                                            <div className="relative w-full max-w-[14px] group/bar">
+                                            <div className="relative w-full max-w-[32px] group/bar">
                                                 <div
-                                                    className="w-full rounded-t-sm transition-all duration-500 ease-out group-hover/bar:brightness-110 group-hover/bar:scale-y-105 origin-bottom"
+                                                    className="w-full rounded-t-md transition-all duration-500 ease-out group-hover/bar:brightness-110 group-hover/bar:scale-y-105 origin-bottom"
                                                     style={{
                                                         height: `${inboundPct}%`,
-                                                        minHeight: d.inbound > 0 ? '4px' : '0',
+                                                        minHeight: d.inbound > 0 ? '6px' : '0',
                                                         background: 'linear-gradient(180deg, #34d399 0%, #059669 100%)',
                                                     }}
                                                 />
                                             </div>
                                         )}
                                         {d.outbound > 0 && (
-                                            <div className="relative w-full max-w-[14px] group/bar">
+                                            <div className="relative w-full max-w-[32px] group/bar">
                                                 <div
-                                                    className="w-full rounded-t-sm transition-all duration-500 ease-out group-hover/bar:brightness-110 group-hover/bar:scale-y-105 origin-bottom"
+                                                    className="w-full rounded-t-md transition-all duration-500 ease-out group-hover/bar:brightness-110 group-hover/bar:scale-y-105 origin-bottom"
                                                     style={{
                                                         height: `${outboundPct}%`,
-                                                        minHeight: d.outbound > 0 ? '4px' : '0',
+                                                        minHeight: d.outbound > 0 ? '6px' : '0',
                                                         background: 'linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%)',
                                                     }}
                                                 />
                                             </div>
                                         )}
-                                        {!hasData && <div className="w-full max-w-[14px] h-full rounded-t-sm bg-gray-100" />}
+                                        {!hasData && <div className="w-full max-w-[32px] h-full rounded-t-md bg-gray-100" />}
                                     </div>
-                                    <span className={`text-[10px] font-semibold mt-2 w-full text-center ${isToday ? 'text-emerald-600' : 'text-gray-400'}`}>
+                                    <span className={`text-[11px] font-semibold mt-3 w-full text-center ${isToday ? 'text-emerald-600' : 'text-gray-400'}`}>
                                         {isToday ? 'Hoy' : days[new Date(d.day + 'T00:00:00').getDay()]}
                                     </span>
                                     {hasData && (
-                                        <div className="absolute -top-1 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none z-10">
+                                        <div className="absolute -top-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none z-10">
                                             <div className="bg-gray-900 text-white text-[10px] font-bold rounded-lg px-2.5 py-1.5 shadow-xl whitespace-nowrap flex gap-3">
                                                 <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />{d.inbound}</span>
                                                 <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" />{d.outbound}</span>
