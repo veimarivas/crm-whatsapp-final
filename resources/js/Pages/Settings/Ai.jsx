@@ -13,6 +13,8 @@ const PROVIDER_META = {
     ollama: { name: 'Ollama', gradient: 'from-sky-500 to-indigo-600' },
 };
 
+const inputClass = 'w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 focus:bg-white transition-all';
+
 export default function Ai({ config, documents }) {
     const { flash } = usePage().props;
 
@@ -70,15 +72,23 @@ export default function Ai({ config, documents }) {
         <AuthenticatedLayout header={<h2 className="text-lg font-semibold text-gray-900">Asistente IA</h2>}>
             <Head title="IA" />
 
-            <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
-                <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Asistente IA</h1>
-                    <p className="text-sm text-gray-400 mt-1">Borradores en el inbox y auto-respuesta con tu propia clave del proveedor</p>
+            <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
+                {/* Page header */}
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20 shrink-0">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Asistente IA</h1>
+                        <p className="text-sm text-gray-500 mt-1">Borradores en el inbox y auto-respuesta con tu propia clave del proveedor</p>
+                    </div>
                 </div>
 
                 {flash?.success && (
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 flex items-center gap-3 shadow-sm">
-                        <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
                             <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
@@ -87,22 +97,22 @@ export default function Ai({ config, documents }) {
                     </div>
                 )}
 
-                {/* Provider */}
+                {/* Provider & Model */}
                 <form onSubmit={submit} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div className="p-5 sm:p-6 border-b border-gray-100 flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${provider.gradient} flex items-center justify-center text-white shadow-lg`}>
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <div className="p-5 border-b border-gray-100 flex items-center gap-3 bg-gradient-to-r from-gray-50 to-transparent">
+                        <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${provider.gradient} flex items-center justify-center text-white shadow-md`}>
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
                             </svg>
                         </div>
                         <div>
-                            <h3 className="text-base font-bold text-gray-900">Proveedor (tu propia clave)</h3>
-                            <p className="text-xs text-gray-400 mt-0.5">La clave se guarda cifrada y las llamadas van directas al proveedor</p>
+                            <h3 className="text-base font-bold text-gray-900">Proveedor</h3>
+                            <p className="text-xs text-gray-400 mt-0.5">Tu propia clave — se guarda cifrada, las llamadas van directas al proveedor</p>
                         </div>
                     </div>
 
                     <div className="p-5 sm:p-6 space-y-5">
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Proveedor</label>
                                 <select
@@ -110,7 +120,7 @@ export default function Ai({ config, documents }) {
                                     onChange={(e) => {
                                         form.setData((d) => ({ ...d, provider: e.target.value, model: DEFAULT_MODELS[e.target.value] }));
                                     }}
-                                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 focus:bg-white transition-all"
+                                    className={inputClass}
                                 >
                                     <option value="openai">OpenAI</option>
                                     <option value="anthropic">Anthropic</option>
@@ -124,7 +134,7 @@ export default function Ai({ config, documents }) {
                                     value={form.data.model}
                                     onChange={(e) => form.setData('model', e.target.value)}
                                     required
-                                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 focus:bg-white transition-all"
+                                    className={`${inputClass} font-mono`}
                                 />
                             </div>
                         </div>
@@ -139,31 +149,29 @@ export default function Ai({ config, documents }) {
                                     value={form.data.base_url}
                                     onChange={(e) => form.setData('base_url', e.target.value)}
                                     placeholder="http://127.0.0.1:11434"
-                                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm font-mono bg-gray-50 focus:outline-none focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 focus:bg-white transition-all"
+                                    className={`${inputClass} font-mono`}
                                 />
-                                <p className="mt-1.5 text-xs text-gray-400">
-                                    Si Ollama corre en el mismo servidor de Laravel, deja el valor por defecto.
+                                <p className="mt-1.5 text-xs text-gray-500">
+                                    Si Ollama corre en el mismo servidor de Laravel, dejá el valor por defecto.
                                 </p>
                             </div>
                         )}
 
                         {!isOllama && (
-                        <div>
-                            <label htmlFor="api_key" className="block text-sm font-semibold text-gray-700 mb-1.5">
-                                API key {config && <span className="text-gray-400 font-normal">(vacío = conservar la actual)</span>}
-                            </label>
-                            <input
-                                id="api_key"
-                                type="password"
-                                value={form.data.api_key}
-                                onChange={(e) => form.setData('api_key', e.target.value)}
-                                placeholder={config ? '••••••••••••' : 'sk-…'}
-                                className={`w-full px-3.5 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all ${
-                                    form.errors.api_key ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50 hover:bg-white focus:bg-white'
-                                }`}
-                            />
-                            {form.errors.api_key && <p className="mt-1 text-xs text-red-500 font-medium">{form.errors.api_key}</p>}
-                        </div>
+                            <div>
+                                <label htmlFor="api_key" className="block text-sm font-semibold text-gray-700 mb-1.5">
+                                    API key {config && <span className="text-gray-400 font-normal">(vacío = conservar la actual)</span>}
+                                </label>
+                                <input
+                                    id="api_key"
+                                    type="password"
+                                    value={form.data.api_key}
+                                    onChange={(e) => form.setData('api_key', e.target.value)}
+                                    placeholder={config ? '••••••••••••' : 'sk-…'}
+                                    className={`${inputClass} ${form.errors.api_key ? 'border-red-300 bg-red-50' : ''}`}
+                                />
+                                {form.errors.api_key && <p className="mt-1 text-xs text-red-500 font-medium">{form.errors.api_key}</p>}
+                            </div>
                         )}
 
                         <div>
@@ -176,73 +184,89 @@ export default function Ai({ config, documents }) {
                                 value={form.data.embeddings_api_key}
                                 onChange={(e) => form.setData('embeddings_api_key', e.target.value)}
                                 placeholder={config?.has_embeddings_key ? '••••••••••••' : 'sk-…'}
-                                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 focus:bg-white transition-all"
+                                className={inputClass}
                             />
-                            <p className="mt-1.5 text-xs text-gray-400">
-                                Sin esta clave, la base de conocimiento usa búsqueda por palabras. Con ella, busca por significado. Tras añadirla, pulsa <strong>Reindexar</strong> abajo.
+                            <p className="mt-1.5 text-xs text-gray-500">
+                                Sin esta clave, la base de conocimiento usa búsqueda por palabras. Con ella, busca por significado. Tras añadirla, presioná <strong>Reindexar</strong> abajo.
                             </p>
                         </div>
+                    </div>
 
-                        <div>
-                            <label htmlFor="system_prompt" className="block text-sm font-semibold text-gray-700 mb-1.5">Contexto del negocio (system prompt)</label>
-                            <textarea
-                                id="system_prompt"
-                                rows={4}
-                                value={form.data.system_prompt}
-                                onChange={(e) => form.setData('system_prompt', e.target.value)}
-                                placeholder="Somos una tienda de… Nuestro horario es… El tono debe ser…"
-                                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 focus:bg-white transition-all"
-                            />
+                    {/* Behavior section */}
+                    <div className="border-t border-gray-100">
+                        <div className="p-5 border-b border-gray-100 bg-gradient-to-r from-gray-50/50 to-transparent">
+                            <h3 className="text-sm font-bold text-gray-900">Comportamiento</h3>
+                            <p className="text-xs text-gray-400 mt-0.5">Configuración del contexto y auto-respuesta</p>
                         </div>
-
-                        <div className="space-y-3 pt-2 border-t border-gray-100">
-                            <label className="flex items-center gap-3 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={form.data.is_active}
-                                    onChange={(e) => form.setData('is_active', e.target.checked)}
-                                    className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                        <div className="p-5 sm:p-6 space-y-5">
+                            <div>
+                                <label htmlFor="system_prompt" className="block text-sm font-semibold text-gray-700 mb-1.5">Contexto del negocio (system prompt)</label>
+                                <textarea
+                                    id="system_prompt"
+                                    rows={4}
+                                    value={form.data.system_prompt}
+                                    onChange={(e) => form.setData('system_prompt', e.target.value)}
+                                    placeholder="Somos una tienda de… Nuestro horario es… El tono debe ser…"
+                                    className={inputClass}
                                 />
-                                <div>
-                                    <p className="text-sm font-semibold text-gray-700">IA activa</p>
-                                    <p className="text-xs text-gray-400">Habilita el botón "Borrador IA" en el inbox</p>
-                                </div>
-                            </label>
+                            </div>
 
-                            <label className="flex items-center gap-3 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={form.data.auto_reply_enabled}
-                                    onChange={(e) => form.setData('auto_reply_enabled', e.target.checked)}
-                                    className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                                />
-                                <div>
-                                    <p className="text-sm font-semibold text-gray-700">Auto-respuesta</p>
-                                    <p className="text-xs text-gray-400">El bot contesta solo los mensajes entrantes</p>
-                                </div>
-                            </label>
+                            <div className="space-y-3">
+                                <label className="flex items-center gap-3 cursor-pointer group">
+                                    <input
+                                        type="checkbox"
+                                        checked={form.data.is_active}
+                                        onChange={(e) => form.setData('is_active', e.target.checked)}
+                                        className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                    />
+                                    <div>
+                                        <p className="text-sm font-semibold text-gray-700 group-hover:text-gray-900 transition-colors">IA activa</p>
+                                        <p className="text-xs text-gray-400">Habilita el botón "Borrador IA" en el inbox</p>
+                                    </div>
+                                </label>
 
-                            {form.data.auto_reply_enabled && (
-                                <div className="ml-7 rounded-xl bg-gray-50 border border-gray-200 p-3">
-                                    <label className="flex items-center gap-2 text-sm text-gray-700">
-                                        <span>Máximo</span>
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            max="20"
-                                            value={form.data.auto_reply_max_per_conversation}
-                                            onChange={(e) => form.setData('auto_reply_max_per_conversation', Number(e.target.value))}
-                                            className="w-16 px-2 py-1 border border-gray-300 rounded-lg text-sm text-center bg-white"
-                                        />
-                                        <span>respuestas por conversación</span>
-                                    </label>
-                                    <p className="mt-2 text-xs text-gray-500">Si un agente responde, el bot se apaga en esa conversación</p>
-                                </div>
-                            )}
+                                <label className="flex items-center gap-3 cursor-pointer group">
+                                    <input
+                                        type="checkbox"
+                                        checked={form.data.auto_reply_enabled}
+                                        onChange={(e) => form.setData('auto_reply_enabled', e.target.checked)}
+                                        className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                    />
+                                    <div>
+                                        <p className="text-sm font-semibold text-gray-700 group-hover:text-gray-900 transition-colors">Auto-respuesta</p>
+                                        <p className="text-xs text-gray-400">El bot contesta solo los mensajes entrantes</p>
+                                    </div>
+                                </label>
+
+                                {form.data.auto_reply_enabled && (
+                                    <div className="ml-7 rounded-xl bg-gray-50 border border-gray-200 p-3">
+                                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                                            <span className="font-medium">Máximo</span>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="20"
+                                                value={form.data.auto_reply_max_per_conversation}
+                                                onChange={(e) => form.setData('auto_reply_max_per_conversation', Number(e.target.value))}
+                                                className="w-16 px-2 py-1 border border-gray-300 rounded-lg text-sm text-center bg-white focus:ring-emerald-500 focus:border-emerald-500"
+                                            />
+                                            <span className="font-medium">respuestas por conversación</span>
+                                        </label>
+                                        <p className="mt-2 text-xs text-gray-500">Si un agente responde, el bot se apaga en esa conversación</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
+                    </div>
 
-                        <div className="pt-4 border-t border-gray-100 space-y-3">
-                            <label className="flex items-center gap-3 cursor-pointer">
+                    {/* Business hours section */}
+                    <div className="border-t border-gray-100">
+                        <div className="p-5 border-b border-gray-100 bg-gradient-to-r from-gray-50/50 to-transparent">
+                            <h3 className="text-sm font-bold text-gray-900">Horario de atención</h3>
+                            <p className="text-xs text-gray-400 mt-0.5">Fuera de horario la IA envía un mensaje predefinido en vez de responder</p>
+                        </div>
+                        <div className="p-5 sm:p-6 space-y-4">
+                            <label className="flex items-center gap-3 cursor-pointer group">
                                 <input
                                     type="checkbox"
                                     checked={hoursEnabled}
@@ -250,35 +274,44 @@ export default function Ai({ config, documents }) {
                                     className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                                 />
                                 <div>
-                                    <p className="text-sm font-semibold text-gray-700">Horario de atención</p>
-                                    <p className="text-xs text-gray-400">Fuera de horario la IA envía un mensaje predefinido en vez de responder</p>
+                                    <p className="text-sm font-semibold text-gray-700 group-hover:text-gray-900 transition-colors">Activar horario</p>
                                 </div>
                             </label>
 
                             {hoursEnabled && (
-                                <div className="ml-7 rounded-xl bg-gray-50 border border-gray-200 p-3 space-y-3">
-                                    <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
+                                <div className="rounded-xl bg-gray-50 border border-gray-200 p-4 space-y-4">
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
                                         {Object.entries(DAY_LABELS).map(([day, label]) => {
                                             const range = hours[day]?.[0] ?? ['', ''];
                                             const closed = range[0] === '' || range[1] === '';
                                             return (
-                                                <div key={day} className={`rounded-lg p-2 border ${closed ? 'bg-gray-100 border-gray-200' : 'bg-white border-emerald-200'}`}>
-                                                    <p className="text-[10px] font-bold uppercase text-gray-500 text-center mb-1">{label}</p>
-                                                    <input type="time" value={range[0]} onChange={(e) => setDayRange(day, e.target.value, range[1])} className="w-full text-xs border-0 bg-transparent p-0 focus:ring-0" />
-                                                    <input type="time" value={range[1]} onChange={(e) => setDayRange(day, range[0], e.target.value)} className="w-full text-xs border-0 bg-transparent p-0 focus:ring-0" />
-                                                    {closed && <p className="text-[9px] text-gray-400 text-center">Cerrado</p>}
+                                                <div key={day} className={`rounded-lg p-2 border ${closed ? 'bg-gray-100/80 border-gray-200' : 'bg-white border-emerald-200'}`}>
+                                                    <p className="text-[10px] font-bold uppercase text-gray-500 text-center mb-1.5">{label}</p>
+                                                    <input
+                                                        type="time"
+                                                        value={range[0]}
+                                                        onChange={(e) => setDayRange(day, e.target.value, range[1])}
+                                                        className="w-full text-xs border-0 bg-transparent p-0 focus:ring-0 focus:text-emerald-700"
+                                                    />
+                                                    <input
+                                                        type="time"
+                                                        value={range[1]}
+                                                        onChange={(e) => setDayRange(day, range[0], e.target.value)}
+                                                        className="w-full text-xs border-0 bg-transparent p-0 focus:ring-0 focus:text-emerald-700"
+                                                    />
+                                                    {closed && <p className="text-[9px] text-gray-400 text-center mt-1">Cerrado</p>}
                                                 </div>
                                             );
                                         })}
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Mensaje fuera de horario</label>
+                                        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Mensaje fuera de horario</label>
                                         <textarea
                                             rows={2}
                                             value={form.data.after_hours_message}
                                             onChange={(e) => form.setData('after_hours_message', e.target.value)}
                                             placeholder="¡Hola! Nuestro horario de atención es lunes a viernes de 8:00 a 19:00. Te responderemos apenas volvamos. 🙏"
-                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+                                            className={inputClass}
                                         />
                                     </div>
                                     <p className="text-[10px] text-gray-400">Zona horaria: {form.data.timezone}. Solo se envía una vez por día por conversación.</p>
@@ -287,6 +320,7 @@ export default function Ai({ config, documents }) {
                         </div>
                     </div>
 
+                    {/* Submit */}
                     <div className="px-5 sm:px-6 py-4 bg-gray-50/80 border-t border-gray-100 flex justify-end">
                         <button
                             type="submit"
@@ -300,10 +334,10 @@ export default function Ai({ config, documents }) {
 
                 {/* Knowledge Base */}
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div className="p-5 sm:p-6 border-b border-gray-100 flex items-center justify-between gap-3">
+                    <div className="p-5 border-b border-gray-100 flex items-center justify-between gap-3 bg-gradient-to-r from-gray-50 to-transparent">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-md">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
                                 </svg>
                             </div>
@@ -315,9 +349,9 @@ export default function Ai({ config, documents }) {
                         {documents.length > 0 && (
                             <button
                                 onClick={() => router.post(route('settings.ai.reindex'), {}, { preserveScroll: true })}
-                                className="px-3.5 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm flex items-center gap-1.5 shrink-0"
+                                className="px-3.5 py-2 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm inline-flex items-center gap-1.5 shrink-0"
                             >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
                                 </svg>
                                 Reindexar
@@ -327,15 +361,15 @@ export default function Ai({ config, documents }) {
 
                     <ul className="divide-y divide-gray-50">
                         {documents.map((doc) => (
-                            <li key={doc.id} className="flex items-center justify-between px-5 sm:px-6 py-3.5 hover:bg-gray-50 transition-colors group">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+                            <li key={doc.id} className="flex items-center justify-between px-5 sm:px-6 py-3 hover:bg-gray-50 transition-colors group">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
                                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                                         </svg>
                                     </div>
-                                    <div>
-                                        <p className="font-semibold text-gray-900 text-sm">{doc.title}</p>
+                                    <div className="min-w-0">
+                                        <p className="font-semibold text-gray-900 text-sm truncate">{doc.title}</p>
                                         <p className="text-xs text-gray-400">{doc.chunks_count} fragmentos indexados</p>
                                     </div>
                                 </div>
@@ -345,7 +379,8 @@ export default function Ai({ config, documents }) {
                                             router.delete(route('settings.ai.documents.destroy', doc.id), { preserveScroll: true });
                                         }
                                     }}
-                                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100 shrink-0"
+                                    title="Eliminar"
                                 >
                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
@@ -354,19 +389,27 @@ export default function Ai({ config, documents }) {
                             </li>
                         ))}
                         {documents.length === 0 && (
-                            <li className="px-5 sm:px-6 py-8 text-center text-sm text-gray-400">Sin documentos aún</li>
+                            <li className="px-5 sm:px-6 py-10 text-center">
+                                <div className="w-10 h-10 mx-auto rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center mb-3">
+                                    <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+                                    </svg>
+                                </div>
+                                <p className="text-sm font-semibold text-gray-900">Sin documentos</p>
+                                <p className="text-xs text-gray-500 mt-1">Agregá FAQs, políticas o catálogo para que la IA pueda consultarlos</p>
+                            </li>
                         )}
                     </ul>
 
                     <form onSubmit={addDocument} className="p-5 sm:p-6 border-t border-gray-100 bg-gray-50/50 space-y-3">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Añadir documento</p>
+                        <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Añadir documento</p>
                         <input
                             id="doc-title"
                             value={docForm.data.title}
                             onChange={(e) => docForm.setData('title', e.target.value)}
                             required
                             placeholder="Título — ej. Políticas de envío"
-                            className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+                            className={inputClass}
                         />
                         <textarea
                             id="doc-content"
@@ -375,14 +418,14 @@ export default function Ai({ config, documents }) {
                             onChange={(e) => docForm.setData('content', e.target.value)}
                             required
                             placeholder="Contenido del documento…"
-                            className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+                            className={inputClass}
                         />
                         <button
                             type="submit"
                             disabled={docForm.processing}
                             className="px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 transition-all shadow-lg shadow-blue-500/20"
                         >
-                            Añadir documento
+                            {docForm.processing ? 'Añadiendo…' : 'Añadir documento'}
                         </button>
                     </form>
                 </div>
