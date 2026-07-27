@@ -27,6 +27,11 @@ Route::post('/webhooks/whatsapp', [WebhookController::class, 'receive'])
 Route::get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])
     ->middleware(['auth', 'verified'])->name('dashboard');
 
+// Seguimiento de la atencion por agente. El corte admin-only va en el
+// controlador: este proyecto no tiene middleware de rol.
+Route::get('/supervision', [\App\Http\Controllers\SupervisionController::class, 'index'])
+    ->middleware(['auth', 'verified'])->name('supervision.index');
+
 // Aceptación pública de invitaciones (el link se comparte fuera de la app).
 Route::get('/invite/{token}', [\App\Http\Controllers\TeamController::class, 'acceptForm'])->name('invitations.accept');
 Route::post('/invite/{token}', [\App\Http\Controllers\TeamController::class, 'redeem'])->name('invitations.redeem');

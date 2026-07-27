@@ -191,6 +191,21 @@ Implementación y UI:
 - `Components/ServiceWindowBadge.jsx` en `/inbox` (header del chat + lista), `/dashboard`, `/contacts`, `/pipelines` y `/notifications`. Verde / ámbar (< 4 h) / rojo (cerrada). El rojo es el que importa: ahí escribir cuesta.
 - `GET /api/v1/ai/status` no tiene que ver con esto; la ventana no se expone por API porque Komo la calcula sola.
 
+## Seguimiento del admin (2026-07-26) — `/supervision`
+
+`SupervisionController` + `Services\Supervision\ResponseMetrics` + `Pages/Supervision/{Index,Charts}.jsx`. Ventanas de 7/15/30/90 días por `?days=`. **Admin-only, cortado en el controlador**: este proyecto no tiene middleware `admin.only` como el Komo.
+
+Gemelo del `ResponseMetrics` del Komo, pero acá se calcula sobre `messages` (la fuente real, no el espejo de eventos) y la atribución es **exacta** porque `messages.sender_id` dice qué usuario mandó cada saliente. **Si cambia una definición hay que tocar los dos** (y sus dos tests).
+
+Definiciones — si cambian, los números cambian de sentido:
+
+- **La respuesta de la IA NO cierra la espera.** Lo relevante es si atendió un humano; la IA solo gana tiempo.
+- **El reloj arranca en el PRIMER mensaje de la ráfaga**, no en el último.
+- **Un saliente humano sin espera abierta es seguimiento proactivo, no respuesta** — no entra en los promedios.
+- **"Quién contestó 1º"** separa `asignado` de `otro_agente`: deja ver si el dueño de la conversación la trabaja o se la están cubriendo.
+
+Además del proceso, mide la **carga**: `assigned_contacts` cuenta TODO lo asignado a cada agente (con o sin actividad en el periodo, incluidas las cerradas) — es la carga real que tiene encima, no solo lo que se movió. Va con una barra abierta/pendiente/cerrada. También trae `window_closed` por agente: conversaciones a las que ya no se puede escribir sin costo, que el admin necesita ver **antes** de reclamar una respuesta.
+
 ## Plantillas rápidas sugeridas
 
 `Services\WhatsApp\SuggestedQuickReplies` — pack de 17 plantillas para un instituto que inscribe por WhatsApp, en 4 grupos (Información / Promoción / Cierre de inscripciones / Seguimiento). Botón admin-only en `/settings/quick-replies` (`quick-replies.load-suggested`), **idempotente por shortcut**: no duplica ni pisa lo que el equipo ya escribió.

@@ -1,0 +1,210 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Account;
+use App\Models\Contact;
+use App\Models\Conversation;
+use App\Models\Message;
+use App\Models\User;
+use App\Services\Supervision\ResponseMetrics;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+/**
+ * Panel de seguimiento del admin. Fija las definiciones: si cambian, los
+ * números que el admin usa para decidir cambian de sentido.
+ *
+ * Es el gemelo del `SupervisionMetricsTest` del Komo — mismas reglas sobre
+ * otra tabla. Si se toca una definición hay que tocar los dos.
+ */
+class SupervisionTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private Account $account;
+
+    private User $owner;
+
+    private User $agente;
+
+    private User $otro;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->owner = User::create(['name' => 'Administrador', 'email' => 'admin@test.com', 'password' => bcrypt('password')]);
+        $this->account = Account::create(['name' => 'Empresa', 'owner_user_id' => $this->owner->id]);
+        $this->owner->update(['account_id' => $this->account->id, 'account_role' => User::ROLE_OWNER]);
+
+        $this->agente = $this->makeAgent('daniel@test.com', 'Daniel');
+        $this->otro = $this->makeAgent('silvia@test.com', 'Silvia');
+    }
+
+    private function makeAgent(string $email, string $name): User
+    {
+        return User::create([
+            'name' => $name, 'email' => $email, 'password' => bcrypt('password'),
+            'account_id' => $this->account->id, 'account_role' => User::ROLE_AGENT,
+        ]);
+    }
+
+    private function makeConversation(?User $agent = null, string $name = 'Ana', string $status = 'open'): Conversation
+    {
+        $contact = Contact::create([
+            'account_id' => $this->account->id,
+            'name' => $name,
+            'phone' => '5917'.random_int(1000000, 9999999),
+        ]);
+
+        return Conversation::create([
+            'account_id' => $this->account->id,
+            'contact_id' => $contact->id,
+            'status' => $status,
+            'assigned_agent_id' => $agent?->id,
+        ]);
+    }
+
+    private function msg(Conversation $c, string $type, string $at, ?User $sender = null): void
+    {
+        Message::create([
+            'conversation_id' => $c->id,
+            'sender_type' => $type,
+            'sender_id' => $sender?->id,
+            'content_text' => 'x',
+        ])->forceFill(['created_at' => $at])->save();
+    }
+
+    private function build(int $days = 30): array
+    {
+        return (new ResponseMetrics($this->account->id, now()->subDays($days)->startOfDay()))->build();
+    }
+
+    public function test_mide_la_primera_respuesta_desde_el_primer_mensaje_del_contacto(): void
+    {
+        $c = $this->makeConversation($this->agente);
+        $this->msg($c, Message::SENDER_CUSTOMER, now()->subHours(3)->toDateTimeString());
+        $this->msg($c, Message::SENDER_AGENT, now()->subHours(3)->addMinutes(10)->toDateTimeString(), $this->agente);
+
+        $row = collect($this->build()['conversations'])->firstWhere('id', $c->id);
+
+        $this->assertSame(600, $row['first_response_seconds']);
+        $this->assertSame('asignado', $row['first_responder']);
+        $this->assertNull($row['awaiting_minutes']);
+    }
+
+    public function test_los_mensajes_seguidos_del_contacto_no_reinician_el_reloj(): void
+    {
+        $c = $this->makeConversation($this->agente);
+        $this->msg($c, Message::SENDER_CUSTOMER, now()->subHours(2)->toDateTimeString());
+        $this->msg($c, Message::SENDER_CUSTOMER, now()->subHours(2)->addMinutes(5)->toDateTimeString());
+        $this->msg($c, Message::SENDER_AGENT, now()->subHours(2)->addMinutes(20)->toDateTimeString(), $this->agente);
+
+        // 20 minutos desde el PRIMERO, no 15 desde el último.
+        $this->assertSame(1200, collect($this->build()['conversations'])->firstWhere('id', $c->id)['first_response_seconds']);
+    }
+
+    public function test_la_respuesta_de_la_ia_no_cierra_la_espera_del_humano(): void
+    {
+        $c = $this->makeConversation($this->agente);
+        $this->msg($c, Message::SENDER_CUSTOMER, now()->subMinutes(90)->toDateTimeString());
+        $this->msg($c, Message::SENDER_BOT, now()->subMinutes(89)->toDateTimeString());
+
+        $row = collect($this->build()['conversations'])->firstWhere('id', $c->id);
+
+        $this->assertSame('ia', $row['first_responder']);
+        $this->assertNull($row['first_response_seconds'], 'La IA no cuenta como respuesta humana.');
+        $this->assertSame(90, $row['awaiting_minutes']);
+        $this->assertTrue($row['breached_sla']);
+    }
+
+    public function test_distingue_al_asignado_de_otro_agente_que_contesta_por_el(): void
+    {
+        $c = $this->makeConversation($this->agente);
+        $this->msg($c, Message::SENDER_CUSTOMER, now()->subHour()->toDateTimeString());
+        $this->msg($c, Message::SENDER_AGENT, now()->subMinutes(50)->toDateTimeString(), $this->otro);
+
+        $this->assertSame('otro_agente', collect($this->build()['conversations'])->firstWhere('id', $c->id)['first_responder']);
+    }
+
+    public function test_el_saliente_proactivo_no_cuenta_como_respuesta(): void
+    {
+        $c = $this->makeConversation($this->agente);
+        $this->msg($c, Message::SENDER_AGENT, now()->subHours(5)->toDateTimeString(), $this->agente);
+        $this->msg($c, Message::SENDER_CUSTOMER, now()->subHours(4)->toDateTimeString());
+
+        $row = collect($this->build()['conversations'])->firstWhere('id', $c->id);
+
+        $this->assertNull($row['avg_response_seconds'], 'No hubo respuesta a un entrante.');
+        $this->assertSame(240, $row['awaiting_minutes']);
+    }
+
+    public function test_cuenta_los_contactos_asignados_aunque_no_tengan_actividad(): void
+    {
+        // Con actividad en el periodo
+        $activa = $this->makeConversation($this->agente, 'Ana');
+        $this->msg($activa, Message::SENDER_CUSTOMER, now()->subHour()->toDateTimeString());
+
+        // Asignada pero sin un solo mensaje: sigue siendo carga suya.
+        $this->makeConversation($this->agente, 'Beto');
+        // Y una cerrada, que también cuenta como contacto asignado.
+        $this->makeConversation($this->agente, 'Carla', 'closed');
+
+        $daniel = collect($this->build()['agents'])->firstWhere('id', $this->agente->id);
+
+        $this->assertSame(3, $daniel['assigned_contacts'], 'La carga es todo lo asignado, no solo lo que se movió.');
+        $this->assertSame(1, $daniel['conversations'], 'Activas en el periodo: solo una.');
+        $this->assertSame(2, $daniel['open_conversations']);
+        $this->assertSame(1, $daniel['closed_conversations']);
+    }
+
+    public function test_agrupa_por_agente_y_reporta_las_sin_asignar_aparte(): void
+    {
+        $suya = $this->makeConversation($this->agente, 'Ana');
+        $this->msg($suya, Message::SENDER_CUSTOMER, now()->subHours(2)->toDateTimeString());
+        $this->msg($suya, Message::SENDER_AGENT, now()->subHours(2)->addMinutes(5)->toDateTimeString(), $this->agente);
+
+        $huerfana = $this->makeConversation(null, 'Beto');
+        $this->msg($huerfana, Message::SENDER_CUSTOMER, now()->subHours(2)->toDateTimeString());
+
+        $agents = collect($this->build()['agents']);
+
+        $daniel = $agents->firstWhere('id', $this->agente->id);
+        $this->assertSame(1, $daniel['answered']);
+        $this->assertSame(300, $daniel['avg_first_response_seconds']);
+
+        $nadie = $agents->firstWhere('id', null);
+        $this->assertSame(1, $nadie['never_answered']);
+        $this->assertSame(1, $nadie['breached_sla']);
+    }
+
+    public function test_ignora_la_actividad_fuera_de_la_ventana(): void
+    {
+        $c = $this->makeConversation($this->agente);
+        $this->msg($c, Message::SENDER_CUSTOMER, now()->subDays(60)->toDateTimeString());
+
+        $this->assertCount(0, $this->build(30)['conversations']);
+        $this->assertCount(1, $this->build(90)['conversations']);
+    }
+
+    public function test_la_serie_diaria_rellena_los_dias_sin_actividad(): void
+    {
+        $c = $this->makeConversation($this->agente);
+        $this->msg($c, Message::SENDER_CUSTOMER, now()->subDays(2)->setTime(9, 0)->toDateTimeString());
+        $this->msg($c, Message::SENDER_AGENT, now()->subDays(2)->setTime(9, 10)->toDateTimeString(), $this->agente);
+
+        $daily = collect($this->build(7)['daily']);
+
+        $this->assertCount(8, $daily);
+        $this->assertSame(600, $daily->firstWhere('date', now()->subDays(2)->format('Y-m-d'))['avg_response_seconds']);
+        $this->assertNull($daily->firstWhere('date', now()->subDay()->format('Y-m-d'))['avg_response_seconds'],
+            'Un día sin respuestas no promedia cero.');
+    }
+
+    public function test_solo_el_admin_entra_al_panel(): void
+    {
+        $this->actingAs($this->agente)->get(route('supervision.index'))->assertForbidden();
+        $this->actingAs($this->owner)->get(route('supervision.index'))->assertOk();
+    }
+}
