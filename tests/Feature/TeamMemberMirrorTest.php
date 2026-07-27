@@ -126,6 +126,44 @@ class TeamMemberMirrorTest extends TestCase
             ->assertSessionHasErrors('email');
     }
 
+    public function test_el_comando_empuja_los_miembros_que_ya_existian(): void
+    {
+        // Los dados de alta ANTES de que existiera el puente no se espejaron
+        // solos: el comando es la red de seguridad para esos.
+        User::create([
+            'name' => 'Silvia', 'email' => 'silvia@test.com', 'password' => bcrypt('password'),
+            'account_id' => $this->account->id, 'account_role' => User::ROLE_AGENT,
+        ]);
+
+        Http::fake(['*' => Http::response(['created' => true], 201)]);
+
+        $this->artisan('wacrm:sync-team-to-komo')->assertSuccessful();
+
+        // El owner y la agente: los dos.
+        Http::assertSentCount(2);
+        Http::assertSent(fn ($r) => $r['email'] === 'silvia@test.com' && $r['role'] === 'agent');
+        Http::assertSent(fn ($r) => $r['email'] === 'admin@test.com' && $r['role'] === 'admin');
+    }
+
+    public function test_el_comando_avisa_si_falta_configurar_la_integracion(): void
+    {
+        config()->set('services.komo.url', null);
+        Http::fake();
+
+        $this->artisan('wacrm:sync-team-to-komo')->assertFailed();
+
+        Http::assertNothingSent();
+    }
+
+    public function test_el_dry_run_no_manda_nada(): void
+    {
+        Http::fake();
+
+        $this->artisan('wacrm:sync-team-to-komo', ['--dry-run' => true])->assertSuccessful();
+
+        Http::assertNothingSent();
+    }
+
     public function test_solo_el_admin_da_de_alta_miembros(): void
     {
         $agente = User::create([

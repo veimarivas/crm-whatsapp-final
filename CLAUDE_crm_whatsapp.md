@@ -200,6 +200,7 @@ Implementación y UI:
 - Traducción de roles: `admin→admin`, `agent/viewer→agent` (Komo no tiene equivalente de «solo lectura»).
 - Del otro lado: `POST /api/v1/team/provision` en Komo, idempotente por email. **No pisa el password** si el miembro ya entró y lo cambió; 409 si el email es de otra cuenta.
 - Un fallo del espejo **no cancela el alta local** — se loguea y el flash lo dice. Tests en `TeamMemberMirrorTest` (acá) y `TeamProvisionApiTest` (allá).
+- **Red de seguridad**: `php artisan wacrm:sync-team-to-komo` empuja a Komo los miembros que ya existían (el espejo automático solo actúa al CREAR). Con `--dry-run` lista sin tocar nada y con `--password=` fija una clave temporal — si no, los que se creen allá quedan con una aleatoria y entran por «olvidé mi contraseña». **Si la integración no está configurada, el comando imprime exactamente qué falta**: es el primer sitio donde mirar cuando un miembro no aparece en Komo (403 = falta el scope `team:write`; 409 = ese email ya es de otra cuenta allá).
 
 ## Seguimiento del admin (2026-07-26) — `/supervision`
 
