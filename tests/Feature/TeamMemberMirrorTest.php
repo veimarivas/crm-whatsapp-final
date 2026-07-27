@@ -145,6 +145,35 @@ class TeamMemberMirrorTest extends TestCase
         Http::assertSent(fn ($r) => $r['email'] === 'admin@test.com' && $r['role'] === 'admin');
     }
 
+    public function test_el_comando_se_niega_a_mezclar_cuentas(): void
+    {
+        // La KOMO_API_KEY es de UNA cuenta de Komo: sincronizar varias metería
+        // usuarios de un cliente en la cuenta de otro.
+        $ajeno = User::create(['name' => 'Otro', 'email' => 'otro@otra.com', 'password' => bcrypt('password')]);
+        $otra = Account::create(['name' => 'Otra empresa', 'owner_user_id' => $ajeno->id]);
+        $ajeno->update(['account_id' => $otra->id, 'account_role' => User::ROLE_OWNER]);
+
+        Http::fake();
+
+        $this->artisan('wacrm:sync-team-to-komo')->assertFailed();
+        Http::assertNothingSent();
+    }
+
+    public function test_con_la_cuenta_elegida_solo_sincroniza_esa(): void
+    {
+        $ajeno = User::create(['name' => 'Otro', 'email' => 'otro@otra.com', 'password' => bcrypt('password')]);
+        $otra = Account::create(['name' => 'Otra empresa', 'owner_user_id' => $ajeno->id]);
+        $ajeno->update(['account_id' => $otra->id, 'account_role' => User::ROLE_OWNER]);
+
+        Http::fake(['*' => Http::response(['created' => true], 201)]);
+
+        $this->artisan('wacrm:sync-team-to-komo', ['--account' => $this->account->id]);
+
+        // Solo el owner de MI cuenta; el de la otra empresa no se toca.
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($r) => $r['email'] === 'admin@test.com');
+    }
+
     public function test_el_comando_avisa_si_falta_configurar_la_integracion(): void
     {
         config()->set('services.komo.url', null);

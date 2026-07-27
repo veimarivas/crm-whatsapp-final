@@ -67,6 +67,37 @@ class SyncTeamToKomo extends Command
             return self::SUCCESS;
         }
 
+        $accountIds = $members->pluck('account_id')->unique();
+
+        // La KOMO_API_KEY pertenece a UNA cuenta de Komo. Si acá hay miembros
+        // de varias cuentas y no se dice cuál, sincronizarlos a todos metería
+        // usuarios de un cliente en la cuenta de otro. Se exige elegir.
+        if ($accountIds->count() > 1 && ! $this->option('account')) {
+            $this->error('Hay miembros en '.$accountIds->count().' cuentas distintas y la API key de Komo es de UNA sola.');
+            $this->newLine();
+            $this->line('Sincronizarlas todas metería usuarios de una cuenta en la de otra.');
+            $this->line('Elegí la cuenta que corresponde a tu Komo con <options=bold>--account=UUID</>:');
+            $this->newLine();
+
+            foreach (Account::whereIn('id', $accountIds)->orderBy('name')->get(['id', 'name']) as $account) {
+                $count = $members->where('account_id', $account->id)->count();
+                $this->line(sprintf('  %s  %s (%d miembros)', $account->id, $account->name, $count));
+            }
+
+            return self::FAILURE;
+        }
+
+        // Un email inválido no lo acepta Komo: se avisa antes de intentarlo.
+        $invalidos = $members->filter(fn (User $m) => ! filter_var($m->email, FILTER_VALIDATE_EMAIL));
+
+        if ($invalidos->isNotEmpty()) {
+            $this->warn('Estos miembros tienen un email que Komo va a rechazar. Corregilos allá o acá:');
+            foreach ($invalidos as $m) {
+                $this->warn("  · {$m->name} <{$m->email}>");
+            }
+            $this->newLine();
+        }
+
         if (! $password && ! $dryRun) {
             $this->warn('Sin --password, los miembros que se creen en Komo quedan con una');
             $this->warn('contraseña aleatoria: tendrán que entrar por "olvidé mi contraseña".');
@@ -85,7 +116,7 @@ class SyncTeamToKomo extends Command
                 $member->name, $member->email, $role, $accounts[$member->account_id] ?? '?');
 
             if ($dryRun) {
-                $this->line("  · {$label}");
+                $this->line("  · {$label}  <fg=gray>{$member->account_id}</>");
                 $ok++;
 
                 continue;
@@ -119,8 +150,12 @@ class SyncTeamToKomo extends Command
 
         if ($failed > 0) {
             $this->newLine();
-            $this->line('Si el error dice 403, la API key no tiene el scope <options=bold>team:write</>.');
-            $this->line('Si dice 409, ese email ya pertenece a OTRA cuenta en Komo.');
+            $this->line('Qué significa cada error:');
+            $this->line('  <options=bold>Invalid or revoked API key</> → KOMO_API_KEY está mal, vencida, o quedó el');
+            $this->line('     texto de ejemplo. Revisá el .env: <options=bold>grep KOMO_ .env</>');
+            $this->line('  <options=bold>403</> → la key existe pero le falta el scope <options=bold>team:write</>.');
+            $this->line('  <options=bold>409</> → ese email ya pertenece a OTRA cuenta en Komo.');
+            $this->line('  <options=bold>422</> → el email no es válido para Komo.');
         }
 
         return $failed > 0 ? self::FAILURE : self::SUCCESS;
