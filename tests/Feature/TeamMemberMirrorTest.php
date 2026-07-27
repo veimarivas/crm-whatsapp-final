@@ -174,6 +174,20 @@ class TeamMemberMirrorTest extends TestCase
         Http::assertSent(fn ($r) => $r['email'] === 'admin@test.com');
     }
 
+    public function test_el_error_de_validacion_dice_que_campo_fallo(): void
+    {
+        // Laravel devuelve `message` con la clave cruda ("validation.email")
+        // cuando falta el archivo de idioma: eso no le dice nada a nadie.
+        Http::fake(['*' => Http::response([
+            'message' => 'validation.email',
+            'errors' => ['email' => ['The email field must be a valid email address.']],
+        ], 422)]);
+
+        $this->artisan('wacrm:sync-team-to-komo')
+            ->expectsOutputToContain('email')
+            ->assertFailed();
+    }
+
     public function test_el_comando_avisa_si_falta_configurar_la_integracion(): void
     {
         config()->set('services.komo.url', null);

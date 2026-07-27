@@ -2,6 +2,7 @@
 
 namespace App\Services\Komo;
 
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -55,9 +56,33 @@ class Client
             ]));
 
         if ($response->failed()) {
-            throw new RuntimeException('Komo: '.($response->json('message') ?? $response->status()));
+            throw new RuntimeException('Komo: '.$this->readableError($response));
         }
 
         return $response->json();
+    }
+
+    /**
+     * Mensaje legible del error de Komo.
+     *
+     * En un 422 Laravel devuelve `message` con la CLAVE de traducción cruda
+     * ("validation.email") si el idioma no tiene el archivo de mensajes, que
+     * no le dice nada a nadie. Se arma el detalle desde el bag `errors`, que
+     * sí trae el campo que falló.
+     */
+    private function readableError(Response $response): string
+    {
+        $errors = $response->json('errors');
+
+        if (is_array($errors) && $errors !== []) {
+            $campos = [];
+            foreach ($errors as $campo => $mensajes) {
+                $campos[] = $campo.' ('.(is_array($mensajes) ? reset($mensajes) : $mensajes).')';
+            }
+
+            return 'datos rechazados → '.implode('; ', $campos);
+        }
+
+        return $response->json('message') ?: 'HTTP '.$response->status();
     }
 }
