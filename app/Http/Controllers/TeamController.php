@@ -8,11 +8,13 @@ use App\Models\ApiKey;
 use App\Models\MemberPresence;
 use App\Models\User;
 use App\Models\WebhookEndpoint;
+use App\Services\Komo\Client as KomoClient;
 use App\Services\Webhooks\Dispatcher;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -210,7 +212,82 @@ class TeamController extends Controller
             'accepted_by_user_id' => $user->id,
         ]);
 
+        // Espejo en el Komo: sin esto el miembro existe acá pero no aparece
+        // allá para asignarle contactos, que es donde se hace el seguimiento.
+        $this->mirrorToKomo($user, $invitation->role, $validated['password'] ?? null);
+
         return redirect()->route('dashboard')->with('success', "Te uniste a {$invitation->account->name}.");
+    }
+
+    /**
+     * Alta directa de un miembro, sin link de invitación: el admin carga los
+     * datos y el miembro ya puede entrar — acá y, sobre todo, en el Komo.
+     *
+     * El flujo del link sirve para que alguien se sume solo; este es para
+     * cuando el admin da de alta a su equipo y quiere que puedan trabajar en
+     * el momento.
+     */
+    public function storeMember(Request $request): RedirectResponse
+    {
+        $this->requireAdmin($request);
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|lowercase|email|max:255|unique:users,email',
+            'password' => ['required', 'confirmed', Password::defaults()],
+            'account_role' => ['required', Rule::in([User::ROLE_ADMIN, User::ROLE_AGENT, User::ROLE_VIEWER])],
+        ], [
+            'email.unique' => 'Ese email ya está registrado en el sistema.',
+        ]);
+
+        $member = User::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => Hash::make($validated['password']),
+            'account_id' => $request->user()->account_id,
+            'account_role' => $validated['account_role'],
+        ]);
+
+        $mirrored = $this->mirrorToKomo($member, $validated['account_role'], $validated['password']);
+
+        return back()->with('success', $mirrored
+            ? "{$member->name} ya puede entrar acá y en el Komo con ese email y contraseña."
+            : "{$member->name} se creó acá. Ojo: el espejo con el Komo no está configurado, así que allá no va a aparecer todavía.");
+    }
+
+    /**
+     * Crea (o actualiza) el mismo usuario en el Komo con su email y password,
+     * para que valga en los dos sistemas.
+     *
+     * Traducción de roles: admin→admin, agent/viewer→agent. Devuelve false si
+     * no está configurado o si falló, y en ese caso se avisa en pantalla en
+     * vez de dejar creer que quedó sincronizado.
+     */
+    private function mirrorToKomo(User $user, string $role, ?string $plaintextPassword): bool
+    {
+        $client = KomoClient::fromConfig();
+
+        if (! $client) {
+            return false;
+        }
+
+        try {
+            $client->provisionUser(
+                email: $user->email,
+                name: $user->name,
+                password: $plaintextPassword,
+                role: $role === User::ROLE_ADMIN ? 'admin' : 'agent',
+            );
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::warning('Espejo de miembro → Komo falló', [
+                'email' => $user->email,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 
     // ---- API keys ----

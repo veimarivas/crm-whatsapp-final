@@ -191,6 +191,16 @@ Implementación y UI:
 - `Components/ServiceWindowBadge.jsx` en `/inbox` (header del chat + lista), `/dashboard`, `/contacts`, `/pipelines` y `/notifications`. Verde / ámbar (< 4 h) / rojo (cerrada). El rojo es el que importa: ahí escribir cuesta.
 - `GET /api/v1/ai/status` no tiene que ver con esto; la ventana no se expone por API porque Komo la calcula sola.
 
+## Espejo de miembros wacrm → Komo (2026-07-27)
+
+**El puente de usuarios era de ida solamente.** Komo creaba el user acá al aceptar una invitación (`TeamController@provisionInWacrm` allá), pero un miembro dado de alta EN este proyecto no existía en Komo — y Komo es donde se asignan los contactos, así que no aparecía en ningún desplegable de responsable. Ese era el bug.
+
+- `Services\Komo\Client` + config `services.komo` (**`KOMO_URL` y `KOMO_API_KEY` en `.env`; la key necesita scope `team:write`**). Sin configurar, el espejo se salta y **se avisa en pantalla** en vez de dejar creer que quedó sincronizado.
+- `TeamController@redeem` espeja al aceptar el link. `TeamController@storeMember` (`POST /settings/team/members`, admin-only) es el alta **directa sin link**: el admin carga nombre/email/contraseña/rol en un modal y el miembro ya puede entrar acá **y en Komo** con las mismas credenciales.
+- Traducción de roles: `admin→admin`, `agent/viewer→agent` (Komo no tiene equivalente de «solo lectura»).
+- Del otro lado: `POST /api/v1/team/provision` en Komo, idempotente por email. **No pisa el password** si el miembro ya entró y lo cambió; 409 si el email es de otra cuenta.
+- Un fallo del espejo **no cancela el alta local** — se loguea y el flash lo dice. Tests en `TeamMemberMirrorTest` (acá) y `TeamProvisionApiTest` (allá).
+
 ## Seguimiento del admin (2026-07-26) — `/supervision`
 
 `SupervisionController` + `Services\Supervision\ResponseMetrics` + `Pages/Supervision/{Index,Charts}.jsx`. Ventanas de 7/15/30/90 días por `?days=`. **Admin-only, cortado en el controlador**: este proyecto no tiene middleware `admin.only` como el Komo.

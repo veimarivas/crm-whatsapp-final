@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import Modal from '@/Components/Modal';
 import { Tab, TabGroup, TabList, TabPanel, TabPanels } from '@headlessui/react';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
@@ -70,6 +71,8 @@ export default function Team({
     const { flash, errors, auth } = usePage().props;
 
     const inviteForm = useForm({ role: 'agent', label: '' });
+    const [showNewMember, setShowNewMember] = useState(false);
+    const newMemberForm = useForm({ name: '', email: '', password: '', password_confirmation: '', account_role: 'agent' });
     const keyForm = useForm({ name: '', scopes: ['contacts:read'] });
     const webhookForm = useForm({ url: '', events: ['message.received'] });
     const [editingWebhookId, setEditingWebhookId] = useState(null);
@@ -97,6 +100,13 @@ export default function Team({
     };
 
     const invite = (e) => { e.preventDefault(); inviteForm.post(route('team.invite'), { preserveScroll: true }); };
+    const createMember = (e) => {
+        e.preventDefault();
+        newMemberForm.post(route('team.members.store'), {
+            preserveScroll: true,
+            onSuccess: () => { newMemberForm.reset(); setShowNewMember(false); },
+        });
+    };
     const createKey = (e) => { e.preventDefault(); keyForm.post(route('team.api-keys.store'), { preserveScroll: true, onSuccess: () => keyForm.reset() }); };
     const createWebhook = (e) => { e.preventDefault(); webhookForm.post(route('team.webhooks.store'), { preserveScroll: true, onSuccess: () => webhookForm.reset() }); };
 
@@ -291,6 +301,17 @@ export default function Team({
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM3 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 019.374 21c-2.331 0-4.512-.645-6.374-1.766z" />
                                             </svg>
                                             Generar link
+                                        </button>
+                                        {/* Alta directa: el link sirve para que alguien se sume
+                                            solo; esto es para cuando el admin da de alta a su
+                                            equipo y quiere que puedan trabajar en el momento. */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowNewMember(true)}
+                                            className="px-4 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all shadow-sm inline-flex items-center gap-1.5"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                                            Crear miembro sin link
                                         </button>
                                     </form>
                                 )}
@@ -571,6 +592,74 @@ export default function Team({
                     </TabPanels>
                 </TabGroup>
             </div>
+
+            <Modal show={showNewMember} onClose={() => setShowNewMember(false)} maxWidth="lg">
+                <form onSubmit={createMember} className="p-6">
+                    <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-md">
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM3 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 019.374 21c-2.331 0-4.512-.645-6.374-1.766z" /></svg>
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-bold text-gray-900">Nuevo miembro</h2>
+                            <p className="text-sm text-gray-500 mt-0.5">
+                                Queda creado acá y en el Komo con el mismo email y contraseña, así puede
+                                entrar y trabajar sus contactos asignados enseguida.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="mt-5 space-y-4">
+                        {[
+                            ['name', 'Nombre', 'text', 'Ej. Daniel Pérez'],
+                            ['email', 'Email', 'email', 'daniel@empresa.com'],
+                            ['password', 'Contraseña', 'password', 'Mínimo 8 caracteres'],
+                            ['password_confirmation', 'Repetir contraseña', 'password', ''],
+                        ].map(([field, label, type, placeholder]) => (
+                            <div key={field}>
+                                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">{label}</label>
+                                <input
+                                    type={type}
+                                    value={newMemberForm.data[field]}
+                                    onChange={(e) => newMemberForm.setData(field, e.target.value)}
+                                    placeholder={placeholder}
+                                    autoComplete="off"
+                                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 focus:bg-white transition-all"
+                                />
+                                {newMemberForm.errors[field] && <p className="mt-1 text-xs text-red-600 font-medium">{newMemberForm.errors[field]}</p>}
+                            </div>
+                        ))}
+
+                        <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">Rol</label>
+                            <select
+                                value={newMemberForm.data.account_role}
+                                onChange={(e) => newMemberForm.setData('account_role', e.target.value)}
+                                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 focus:bg-white transition-all"
+                            >
+                                <option value="agent">Agente — atiende sus contactos asignados</option>
+                                <option value="admin">Admin — ve y administra todo el equipo</option>
+                                <option value="viewer">Solo lectura</option>
+                            </select>
+                            <p className="text-[11px] text-gray-400 mt-1.5">
+                                En el Komo, «solo lectura» entra como agente: allá no hay un rol equivalente.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="mt-6 flex justify-end gap-2">
+                        <button type="button" onClick={() => setShowNewMember(false)} className="px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-100 transition-colors">
+                            Cancelar
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={newMemberForm.processing}
+                            className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm disabled:opacity-50 transition-colors"
+                        >
+                            {newMemberForm.processing ? 'Creando…' : 'Crear miembro'}
+                        </button>
+                    </div>
+                </form>
+            </Modal>
         </AuthenticatedLayout>
     );
 }

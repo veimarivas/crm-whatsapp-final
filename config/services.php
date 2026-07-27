@@ -50,6 +50,18 @@ return [
         'provision_secret' => env('HUB_PROVISION_SECRET'),
     ],
 
+    // Komo (el CRM de leads). Se usa para espejar los miembros del equipo:
+    // quien se da de alta acá tiene que existir allá, porque allá es donde se
+    // asignan los contactos. La API key necesita el scope `team:write`.
+    //   KOMO_URL=https://komo.tudominio.com
+    //   KOMO_API_KEY=komo_live_...
+    // Sin configurar, el espejo se salta en silencio y el miembro solo queda
+    // en este proyecto.
+    'komo' => [
+        'url' => env('KOMO_URL'),
+        'api_key' => env('KOMO_API_KEY'),
+    ],
+
     // Whisper.cpp para transcripción de audios entrantes del cliente.
     // Se configura en .env con:
     //   WHISPER_BINARY=/root/whisper.cpp/main

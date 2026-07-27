@@ -92,6 +92,8 @@ Route::middleware('auth')->group(function () {
     // Equipo + API keys
     Route::get('/settings/team', [\App\Http\Controllers\TeamController::class, 'index'])->name('settings.team');
     Route::post('/settings/team/invitations', [\App\Http\Controllers\TeamController::class, 'invite'])->name('team.invite');
+    // Alta directa, sin link: el admin carga los datos y el miembro ya entra.
+    Route::post('/settings/team/members', [\App\Http\Controllers\TeamController::class, 'storeMember'])->name('team.members.store');
     Route::delete('/settings/team/invitations/{invitation}', [\App\Http\Controllers\TeamController::class, 'revokeInvitation'])->name('team.invitations.revoke');
     Route::patch('/settings/team/members/{member}', [\App\Http\Controllers\TeamController::class, 'updateMember'])->name('team.members.update');
     Route::delete('/settings/team/members/{member}', [\App\Http\Controllers\TeamController::class, 'removeMember'])->name('team.members.remove');
