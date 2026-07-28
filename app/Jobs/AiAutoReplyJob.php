@@ -79,6 +79,7 @@ class AiAutoReplyJob implements ShouldQueue
                 'ai_limit_notified_at' => null,
             ]);
             $conversation->refresh();
+            $this->broadcastResumed($conversation);
         }
 
         // En pausa: se calla sin volver a avisar. El aviso ya salió cuando se
@@ -235,10 +236,30 @@ class AiAutoReplyJob implements ShouldQueue
                     'reason' => $reason, // 'failed' | 'limit_reached'
                     'title' => $title,
                     'body' => $body,
+                    // Para que el CRM externo pueda mostrar el mismo aviso en
+                    // su chat, con la hora en que la IA retoma.
+                    'paused_until' => $conversation->ai_paused_until?->toIso8601String(),
                 ],
             );
         } catch (\Throwable $e) {
             Log::warning('Webhook ai.unavailable falló', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Avisa al CRM externo que la pausa terminó, para que borre su aviso.
+     * Sin esto Komo seguiría mostrando "en pausa" con una hora ya vencida.
+     */
+    private function broadcastResumed(Conversation $conversation): void
+    {
+        try {
+            app(Dispatcher::class)->dispatch(
+                $conversation->account_id,
+                'ai.resumed',
+                ['conversation_id' => $conversation->id],
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Webhook ai.resumed falló', ['error' => $e->getMessage()]);
         }
     }
 

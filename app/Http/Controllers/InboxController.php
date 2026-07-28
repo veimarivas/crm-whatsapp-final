@@ -233,6 +233,18 @@ class InboxController extends Controller
             'ai_paused_until' => $validated['ai_enabled'] ? null : $conversation->ai_paused_until,
         ]);
 
+        // Si se levantó una pausa a mano, el CRM externo tiene que borrar su
+        // aviso: si no, Komo seguiría mostrando "en pausa hasta las HH:MM".
+        if ($validated['ai_enabled']) {
+            try {
+                app(Dispatcher::class)->dispatch($conversation->account_id, 'ai.resumed', [
+                    'conversation_id' => $conversation->id,
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('Webhook ai.resumed falló', ['error' => $e->getMessage()]);
+            }
+        }
+
         return response()->json($conversation->fresh());
     }
 
