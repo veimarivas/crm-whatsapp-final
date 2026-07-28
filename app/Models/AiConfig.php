@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToAccount;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 #[Fillable([
     'account_id', 'created_by', 'provider', 'model', 'base_url', 'api_key', 'embeddings_api_key',
     'system_prompt', 'is_active', 'auto_reply_enabled', 'auto_reply_max_per_conversation',
-    'business_hours', 'after_hours_message', 'timezone',
+    'business_hours', 'after_hours_message', 'timezone', 'auto_reply_cooldown_hours',
 ])]
 class AiConfig extends Model
 {
@@ -42,18 +43,23 @@ class AiConfig extends Model
         }
 
         $tz = $this->timezone ?: 'America/La_Paz';
-        $now = $when ? \Carbon\Carbon::instance($when)->setTimezone($tz) : \Carbon\Carbon::now($tz);
+        $now = $when ? Carbon::instance($when)->setTimezone($tz) : Carbon::now($tz);
         $dayKey = strtolower($now->englishDayOfWeek); // monday, tuesday...
         $dayKey = substr($dayKey, 0, 3); // mon, tue, wed...
 
         $ranges = $hours[$dayKey] ?? [];
-        if (empty($ranges)) return false;
+        if (empty($ranges)) {
+            return false;
+        }
 
         $current = $now->format('H:i');
         foreach ($ranges as $range) {
             [$start, $end] = $range;
-            if ($current >= $start && $current < $end) return true;
+            if ($current >= $start && $current < $end) {
+                return true;
+            }
         }
+
         return false;
     }
 

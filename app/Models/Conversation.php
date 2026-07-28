@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'account_id', 'contact_id', 'status', 'assigned_agent_id', 'entry_ad_id',
     'last_message_text', 'last_message_at', 'unread_count',
-    'ai_autoreply_disabled', 'ai_reply_count', 'ai_pending', 'ai_limit_notified_at',
+    'ai_autoreply_disabled', 'ai_reply_count', 'ai_pending', 'ai_limit_notified_at', 'ai_paused_until',
 ])]
 class Conversation extends Model
 {
@@ -31,6 +31,7 @@ class Conversation extends Model
             'ai_autoreply_disabled' => 'boolean',
             'ai_pending' => 'boolean',
             'ai_limit_notified_at' => 'datetime',
+            'ai_paused_until' => 'datetime',
         ];
     }
 

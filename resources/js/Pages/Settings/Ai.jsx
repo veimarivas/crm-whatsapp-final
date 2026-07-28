@@ -41,6 +41,7 @@ export default function Ai({ config, documents }) {
         is_active: config?.is_active ?? false,
         auto_reply_enabled: config?.auto_reply_enabled ?? false,
         auto_reply_max_per_conversation: config?.auto_reply_max_per_conversation ?? 3,
+        auto_reply_cooldown_hours: config?.auto_reply_cooldown_hours ?? 3,
         business_hours: config?.business_hours ?? null,
         after_hours_message: config?.after_hours_message ?? '',
         timezone: config?.timezone ?? 'America/La_Paz',
@@ -297,6 +298,26 @@ export default function Ai({ config, documents }) {
                                                         />
                                                         <span className="font-medium">respuestas por conversación</span>
                                                     </label>
+
+                                                    <label className="flex items-center gap-2 text-sm text-gray-700 mt-3">
+                                                        <span className="font-medium">Al llegar al tope, pausar</span>
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            max="24"
+                                                            value={form.data.auto_reply_cooldown_hours}
+                                                            onChange={(e) => form.setData('auto_reply_cooldown_hours', Number(e.target.value))}
+                                                            className="w-16 px-2 py-1 border border-gray-300 rounded-lg text-sm text-center bg-white focus:ring-emerald-500 focus:border-emerald-500"
+                                                        />
+                                                        <span className="font-medium">horas</span>
+                                                    </label>
+
+                                                    <p className="mt-2 text-xs text-gray-500 leading-relaxed">
+                                                        Pasado ese tiempo el contador se reinicia solo y la IA vuelve a responder.
+                                                        <strong> 3 h es lo recomendado</strong>: corta el ida y vuelta con un bot que
+                                                        ya no ayuda, pero quien vuelve el mismo día encuentra respuesta — y entra
+                                                        holgado en la ventana de 24 h, así que reactivarse no tiene costo.
+                                                    </p>
                                                     <p className="mt-2 text-xs text-gray-500">Si un agente responde, el bot se apaga en esa conversación</p>
                                                 </div>
                                             )}

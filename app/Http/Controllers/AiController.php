@@ -33,6 +33,7 @@ class AiController extends Controller
                 'is_active' => $config->is_active,
                 'auto_reply_enabled' => $config->auto_reply_enabled,
                 'auto_reply_max_per_conversation' => $config->auto_reply_max_per_conversation,
+                'auto_reply_cooldown_hours' => $config->auto_reply_cooldown_hours,
                 'business_hours' => $config->business_hours,
                 'after_hours_message' => $config->after_hours_message,
                 'timezone' => $config->timezone,
@@ -58,6 +59,9 @@ class AiController extends Controller
             'is_active' => 'boolean',
             'auto_reply_enabled' => 'boolean',
             'auto_reply_max_per_conversation' => 'integer|between:1,20',
+            // Máximo 24 h: más que eso equivale a apagar la IA, y para eso ya
+            // está el toggle por conversación.
+            'auto_reply_cooldown_hours' => 'integer|between:1,24',
             'business_hours' => 'nullable|array',
             'after_hours_message' => 'nullable|string|max:1024',
             'timezone' => 'nullable|string|max:60',

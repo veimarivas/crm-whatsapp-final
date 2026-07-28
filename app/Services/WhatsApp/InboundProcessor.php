@@ -132,12 +132,11 @@ class InboundProcessor
                 'last_message_at' => now(),
                 'unread_count' => $conversation->unread_count + 1,
                 'status' => Conversation::STATUS_OPEN,
-                // Cada mensaje NUEVO del cliente reinicia el cupo de la IA:
-                // así la IA puede volver a responder aunque el conteo llegara
-                // al máximo en la ráfaga anterior. El máximo sigue evitando
-                // loops si el cliente manda muchos mensajes seguidos.
-                'ai_reply_count' => 0,
-                'ai_limit_notified_at' => null,
+                // OJO: acá NO se reinicia `ai_reply_count`. Antes se ponía a 0
+                // con cada mensaje entrante, lo que volvía inalcanzable el
+                // "máximo N respuestas por conversación" de Ajustes — el tope
+                // no limitaba nada. Ahora el contador se acumula y lo reinicia
+                // `AiAutoReplyJob` cuando vence la pausa (`ai_paused_until`).
             ]);
 
             // Correlaciona respuestas con broadcasts (replied tracking).

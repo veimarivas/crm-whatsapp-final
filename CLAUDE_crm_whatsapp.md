@@ -191,6 +191,21 @@ Implementación y UI:
 - `Components/ServiceWindowBadge.jsx` en `/inbox` (header del chat + lista), `/dashboard`, `/contacts`, `/pipelines` y `/notifications`. Verde / ámbar (< 4 h) / rojo (cerrada). El rojo es el que importa: ahí escribir cuesta.
 - `GET /api/v1/ai/status` no tiene que ver con esto; la ventana no se expone por API porque Komo la calcula sola.
 
+## Tope de la IA con pausa y reactivación automática (2026-07-27)
+
+**El tope era inalcanzable.** `InboundProcessor` reseteaba `ai_reply_count` a 0 con CADA mensaje entrante, así que el "máximo N respuestas por conversación" de Ajustes no limitaba nada: el contador nunca llegaba al máximo. Ese reset se eliminó.
+
+Ahora el contador se acumula y, al llegar al tope, la conversación queda con `ai_paused_until = now + N horas`:
+
+- Durante la pausa la IA se calla y **no vuelve a avisar** — el aviso ya salió al alcanzar el tope; repetirlo en cada mensaje sería ruido.
+- Cuando la pausa vence, el propio `AiAutoReplyJob` reinicia `ai_reply_count` a 0 y limpia `ai_paused_until`: **la IA retoma sola**, sin cron ni intervención.
+- Reactivar a mano (toggle IA/Humano → IA) también levanta la pausa, en el Inbox y por la API que usa Komo.
+- El Inbox muestra un aviso dentro del hilo (`AiPausedNotice`) con la hora de reactivación y un enlace para reactivar ya. Va en el hilo y no en el header porque es información de *esta* conversación, justo donde el agente está leyendo.
+
+**Cooldown configurable** por cuenta: `ai_configs.auto_reply_cooldown_hours`, default **3 h**. El criterio: suficiente para cortar el ida y vuelta con un bot que ya no ayuda (que es para lo que existe el tope), corto como para que quien vuelve el mismo día encuentre respuesta, y holgado dentro de la ventana de servicio de 24 h — reactivarse no cuesta plata. Tope de 24 h en la validación: más que eso equivale a apagar la IA, y para eso está el toggle.
+
+Migración `2026_07_27_000001`. Tests en `AiCooldownTest` (6), incluido el que fija que el contador ya no se reinicia con cada mensaje.
+
 ## Espejo de miembros wacrm → Komo (2026-07-27)
 
 **El puente de usuarios era de ida solamente.** Komo creaba el user acá al aceptar una invitación (`TeamController@provisionInWacrm` allá), pero un miembro dado de alta EN este proyecto no existía en Komo — y Komo es donde se asignan los contactos, así que no aparecía en ningún desplegable de responsable. Ese era el bug.

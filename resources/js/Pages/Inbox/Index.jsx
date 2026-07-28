@@ -404,6 +404,50 @@ function DateSeparator({ label }) {
     );
 }
 
+/**
+ * Aviso dentro de la conversación: la IA agotó su tope de respuestas y queda
+ * en pausa hasta cierta hora, cuando el contador se reinicia solo.
+ *
+ * Va en el hilo y no en el header a propósito: es información sobre lo que
+ * pasó en esta conversación, y así queda a la vista del agente justo donde
+ * está leyendo, sin tener que interpretar por qué el bot dejó de contestar.
+ */
+function AiPausedNotice({ pausedUntil, replyCount, onResume }) {
+    if (!pausedUntil) return null;
+
+    const hasta = new Date(pausedUntil);
+    if (hasta <= new Date()) return null; // ya venció: la IA retoma sola
+
+    const minutos = Math.max(1, Math.round((hasta - Date.now()) / 60000));
+    const restante = minutos >= 60
+        ? `${Math.floor(minutos / 60)}h ${minutos % 60}m`
+        : `${minutos}m`;
+
+    return (
+        <div className="flex justify-center px-4">
+            <div className="max-w-md w-full rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-center">
+                <p className="text-xs font-bold text-amber-900">
+                    ⏸ La IA llegó a su límite de {replyCount ?? ''} respuestas
+                </p>
+                <p className="text-[11px] text-amber-800 mt-1 leading-relaxed">
+                    Sigue <strong>activa</strong>, pero en pausa para no seguir respondiendo sola.
+                    Vuelve a contestar a las <strong>{hasta.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}</strong>
+                    {' '}(en {restante}). Mientras tanto, contestá vos.
+                </p>
+                {onResume && (
+                    <button
+                        type="button"
+                        onClick={onResume}
+                        className="mt-2 text-[11px] font-bold text-amber-900 underline hover:text-amber-950"
+                    >
+                        Reactivar la IA ahora
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+}
+
 function TypingDots({ compact }) {
     return (
         <span className={`inline-flex items-center gap-0.5 ${compact ? '' : 'ml-1'}`}>
@@ -676,14 +720,19 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
         finally { setBulkBusy(false); }
     };
 
-    const toggleAiMode = async () => {
+    const setAiMode = async (enabled) => {
         if (!selectedId) return;
-        const nextEnabled = !!selected.ai_autoreply_disabled; // pasar a IA si estaba en Humano
         try {
-            await api(route('inbox.ai-mode', selectedId), { method: 'PATCH', body: JSON.stringify({ ai_enabled: nextEnabled }) });
+            await api(route('inbox.ai-mode', selectedId), { method: 'PATCH', body: JSON.stringify({ ai_enabled: enabled }) });
             loadConversations();
         } catch (err) { setError(err.message); }
     };
+
+    const toggleAiMode = () => setAiMode(!!selected.ai_autoreply_disabled); // a IA si estaba en Humano
+
+    // Levantar la pausa por tope NO es un toggle: la IA ya está activa, lo
+    // que se reinicia es su contador. Togglear la apagaría.
+    const resumeAiNow = () => setAiMode(true);
 
     const reactTo = async (msg, emoji) => {
         try {
@@ -1119,6 +1168,11 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
                                             </div>
                                         </div>
                                     )}
+                                    <AiPausedNotice
+                                        pausedUntil={selected.ai_paused_until}
+                                        replyCount={selected.ai_reply_count}
+                                        onResume={selected.ai_autoreply_disabled ? null : resumeAiNow}
+                                    />
                                     <div ref={bottomRef} />
                                 </div>
 

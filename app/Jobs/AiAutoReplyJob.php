@@ -39,6 +39,17 @@ class AiAutoReplyJob implements ShouldQueue
 
     public int $timeout = 130; // 10s de margen sobre los 120s del Ollama Client
 
+    /**
+     * Horas de pausa al agotar el tope, si la cuenta no configuró otra cosa.
+     *
+     * Tres es el equilibrio: suficiente para que un cliente confundido no
+     * siga rebotando contra el bot (que es para lo que existe el tope), y lo
+     * bastante corto como para que quien vuelve el mismo día encuentre
+     * respuesta. Además entra holgado en la ventana de servicio de 24 h, así
+     * que reactivarse no cuesta plata.
+     */
+    private const DEFAULT_COOLDOWN_HOURS = 3;
+
     public function __construct(public readonly string $conversationId) {}
 
     public function handle(ReplyGenerator $generator, Messenger $messenger): void
@@ -58,16 +69,40 @@ class AiAutoReplyJob implements ShouldQueue
             return;
         }
 
+        // Si la pausa por tope ya venció, el contador vuelve a cero y la IA
+        // retoma sola. Es lo que evita que un tope alcanzado deje muerta la
+        // conversación para siempre.
+        if ($conversation->ai_paused_until && $conversation->ai_paused_until->isPast()) {
+            $conversation->update([
+                'ai_reply_count' => 0,
+                'ai_paused_until' => null,
+                'ai_limit_notified_at' => null,
+            ]);
+            $conversation->refresh();
+        }
+
+        // En pausa: se calla sin volver a avisar. El aviso ya salió cuando se
+        // alcanzó el tope; repetirlo en cada mensaje sería ruido.
+        if ($conversation->ai_paused_until) {
+            return;
+        }
+
         // Tope agotado: el cliente sigue escribiendo y el bot ya no contesta.
         // Es exactamente el momento en que un humano tiene que entrar, así que
-        // se avisa (una sola vez) en vez de quedarse callado.
+        // se avisa (una sola vez) y se programa la reactivación.
         if ($conversation->ai_reply_count >= $config->auto_reply_max_per_conversation) {
+            $horas = max(1, (int) ($config->auto_reply_cooldown_hours ?: self::DEFAULT_COOLDOWN_HOURS));
+            $reanuda = now()->addHours($horas);
+
+            $conversation->update(['ai_paused_until' => $reanuda]);
+
             $this->notifyHumanNeeded(
                 $conversation,
                 'limit_reached',
                 'La IA llegó a su tope en esta conversación',
                 'La IA ya respondió '.$conversation->ai_reply_count.' veces a '
-                    .$this->contactLabel($conversation).' y no responderá más. Seguí vos la conversación.',
+                    .$this->contactLabel($conversation).'. Vuelve a responder a las '
+                    .$reanuda->format('H:i').'; hasta entonces seguí vos.',
             );
 
             return;

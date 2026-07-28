@@ -118,6 +118,8 @@ class TeamApiController extends Controller
             'ai_reply_count' => $validated['ai_enabled'] ? 0 : $conversation->ai_reply_count,
             // El contador vuelve a cero: el aviso de tope agotado tambien.
             'ai_limit_notified_at' => $validated['ai_enabled'] ? null : $conversation->ai_limit_notified_at,
+            // Reactivar a mano tambien levanta la pausa por tope.
+            'ai_paused_until' => $validated['ai_enabled'] ? null : $conversation->ai_paused_until,
         ]);
 
         return response()->json(['ok' => true, 'ai_enabled' => $validated['ai_enabled']]);
