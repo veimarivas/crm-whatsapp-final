@@ -118,6 +118,8 @@ Route::middleware('auth')->group(function () {
     // Notificaciones
     Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index'])->name('notifications');
     Route::post('/notifications/read-all', [\App\Http\Controllers\NotificationController::class, 'markAllRead'])->name('notifications.read-all');
+    // Aviso en vivo de mensajes entrantes, desde cualquier pantalla.
+    Route::get('/notifications/recent-inbound', [\App\Http\Controllers\NotificationController::class, 'recentInbound'])->name('notifications.recent-inbound');
 
     // Contactos
     Route::get('/contacts', [ContactController::class, 'index'])->name('contacts.index');

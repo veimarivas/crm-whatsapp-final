@@ -1,4 +1,5 @@
 import ApplicationLogo from '@/Components/ApplicationLogo';
+import LiveInbound from '@/Components/LiveInbound';
 import Dropdown from '@/Components/Dropdown';
 import { Link, usePage } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
@@ -396,6 +397,11 @@ export default function AuthenticatedLayout({ header, children }) {
                     </main>
                 </div>
             </div>
+
+            {/* Aviso en vivo de mensajes entrantes desde cualquier pantalla.
+                En el Inbox se desactiva: ahí ya se ven llegar, y un toast
+                encima de la conversación abierta molesta más que ayuda. */}
+            <LiveInbound enabled={!isActive('inbox')} />
         </div>
     );
 }
