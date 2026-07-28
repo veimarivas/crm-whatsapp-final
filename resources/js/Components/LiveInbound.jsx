@@ -74,6 +74,15 @@ export default function LiveInbound({ enabled = true, inboxUrl }) {
         setCanAskPermission('Notification' in window && Notification.permission === 'default');
 
         let cancelled = false;
+        let avisado = false;
+
+        // Un catch mudo hace imposible diagnosticar por qué no llegan avisos:
+        // se reporta una vez por sesión y se sigue reintentando.
+        const reportar = (motivo, detalle) => {
+            if (avisado) return;
+            avisado = true;
+            console.warn(`[avisos en vivo] ${motivo}`, detalle ?? '');
+        };
 
         const poll = async () => {
             try {
@@ -85,7 +94,14 @@ export default function LiveInbound({ enabled = true, inboxUrl }) {
                     credentials: 'same-origin',
                 });
 
-                if (!res.ok || cancelled) return;
+                if (cancelled) return;
+
+                if (!res.ok) {
+                    reportar(`el servidor respondió ${res.status} en ${url.pathname}`,
+                        res.status === 419 || res.status === 401 ? 'sesión vencida: recargá la página' : '');
+
+                    return;
+                }
 
                 const data = await res.json();
                 // El reloj lo manda el servidor: si el del navegador está
@@ -110,8 +126,11 @@ export default function LiveInbound({ enabled = true, inboxUrl }) {
                         new Notification(`${m.contact} te escribió`, { body: m.preview, tag: m.conversation_id });
                     });
                 }
-            } catch {
-                // Un fallo de red no puede romper la app: se reintenta solo.
+            } catch (error) {
+                // Un fallo no puede romper la app, pero tampoco desaparecer:
+                // el caso típico es que la ruta no exista todavía en el JS
+                // (falta rebuild) o que se haya caído la red.
+                reportar('no se pudo consultar', error?.message ?? error);
             }
         };
 
@@ -132,6 +151,7 @@ export default function LiveInbound({ enabled = true, inboxUrl }) {
 
     const open = (toast) => {
         dismiss(toast.id);
+        
         router.visit(inboxUrl ?? route('inbox'));
     };
 
