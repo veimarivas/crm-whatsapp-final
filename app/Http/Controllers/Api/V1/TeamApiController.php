@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
+use App\Models\Deal;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -123,5 +124,64 @@ class TeamApiController extends Controller
         ]);
 
         return response()->json(['ok' => true, 'ai_enabled' => $validated['ai_enabled']]);
+    }
+
+    /**
+     * Mueve el deal de la conversación a la etapa que el Komo indica — el
+     * Komo es la fuente de verdad del pipeline y esta llamada refleja sus
+     * cambios de etapa en la columna de /pipelines del wacrm.
+     *
+     * La etapa se mapea por nombre dentro del pipeline del deal. Si el nombre
+     * no existe (el Komo siembra "Ganado"/"Perdido" que acá no se crean),
+     * los estados terminales caen a la última etapa del pipeline y si no,
+     * se conserva la etapa actual.
+     */
+    public function setConversationStage(Request $request, string $conversationId): JsonResponse
+    {
+        $validated = $request->validate([
+            'stage_name' => 'required|string|max:100',
+            'status' => ['nullable', Rule::in(['open', 'won', 'lost'])],
+        ]);
+
+        $accountId = $this->accountId($request);
+
+        $conversation = Conversation::where('account_id', $accountId)->findOrFail($conversationId);
+
+        $deal = Deal::where('account_id', $accountId)
+            ->where('conversation_id', $conversation->id)
+            ->first();
+
+        if (! $deal) {
+            return response()->json(['ok' => true, 'updated' => false]);
+        }
+
+        $updates = [];
+
+        $stage = $deal->pipeline->stages()->where('name', $validated['stage_name'])->first();
+
+        if ($stage) {
+            $updates['stage_id'] = $stage->id;
+        } elseif (in_array($validated['status'] ?? null, ['won', 'lost'], true)) {
+            // reorder: stages() ya trae ORDER BY position ASC.
+            $last = $deal->pipeline->stages()->reorder('position', 'desc')->first();
+            if ($last) {
+                $updates['stage_id'] = $last->id;
+            }
+        }
+
+        if (isset($validated['status']) && $validated['status'] !== $deal->status) {
+            $updates['status'] = $validated['status'];
+        }
+
+        if ($updates !== []) {
+            $deal->update($updates);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'updated' => $updates !== [],
+            'stage_id' => $updates['stage_id'] ?? $deal->stage_id,
+            'status' => $updates['status'] ?? $deal->status,
+        ]);
     }
 }

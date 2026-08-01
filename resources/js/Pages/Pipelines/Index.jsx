@@ -460,14 +460,12 @@ function StageManagerModal({ open, onClose, pipeline }) {
     );
 }
 
-export default function Index({ pipelines, pipeline, deals, members, contacts, currency }) {
+export default function Index({ pipelines, pipeline, deals, members, contacts, currency, filters = {}, isAdmin = false }) {
     const { flash, auth } = usePage().props;
     const [modal, setModal] = useState(null);
     const [dragOver, setDragOver] = useState(null);
     const [view, setView] = useState(() => localStorage.getItem('pipelines.view') || 'kanban');
-    const [query, setQuery] = useState('');
-    const [filterResponsible, setFilterResponsible] = useState('');
-    const [filterStatus, setFilterStatus] = useState('');
+    const [query, setQuery] = useState(filters?.q || '');
     const [selectedIds, setSelectedIds] = useState(() => new Set());
     const newPipelineForm = useForm({ name: '' });
 
@@ -481,30 +479,29 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
 
     useEffect(() => { localStorage.setItem('pipelines.view', view); }, [view]);
 
-    const [debouncedQuery, setDebouncedQuery] = useState('');
+    // Debounce búsqueda — filtra en el servidor y persiste en la URL (como Komo /leads).
     useEffect(() => {
-        const t = setTimeout(() => setDebouncedQuery(query), 300);
+        if (query === (filters?.q || '')) return;
+        const t = setTimeout(() => {
+            router.get(route('pipelines.index'), { ...filters, pipeline: pipeline?.id, q: query }, { preserveState: true, preserveScroll: true, replace: true });
+        }, 350);
         return () => clearTimeout(t);
     }, [query]);
 
-    const filteredDeals = deals.filter((d) => {
-        if (debouncedQuery) {
-            const q = debouncedQuery.toLowerCase();
-            const contactName = d.contact?.name?.toLowerCase() || '';
-            const contactPhone = d.contact?.phone || '';
-            const title = d.title?.toLowerCase() || '';
-            if (!contactName.includes(q) && !contactPhone.includes(q) && !title.includes(q)) return false;
-        }
-        if (filterResponsible === 'none') { if (d.assigned_to) return false; }
-        else if (filterResponsible && d.assigned_to !== filterResponsible) return false;
-        if (filterStatus && d.status !== filterStatus) return false;
-        return true;
-    });
+    const applyFilter = (patch) => {
+        router.get(route('pipelines.index'), { ...filters, pipeline: pipeline?.id, ...patch }, { preserveState: true, preserveScroll: true, replace: true });
+    };
+
+    const clearFilters = () => {
+        setQuery('');
+        router.get(route('pipelines.index'), { pipeline: pipeline?.id }, { preserveState: false });
+    };
 
     const openDeals = deals.filter((d) => d.status === 'open');
     const totalOpen = openDeals.reduce((sum, d) => sum + Number(d.value || 0), 0);
     const wonDeals = deals.filter((d) => d.status === 'won');
     const totalWon = wonDeals.reduce((sum, d) => sum + Number(d.value || 0), 0);
+    const hasActiveFilters = filters?.responsible || filters?.status || (filters?.q && filters.q.length > 0);
 
     const dropOnStage = (e, stageId) => {
         e.preventDefault();
@@ -615,20 +612,22 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                                 className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 focus:bg-white transition-all"
                             />
                         </div>
-                        <select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)} className="px-3 py-2 pe-8 border border-gray-200 rounded-xl text-sm bg-gray-50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all cursor-pointer appearance-none bg-no-repeat" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%236b7280' stroke-width='1.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M5 8l5 5 5-5'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.5rem center', backgroundSize: '1rem' }}>
-                            <option value="">Todos los responsables</option>
-                            <option value="none">Sin asignar</option>
-                            {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                        </select>
-                        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 pe-8 border border-gray-200 rounded-xl text-sm bg-gray-50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all cursor-pointer appearance-none bg-no-repeat" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%236b7280' stroke-width='1.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M5 8l5 5 5-5'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.5rem center', backgroundSize: '1rem' }}>
+                        {isAdmin && (
+                            <select value={filters?.responsible || ''} onChange={(e) => applyFilter({ responsible: e.target.value || null })} className="px-3 py-2 pe-8 border border-gray-200 rounded-xl text-sm bg-gray-50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all cursor-pointer appearance-none bg-no-repeat" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%236b7280' stroke-width='1.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M5 8l5 5 5-5'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.5rem center', backgroundSize: '1rem' }}>
+                                <option value="">Todos los responsables</option>
+                                <option value="none">Sin asignar</option>
+                                {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                            </select>
+                        )}
+                        <select value={filters?.status || ''} onChange={(e) => applyFilter({ status: e.target.value || null })} className="px-3 py-2 pe-8 border border-gray-200 rounded-xl text-sm bg-gray-50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all cursor-pointer appearance-none bg-no-repeat" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20' stroke='%236b7280' stroke-width='1.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M5 8l5 5 5-5'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.5rem center', backgroundSize: '1rem' }}>
                             <option value="">Todos los estados</option>
                             <option value="open">Abiertos</option>
                             <option value="won">Ganados</option>
                             <option value="lost">Perdidos</option>
                         </select>
-                        {(debouncedQuery || filterResponsible || filterStatus) && (
+                        {hasActiveFilters && (
                             <button
-                                onClick={() => { setQuery(''); setDebouncedQuery(''); setFilterResponsible(''); setFilterStatus(''); }}
+                                onClick={clearFilters}
                                 className="text-xs font-semibold text-gray-500 hover:text-gray-700 px-2 underline"
                             >
                                 Limpiar
@@ -664,7 +663,7 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                 ) : view === 'kanban' ? (
                     <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
                         {pipeline.stages.map((stage) => {
-                            const stageDeals = filteredDeals.filter((d) => d.stage_id === stage.id);
+                            const stageDeals = deals.filter((d) => d.stage_id === stage.id);
                             const stageTotal = stageDeals.filter((d) => d.status === 'open').reduce((sum, d) => sum + Number(d.value || 0), 0);
 
                             return (
@@ -694,11 +693,11 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                     </div>
                 ) : (
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                        {filteredDeals.length === 0 ? (
+                        {deals.length === 0 ? (
                             <div className="p-14 text-center text-sm text-gray-400">Sin oportunidades con estos filtros</div>
                         ) : (
                             <ul className="divide-y divide-gray-50">
-                                {filteredDeals.map((d) => <li key={d.id}><DealRow deal={d} currency={currency} selected={selectedIds.has(d.id)} onToggleSelect={toggleSelect} anySelected={anySelected} /></li>)}
+                                {deals.map((d) => <li key={d.id}><DealRow deal={d} currency={currency} selected={selectedIds.has(d.id)} onToggleSelect={toggleSelect} anySelected={anySelected} /></li>)}
                             </ul>
                         )}
                     </div>

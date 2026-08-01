@@ -68,4 +68,8 @@ Route::prefix('v1')->middleware('throttle:public-api')->group(function () {
     // Toggle IA/Humano en la conversación desde Komo (mismo scope que assign).
     Route::patch('/conversations/{id}/ai-mode', [\App\Http\Controllers\Api\V1\TeamApiController::class, 'setAiMode'])
         ->middleware('api.key:conversations:write');
+
+    // Mueve el deal de la conversación a la etapa del Komo (fuente de verdad del pipeline).
+    Route::patch('/conversations/{id}/stage', [\App\Http\Controllers\Api\V1\TeamApiController::class, 'setConversationStage'])
+        ->middleware('api.key:conversations:write');
 });

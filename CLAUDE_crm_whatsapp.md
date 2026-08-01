@@ -88,6 +88,10 @@ Ronda 10 — Producción, Ollama y rediseño Inbox (2026-07-20/21):
 - **Dashboard — bug de keys arreglado** (`DashboardController`): las stats se llamaban `broadcastsSent`, `activeAutomations`, `activeFlows`, pero el frontend leía `broadcasts`, `automations`, `flows`, `pending` — la sección "Actividad" mostraba 0. Renombré las claves en el controller para que coincidan. Nueva métrica `aiReplies` = mensajes con `sender_type='bot'` en los últimos 7 días → card violeta "Respuestas IA (7 días)" en el Dashboard.
 - **Auto-creación de deals para leads nuevos** (`InboundProcessor::createLeadDeal()`): cuando `$isNewContact === true`, busca el primer pipeline de la cuenta (`orderBy('created_at')`) y su primera etapa (`orderBy('position')`) y crea un `Deal` con `status='open'`, título = `contact->name ?: contact->phone`. Idempotente: no crea si ya hay un deal `open` para ese contacto. Si la cuenta no tiene pipeline, se omite silenciosamente.
 
+Ronda 10 — Pipelines: filtros server-side + espejo de etapa Komo→wacrm (2026-07-31):
+- **Filtros de `/pipelines` pasaron de cliente a servidor** (`PipelineController@index`), igual que `/leads` del Komo: query params `responsible` (con `none` = sin asignar), `status` y `q` que persisten en la URL; `Pipelines/Index.jsx` usa `applyFilter()`/debounce con `router.get` en vez de filtrar en memoria. El select de responsable solo se muestra a admins (`isAdmin`, servido por el controller). Tests: `PipelineServerFilteringTest`.
+- **Espejo de etapa Komo→wacrm**: el Komo es la fuente de verdad del pipeline. `Lead::moveToStage` (Komo) dispara `SyncLeadStageToWacrmJob` → `PATCH /api/v1/conversations/{id}/stage` (wacrm, scope `conversations:write`, `TeamApiController@setConversationStage`). El wacrm mapea la etapa por nombre dentro del pipeline del deal; si no existe (Komo siembra "Ganado"/"Perdido" que acá no se crean), los estados terminales caen a la última etapa y `status` se actualiza a `won`/`lost`. Sin esto los deals quedaban clavados en la primera etapa y la columna no coincidía con Komo. Tests: `ApiConversationStageTest` (wacrm) y `LeadStageSyncTest` (Komo).
+
 Ronda 9 — Equipo centralizado (2026-07-19, Fase 7 del Komo Hub) — suite 90/90 (474):
 - **`ProvisionController` extendido**: acepta `account_id` (existente) + `account_role` (`owner|admin|agent|viewer`). Si llegan, el user se une a la cuenta remota con ese rol (patrón MemberProvisioner del hub); si no, comportamiento original (owner de cuenta nueva). Test `ProvisionMemberTest`.
 
@@ -239,6 +243,38 @@ Además del proceso, mide la **carga**: `assigned_contacts` cuenta TODO lo asign
 **Son texto libre, no plantillas aprobadas de Meta**: solo salen dentro de la ventana de servicio. Con la ventana cerrada Meta las rechaza — no es que cuesten más, es que no se entregan. Eso está explicado en la propia pantalla para que nadie asuma que sirven para reactivar contactos fríos; para eso hace falta una plantilla aprobada (`/templates`), que sí se factura.
 
 **Bug arreglado de paso**: `QuickReply` no tenía la relación `user` que el listado carga con `with('user:id,name')`. Con cero plantillas Eloquent ni la resuelve, pero con una sola la pantalla devolvía 500 — o sea que Ajustes → Plantillas rápidas estaba roto en cuanto alguien creaba la primera. Hay test de regresión.
+
+## Despliegue en producción
+
+**Los dos proyectos viven juntos en el mismo VPS Ubuntu y casi siempre se despliegan de a pares** — comparten integración por API y webhooks, así que un cambio en uno suele necesitar el otro.
+
+| Proyecto | Ruta en el servidor | Dominio |
+|---|---|---|
+| wacrm (este) | `/var/www/crm-whatsapp` | `crm-whatsapp.posgradosinnovaciencia.com` |
+| Komo | `/var/www/crm-komo` | `komo.posgradosinnovaciencia.com` |
+
+Secuencia completa (omitir `migrate` si el cambio no trae migración, y `npm ci && npm run build` si no tocó `resources/js`):
+
+```bash
+cd /var/www/crm-whatsapp && git pull origin main && npm ci && npm run build && php artisan migrate --force && php artisan optimize:clear
+cd /var/www/crm-komo && git pull origin main && npm ci && npm run build && php artisan migrate --force && php artisan optimize:clear
+```
+
+Y reiniciar los workers si el cambio toca jobs (IA, espejo de asignaciones, Telegram, broadcasts):
+
+```bash
+sudo systemctl restart crm-whatsapp-queue.service
+sudo systemctl restart crm-komo-queue.service
+```
+
+**Trampas conocidas al desplegar:**
+
+- **`npm run build` no es opcional** cuando cambió el front: `git pull` trae el fuente, pero el bundle se genera en el build. Sin él el navegador sigue sirviendo el JS viejo y "no pasó nada".
+- **`/public/build` está en `.gitignore`** en los dos proyectos — por eso el build va en el servidor.
+- **`npm ci` exige que `package-lock.json` esté al día**: ya reventó con ERESOLVE por `vite ^8` + `@vitejs/plugin-react ^4` (resuelto subiendo el plugin a `^5.2`).
+- **Los jobs en cola no salen sin worker.** Si un aviso no llega, lo primero es `systemctl status` del worker de esa app, no revisar el código.
+- **`php artisan config:clear`** después de tocar el `.env`.
+- Al pasar comandos con credenciales, **no dejar marcadores tipo `PEGA_AQUI`** en una línea ejecutable: ya pasó que se copiaron literales al `.env` y la integración con Komo fallaba con "Invalid API key".
 
 ## Pendiente menor
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Contact;
 use App\Models\Pipeline;
 use App\Models\PipelineStage;
+use App\Models\User;
 use App\Services\WhatsApp\ServiceWindow;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -35,9 +36,25 @@ class PipelineController extends Controller
         $selectedId = $request->query('pipeline', $pipelines->first()?->id);
         $selected = $pipelines->firstWhere('id', $selectedId) ?? $pipelines->first();
 
+        // Filtros (persisten via query string) — mismo patrón que Komo /leads.
+        $filters = [
+            'responsible' => $request->query('responsible'),
+            'status' => $request->query('status'),
+            'q' => trim((string) $request->query('q', '')),
+        ];
+
         $deals = $selected
             ? $selected->deals()
                 ->with(['contact:id,name,phone', 'assignee:id,name'])
+                ->when($filters['responsible'], fn ($q, $v) => $v === 'none' ? $q->whereNull('assigned_to') : $q->where('assigned_to', $v))
+                ->when($filters['status'], fn ($q, $v) => $q->where('status', $v))
+                ->when($filters['q'] !== '', function ($q) use ($filters) {
+                    $t = $filters['q'];
+                    $q->where(function ($qq) use ($t) {
+                        $qq->where('title', 'like', "%{$t}%")
+                            ->orWhereHas('contact', fn ($cq) => $cq->where('name', 'like', "%{$t}%")->orWhere('phone', 'like', "%{$t}%"));
+                    });
+                })
                 ->orderByDesc('created_at')
                 ->get()
             : collect();
@@ -57,6 +74,8 @@ class PipelineController extends Controller
                 'stages' => $selected->stages,
             ] : null,
             'deals' => $deals,
+            'filters' => $filters,
+            'isAdmin' => $request->user()->hasRoleAtLeast(User::ROLE_ADMIN),
             'members' => $request->user()->account->members()->get(['id', 'name']),
             'contacts' => Contact::forAccount($accountId)
                 ->orderBy('name')
