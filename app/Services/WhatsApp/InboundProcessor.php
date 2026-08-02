@@ -211,7 +211,12 @@ class InboundProcessor
 
         // Bot IA al final: es el job más lento (30-60s con Qwen). Se abstiene
         // si hay un flow activo (el chatbot estructurado tiene prioridad).
-        AiAutoReplyJob::dispatch($conversation->id);
+        // Para audios NO se encola acá: la respuesta se difiere hasta que la
+        // transcripción esté lista. La encola TranscribeAudioJob al guardar el
+        // transcript, así la IA nunca contesta a un audio que no escuchó.
+        if ($storedMessage->content_type !== 'audio') {
+            AiAutoReplyJob::dispatch($conversation->id);
+        }
     }
 
     /** @return array{0:string,1:?string,2:?string,3:?string} [content_type, content_text, media_id, interactive_reply_id] */

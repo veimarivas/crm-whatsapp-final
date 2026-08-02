@@ -22,8 +22,13 @@ class ReplyGenerator
     {
         // Historial ampliado a 20 mensajes para que la IA vea el contexto
         // completo del hilo (temas cambiantes, preguntas anteriores, etc.).
+        // Los audios no traen content_text: su contenido vive en `transcript`
+        // (lo escribe TranscribeAudioJob). Se incluyen para que la IA pueda
+        // responder a un mensaje de voz usando su transcripción.
         $history = $conversation->messages()
-            ->whereNotNull('content_text')
+            ->where(function ($q) {
+                $q->whereNotNull('content_text')->orWhereNotNull('transcript');
+            })
             ->orderByDesc('created_at')
             ->limit(20)
             ->get()
@@ -38,7 +43,7 @@ class ReplyGenerator
         $messages = $history
             ->map(fn (Message $m) => [
                 'role' => $m->sender_type === Message::SENDER_CUSTOMER ? 'user' : 'assistant',
-                'content' => mb_substr($m->content_text, 0, 2000),
+                'content' => mb_substr($m->transcript ?? $m->content_text, 0, 2000),
             ])
             ->all();
 
@@ -53,7 +58,11 @@ class ReplyGenerator
 
         return Client::for($config)->chat(
             $messages,
-            $this->buildSystemPrompt($config, $conversation, $lastCustomer?->content_text),
+            $this->buildSystemPrompt(
+                $config,
+                $conversation,
+                $lastCustomer ? ($lastCustomer->transcript ?? $lastCustomer->content_text) : null
+            ),
             800, // maxTokens: margen para respuestas ricas cuando el knowledge base es grande
         );
     }

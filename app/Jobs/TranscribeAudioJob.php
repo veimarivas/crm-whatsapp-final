@@ -150,6 +150,11 @@ class TranscribeAudioJob implements ShouldQueue
                 } catch (\Throwable $e) {
                     Log::warning('Webhook message.transcribed falló', ['error' => $e->getMessage()]);
                 }
+
+                // Recién ahora que el audio tiene texto la IA puede responder:
+                // se difiere acá (InboundProcessor no encola el bot para
+                // audios) para que la respuesta use la transcripción.
+                AiAutoReplyJob::dispatch($message->conversation_id);
             } else {
                 Log::info('TranscribeAudioJob: whisper devolvió texto vacío', ['message_id' => $message->id]);
             }
