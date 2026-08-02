@@ -693,14 +693,15 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                                     onDrop={(e) => dropOnStage(e, stage.id)}
                                     className={`flex w-72 shrink-0 flex-col rounded-2xl border-2 transition-all bg-gray-50 ${dragOver === stage.id ? 'border-emerald-400 bg-emerald-50/50 scale-[1.02]' : 'border-transparent'}`}
                                 >
-                                    <div className="rounded-t-2xl px-4 py-3 text-white" style={{ background: `linear-gradient(135deg, ${stage.color} 0%, ${stage.color}dd 100%)` }}>
+                                    <div className="rounded-t-2xl px-4 py-3" style={{ background: `${stage.color}1f` }}>
                                         <div className="flex items-center justify-between">
-                                            <span className="font-bold text-sm">{stage.name}</span>
-                                            <span className="text-[10px] font-bold bg-white/25 rounded-full px-2 py-0.5 backdrop-blur-sm">{stageDeals.length}</span>
+                                            <span className="font-bold text-sm" style={{ color: stage.color }}>{stage.name}</span>
+                                            <span className="text-[10px] font-bold rounded-full px-2 py-0.5" style={{ background: `${stage.color}26`, color: stage.color }}>{stageDeals.length}</span>
                                         </div>
-                                        <p className="text-xs font-medium text-white/80 mt-1 tabular-nums">{money(stageTotal, currency)}</p>
+                                        <p className="text-xs font-medium mt-1 tabular-nums" style={{ color: `${stage.color}cc` }}>{money(stageTotal, currency)}</p>
                                     </div>
-                                    <div className="flex flex-1 flex-col gap-2 p-2.5 min-h-[180px]">
+                                    {/* ~15 tarjetas visibles; de ahí scrollea hacia abajo */}
+                                    <div className="flex flex-1 flex-col gap-2 p-2.5 min-h-[180px] overflow-y-auto" style={{ maxHeight: 2500 }}>
                                         {stageDeals.map((deal) => <DealCard key={deal.id} deal={deal} currency={currency} selected={selectedIds.has(deal.id)} onToggleSelect={toggleSelect} anySelected={anySelected} />)}
                                         {stageDeals.length === 0 && (
                                             <p className="py-8 text-center text-xs text-gray-400 font-medium">Arrastra oportunidades aquí</p>
