@@ -38,7 +38,7 @@ class SyncDealAssignments extends Command
         $total = 0;
         $fixed = 0;
 
-        $query->orderBy('id')->eachById(500, function (Deal $deal) use (&$total, &$fixed) {
+        $query->orderBy('id')->eachById(function (Deal $deal) use (&$total, &$fixed) {
             $total++;
 
             if ((string) $deal->assigned_to !== (string) ($deal->conversation->assigned_agent_id ?? '')) {

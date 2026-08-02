@@ -165,4 +165,30 @@ class DealAssignmentSyncTest extends TestCase
         $this->assertSame($stage->id, $deal->stage_id, 'El deal cae en la primera etapa abierta.');
         $this->assertSame($this->agent->id, $deal->assigned_to);
     }
+
+    public function test_comando_repara_los_deals_existentes(): void
+    {
+        // Deals creados antes del fix: la conversación tiene agente asignado
+        // pero el deal quedó con assigned_to = null (el bug de /pipelines).
+        $c1 = $this->makeConversation('584125550011');
+        $c1->update(['assigned_agent_id' => $this->agent->id]);
+        $deal1 = $this->makeDeal($c1);
+
+        $c2 = $this->makeConversation('584125550012');
+        $deal2 = $this->makeDeal($c2);
+
+        // El deal ya correcto no debe tocarse.
+        $this->actingAs($this->user)
+            ->patchJson("/inbox/conversations/{$c2->id}/assign", ['agent_id' => $this->agent->id])
+            ->assertOk();
+
+        $this->assertSame(2, Deal::count());
+
+        $this->artisan('wacrm:sync-deal-assignments')
+            ->expectsOutputToContain('1 deals actualizados de 2 revisados')
+            ->assertExitCode(0);
+
+        $this->assertSame($this->agent->id, $deal1->fresh()->assigned_to);
+        $this->assertSame($this->agent->id, $deal2->fresh()->assigned_to);
+    }
 }
