@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Jobs\AiAutoReplyJob;
+use App\Jobs\DeliverWebhookJob;
 use App\Models\Account;
 use App\Models\AccountInvitation;
 use App\Models\AiConfig;
@@ -13,10 +14,12 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Notification;
 use App\Models\User;
+use App\Models\WebhookEndpoint;
 use App\Models\WhatsappConfig;
 use App\Services\Ai\Chunker;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class Phase6Test extends TestCase
@@ -191,6 +194,46 @@ class Phase6Test extends TestCase
 
         // El contacto y la conversación se crearon solos.
         $this->assertSame(1, Contact::where('phone_normalized', '584125559999')->count());
+    }
+
+    public function test_el_webhook_message_sent_incluye_media_id(): void
+    {
+        Queue::fake();
+
+        WhatsappConfig::create([
+            'account_id' => $this->account->id,
+            'phone_number_id' => '111222333',
+            'access_token' => 'token',
+            'status' => 'connected',
+        ]);
+        [, $plaintext] = ApiKey::issue($this->account->id, $this->user->id, 'sender', ['messages:write']);
+
+        // Webhook que escucha message.sent (Komo usa media_id para el proxy).
+        WebhookEndpoint::create([
+            'account_id' => $this->account->id,
+            'url' => 'https://komo.test/webhooks/wacrm/1',
+            'secret' => 'whsec_test',
+            'events' => ['message.sent'],
+        ]);
+
+        Http::fake([
+            'graph.facebook.com/*' => Http::response(['id' => 'media-123', 'messages' => [['id' => 'wamid.MEDIA1']]]),
+        ]);
+
+        $this->withToken($plaintext)
+            ->postJson('/api/v1/messages/media', [
+                'to' => '+58 412 555 9999',
+                'file_base64' => base64_encode('fake-image-bytes'),
+                'mime_type' => 'image/jpeg',
+                'filename' => 'foto.jpg',
+                'caption' => 'Hola',
+            ])
+            ->assertCreated();
+
+        Queue::assertPushed(DeliverWebhookJob::class, function ($job) {
+            return $job->event === 'message.sent'
+                && ($job->data['message']['media_id'] ?? null) === 'media-123';
+        });
     }
 
     public function test_flujo_de_invitacion_completo(): void

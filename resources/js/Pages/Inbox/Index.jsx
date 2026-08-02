@@ -189,7 +189,7 @@ function MessageBubble({ msg, onReply, onReact, onOpenImage }) {
                 {msg.content_type === 'image' && msg.media_url && (
                     <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); onOpenImage?.(`/whatsapp/media/${msg.media_url}`, 'Imagen'); }}
+                        onClick={(e) => { e.stopPropagation(); onOpenImage?.({ src: `/whatsapp/media/${msg.media_url}`, alt: 'Imagen' }); }}
                         className="block mb-1 cursor-zoom-in"
                     >
                         <img src={`/whatsapp/media/${msg.media_url}`} alt="" className="max-h-64 rounded-lg" />

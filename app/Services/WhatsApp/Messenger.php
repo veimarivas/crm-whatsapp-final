@@ -218,6 +218,7 @@ class Messenger
                     'type' => $message->content_type,
                     'text' => $message->content_text,
                     'wamid' => $message->message_id,
+                    'media_id' => $message->media_url, // Meta media_id — Komo lo usa para el proxy /leads/media/{id}
                     'sender_type' => $message->sender_type, // 'agent' | 'bot'
                     'sender_name' => $sender?->name,        // null si el sender fue IA
                     'sender_role' => $sender?->account_role,
