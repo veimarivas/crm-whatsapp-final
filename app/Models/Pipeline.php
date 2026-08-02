@@ -8,12 +8,17 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['account_id', 'name'])]
+#[Fillable(['account_id', 'name', 'external_id', 'is_default'])]
 class Pipeline extends Model
 {
     use BelongsToAccount, HasUuids;
 
     public const UPDATED_AT = null;
+
+    protected function casts(): array
+    {
+        return ['is_default' => 'boolean'];
+    }
 
     public function stages(): HasMany
     {

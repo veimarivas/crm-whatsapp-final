@@ -72,4 +72,9 @@ Route::prefix('v1')->middleware('throttle:public-api')->group(function () {
     // Mueve el deal de la conversación a la etapa del Komo (fuente de verdad del pipeline).
     Route::patch('/conversations/{id}/stage', [\App\Http\Controllers\Api\V1\TeamApiController::class, 'setConversationStage'])
         ->middleware('api.key:conversations:write');
+
+    // Sincroniza la estructura de pipelines/etapas desde el Komo (fuente de
+    // verdad): /pipelines del wacrm queda con las mismas columnas.
+    Route::post('/pipelines/sync', [\App\Http\Controllers\Api\V1\PipelineSyncController::class, 'sync'])
+        ->middleware('api.key:conversations:write');
 });

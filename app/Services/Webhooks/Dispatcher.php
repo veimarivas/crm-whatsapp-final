@@ -19,6 +19,7 @@ class Dispatcher
         'ai.pending_changed',
         'contact.created',
         'broadcast.completed',
+        'deal.stage_changed',
     ];
 
     public function dispatch(string $accountId, string $event, array $data): void

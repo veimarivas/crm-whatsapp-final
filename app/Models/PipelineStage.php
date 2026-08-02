@@ -8,10 +8,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['pipeline_id', 'name', 'position', 'color'])]
+#[Fillable(['pipeline_id', 'name', 'position', 'color', 'external_id', 'stage_type'])]
 class PipelineStage extends Model
 {
     use HasUuids;
+
+    public const TYPE_OPEN = 'open';
+    public const TYPE_WON = 'won';
+    public const TYPE_LOST = 'lost';
 
     public const UPDATED_AT = null;
 

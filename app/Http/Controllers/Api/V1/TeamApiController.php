@@ -159,10 +159,17 @@ class TeamApiController extends Controller
 
         $stage = $deal->pipeline->stages()->where('name', $validated['stage_name'])->first();
 
+        // Etapas terminales que Komo siembra ("Ganado"/"Perdido"): si el
+        // nombre no existe, se buscan por stage_type para respetar la columna.
+        if (! $stage && in_array($validated['status'] ?? null, ['won', 'lost'], true)) {
+            $stage = $deal->pipeline->stages()->where('stage_type', $validated['status'])->first();
+        }
+
         if ($stage) {
             $updates['stage_id'] = $stage->id;
         } elseif (in_array($validated['status'] ?? null, ['won', 'lost'], true)) {
-            // reorder: stages() ya trae ORDER BY position ASC.
+            // Legacy: pipelines sincronizados antes de stage_type, sin etapa
+            // terminal → cae a la última columna (comportamiento original).
             $last = $deal->pipeline->stages()->reorder('position', 'desc')->first();
             if ($last) {
                 $updates['stage_id'] = $last->id;

@@ -33,7 +33,34 @@ class DealController extends Controller
         // Movimiento rápido de columna (drag & drop): solo stage_id.
         if ($request->has('stage_id') && count($request->all()) === 1) {
             $this->assertStageBelongsToPipeline($request->input('stage_id'), $deal->pipeline);
-            $deal->update(['stage_id' => $request->input('stage_id')]);
+
+            $stage = PipelineStage::find($request->input('stage_id'));
+
+            if ($stage && $stage->id !== $deal->stage_id) {
+                // El estado se deriva del tipo de la columna (open/won/lost),
+                // igual que en el kanban del Komo.
+                $status = match ($stage->stage_type) {
+                    PipelineStage::TYPE_WON => 'won',
+                    PipelineStage::TYPE_LOST => 'lost',
+                    default => 'open',
+                };
+
+                $deal->update(['stage_id' => $stage->id, 'status' => $status]);
+
+                // Espeja el movimiento en el lead del Komo para que los
+                // contactos queden en la misma columna en ambos proyectos.
+                if ($deal->conversation_id) {
+                    app(\App\Services\Webhooks\Dispatcher::class)->dispatch(
+                        $deal->account_id,
+                        'deal.stage_changed',
+                        [
+                            'conversation_id' => $deal->conversation_id,
+                            'stage_name' => $stage->name,
+                            'status' => $status,
+                        ],
+                    );
+                }
+            }
 
             return back();
         }

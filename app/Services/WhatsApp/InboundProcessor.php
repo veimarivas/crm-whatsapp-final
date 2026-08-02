@@ -372,12 +372,15 @@ class InboundProcessor
             return;
         }
 
+        // El pipeline por defecto (espejo del default del Komo) o el primero.
         $pipeline = Pipeline::forAccount($contact->account_id)
             ->with(['stages' => fn ($q) => $q->orderBy('position')])
+            ->orderByDesc('is_default')
             ->orderBy('created_at')
             ->first();
 
-        $firstStage = $pipeline?->stages->first();
+        // Primera etapa abierta (nunca una terminal como Ganado/Perdido).
+        $firstStage = $pipeline?->stages->where('stage_type', 'open')->first() ?? $pipeline?->stages->first();
 
         if (! $pipeline || ! $firstStage) {
             return;
