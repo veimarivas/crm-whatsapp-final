@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AiConfig;
 use App\Models\ContactNote;
 use App\Models\Conversation;
+use App\Models\Deal;
 use App\Models\Message;
 use App\Models\MessageReaction;
 use App\Models\Notification;
@@ -391,6 +392,9 @@ class InboxController extends Controller
 
         $conversation->update(['assigned_agent_id' => $agentId]);
 
+        // El deal de la conversación espeja la asignación (columna de /pipelines).
+        Deal::where('conversation_id', $conversation->id)->update(['assigned_to' => $agentId]);
+
         if ($agentId && $agentId !== $request->user()->id) {
             Notification::create([
                 'account_id' => $conversation->account_id,
@@ -471,6 +475,15 @@ class InboxController extends Controller
         };
 
         $count = $query->update($updates);
+
+        if ($validated['action'] === 'assign') {
+            $conversationIds = Conversation::forAccount($accountId)
+                ->whereIn('id', $validated['conversation_ids'])
+                ->pluck('id');
+
+            // Los deals de las conversaciones asignadas espejan la asignación.
+            Deal::whereIn('conversation_id', $conversationIds)->update(['assigned_to' => $validated['agent_id']]);
+        }
 
         return response()->json(['ok' => true, 'updated' => $count]);
     }

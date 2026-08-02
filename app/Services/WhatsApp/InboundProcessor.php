@@ -393,6 +393,7 @@ class InboundProcessor
             'contact_id' => $contact->id,
             'conversation_id' => $conversation->id,
             'title' => $contact->name ?: $contact->phone,
+            'assigned_to' => $conversation->assigned_agent_id,
             'status' => 'open',
         ]);
     }

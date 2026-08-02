@@ -103,6 +103,10 @@ class TeamApiController extends Controller
 
         $conversation->update(['assigned_agent_id' => $agentId]);
 
+        // El deal de la conversación espeja la asignación: la columna de
+        // /pipelines y el responsable en Komo deben coincidir.
+        Deal::where('conversation_id', $conversation->id)->update(['assigned_to' => $agentId]);
+
         return response()->json(['ok' => true, 'assigned_agent_id' => $agentId]);
     }
 
