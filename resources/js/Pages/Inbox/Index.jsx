@@ -190,6 +190,9 @@ function MessageBubble({ msg, onReply, onReact }) {
                         <img src={`/whatsapp/media/${msg.media_url}`} alt="" className="mb-1 max-h-64 rounded-lg" />
                     </a>
                 )}
+                {msg.content_type === 'sticker' && msg.media_url && (
+                    <img src={`/whatsapp/media/${msg.media_url}`} alt="Sticker" className="mb-1 h-32 w-32 object-contain" />
+                )}
                 {msg.content_type === 'video' && msg.media_url && (
                     <video controls src={`/whatsapp/media/${msg.media_url}`} className="mb-1 max-h-64 rounded-lg" />
                 )}

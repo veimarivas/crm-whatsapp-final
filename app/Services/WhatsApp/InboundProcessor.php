@@ -229,6 +229,7 @@ class InboundProcessor
             'image' => ['image', $message['image']['caption'] ?? null, $message['image']['id'] ?? null, null],
             'video' => ['video', $message['video']['caption'] ?? null, $message['video']['id'] ?? null, null],
             'audio' => ['audio', null, $message['audio']['id'] ?? null, null],
+            'sticker' => ['sticker', null, $message['sticker']['id'] ?? null, null],
             'document' => ['document', $message['document']['filename'] ?? null, $message['document']['id'] ?? null, null],
             'location' => [
                 'location',

@@ -154,6 +154,43 @@ class WebhooksAndInboxExtrasTest extends TestCase
         Queue::assertPushed(DeliverWebhookJob::class, 2);
     }
 
+    public function test_un_sticker_entrante_se_guarda_como_sticker(): void
+    {
+        Queue::fake();
+        config(['services.meta.app_secret' => 'secret']);
+
+        WhatsappConfig::create([
+            'account_id' => $this->account->id,
+            'phone_number_id' => '111222333',
+            'access_token' => 'token',
+            'status' => 'connected',
+        ]);
+
+        $payload = json_encode([
+            'entry' => [['changes' => [['field' => 'messages', 'value' => [
+                'metadata' => ['phone_number_id' => '111222333'],
+                'contacts' => [['profile' => ['name' => 'Ana'], 'wa_id' => '584125559999']],
+                'messages' => [[
+                    'from' => '584125559999',
+                    'id' => 'wamid.STK1',
+                    'type' => 'sticker',
+                    'sticker' => ['mime_type' => 'image/webp', 'id' => 'sticker-media-123'],
+                ]],
+            ]]]]],
+        ]);
+
+        $this->call('POST', '/webhooks/whatsapp', [], [], [], [
+            'HTTP_X-Hub-Signature-256' => 'sha256='.hash_hmac('sha256', $payload, 'secret'),
+            'CONTENT_TYPE' => 'application/json',
+        ], $payload)->assertOk();
+
+        $msg = Message::where('message_id', 'wamid.STK1')->first();
+        $this->assertNotNull($msg);
+        $this->assertSame('sticker', $msg->content_type);
+        $this->assertNull($msg->content_text, 'Un sticker no trae texto.');
+        $this->assertSame('sticker-media-123', $msg->media_url);
+    }
+
     public function test_crud_de_webhooks_desde_la_ui(): void
     {
         $this->actingAs($this->user)
