@@ -497,7 +497,16 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
     const channelRef = useRef(null);
     const lastWhisperRef = useRef(0);
     const typingStopRef = useRef(null);
+    const draftRef = useRef(null);
+    const draftSentRef = useRef(false);
     selectedRef.current = selectedId;
+
+    useEffect(() => {
+        if (draftSentRef.current && !sending) {
+            draftSentRef.current = false;
+            draftRef.current?.focus();
+        }
+    }, [sending]);
 
     const selected = conversations.find((c) => c.id === selectedId);
     const me = usePage().props.auth.user;
@@ -685,6 +694,7 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
         } catch (err) {
             setError(err.message);
         } finally {
+            draftSentRef.current = true;
             setSending(false);
         }
     };
@@ -1282,6 +1292,7 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
                                                 placeholder="Escribe un mensaje…"
                                                 rows={1}
                                                 className="w-full resize-none px-4 py-2.5 pr-10 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#045474]/20 focus:border-[#045474] focus:bg-white transition-all max-h-32"
+                                                ref={draftRef}
                                                 disabled={!hasWhatsappConfig || sending}
                                             />
                                             <button
