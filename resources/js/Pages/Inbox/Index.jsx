@@ -1,5 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import ServiceWindowBadge from '@/Components/ServiceWindowBadge';
+import ImageModal from '@/Components/ImageModal';
 import { Head, Link, usePage } from '@inertiajs/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Recorder from 'opus-recorder';
@@ -141,7 +142,7 @@ function speakText(text, onEnd) {
     ttsState.current = { text, onEnd };
 }
 
-function MessageBubble({ msg, onReply, onReact }) {
+function MessageBubble({ msg, onReply, onReact, onOpenImage }) {
     const isCustomer = msg.sender_type === 'customer';
     const [showEmojis, setShowEmojis] = useState(false);
     const [isSpeaking, setIsSpeaking] = useState(false);
@@ -186,9 +187,13 @@ function MessageBubble({ msg, onReply, onReact }) {
                     </div>
                 )}
                 {msg.content_type === 'image' && msg.media_url && (
-                    <a href={`/whatsapp/media/${msg.media_url}`} target="_blank" rel="noreferrer">
-                        <img src={`/whatsapp/media/${msg.media_url}`} alt="" className="mb-1 max-h-64 rounded-lg" />
-                    </a>
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onOpenImage?.(`/whatsapp/media/${msg.media_url}`, 'Imagen'); }}
+                        className="block mb-1 cursor-zoom-in"
+                    >
+                        <img src={`/whatsapp/media/${msg.media_url}`} alt="" className="max-h-64 rounded-lg" />
+                    </button>
                 )}
                 {msg.content_type === 'sticker' && msg.media_url && (
                     <img src={`/whatsapp/media/${msg.media_url}`} alt="Sticker" className="mb-1 h-32 w-32 object-contain" />
@@ -485,6 +490,7 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
     const [selectedIds, setSelectedIds] = useState(new Set()); // bulk selection en la sidebar
     const [bulkBusy, setBulkBusy] = useState(false);
     const [typingByConv, setTypingByConv] = useState({});
+    const [lightbox, setLightbox] = useState(null);
     const bottomRef = useRef(null);
     const selectedRef = useRef(null);
     const fileInputRef = useRef(null);
@@ -823,6 +829,7 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
     }, [messages]);
 
     return (
+        <>
         <AuthenticatedLayout header={<h2 className="text-lg font-semibold text-gray-900">Inbox</h2>}>
             <Head title="Inbox" />
 
@@ -1154,7 +1161,7 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
                                         <div key={gi} className="space-y-2">
                                             <DateSeparator label={g.label} />
                                             {g.items.map((msg) => (
-                                                <MessageBubble key={msg.id} msg={msg} onReply={setReplyTo} onReact={reactTo} />
+                                                <MessageBubble key={msg.id} msg={msg} onReply={setReplyTo} onReact={reactTo} onOpenImage={setLightbox} />
                                             ))}
                                         </div>
                                     ))}
@@ -1415,6 +1422,8 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
                     )}
                 </div>
             </div>
-        </AuthenticatedLayout>
+                </AuthenticatedLayout>
+        <ImageModal src={lightbox?.src} alt={lightbox?.alt} onClose={() => setLightbox(null)} />
+        </>
     );
 }
