@@ -21,6 +21,8 @@ class Deal extends Model
         return [
             'value' => 'decimal:2',
             'expected_close_date' => 'date',
+            // Viene del leftJoin con conversations (solo cuando se selecciona).
+            'last_message_at' => 'datetime',
         ];
     }
 

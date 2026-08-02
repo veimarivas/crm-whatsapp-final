@@ -197,6 +197,60 @@ class PipelineSyncTest extends TestCase
         $this->assertTrue(in_array('deal.stage_changed', $endpoint->events, true));
     }
 
+    public function test_deals_se_ordenan_por_actividad_reciente(): void
+    {
+        $pipeline = Pipeline::create(['account_id' => $this->account->id, 'name' => 'Ventas']);
+        $stage = PipelineStage::create(['pipeline_id' => $pipeline->id, 'name' => 'Nuevo', 'position' => 0, 'stage_type' => 'open']);
+
+        $mk = function (string $phone, string $name, ?string $lastMessageAt = null, ?string $createdAt = null) use ($pipeline, $stage) {
+            $contact = Contact::create(['account_id' => $this->account->id, 'name' => $name, 'phone' => $phone]);
+            $conversation = Conversation::create([
+                'account_id' => $this->account->id,
+                'contact_id' => $contact->id,
+                'last_message_at' => $lastMessageAt,
+                'last_message_text' => 'Hola',
+            ]);
+
+            $deal = Deal::create([
+                'account_id' => $this->account->id,
+                'pipeline_id' => $pipeline->id,
+                'stage_id' => $stage->id,
+                'contact_id' => $contact->id,
+                'conversation_id' => $conversation->id,
+                'title' => "Deal $name",
+                'status' => 'open',
+            ]);
+
+            if ($createdAt) {
+                $deal->forceFill(['created_at' => $createdAt])->save();
+            }
+
+            return $deal;
+        };
+
+        // Conversación con mensaje AHORA: el más reciente, aunque el deal sea viejo.
+        $recent = $mk('59111111', 'Reciente', now()->toDateTimeString(), now()->subDays(10)->toDateTimeString());
+        // Sin conversación: cae a su fecha de creación (ayer).
+        $staleContact = Contact::create(['account_id' => $this->account->id, 'name' => 'Antiguo', 'phone' => '59122222']);
+        $fallback = Deal::create([
+            'account_id' => $this->account->id, 'pipeline_id' => $pipeline->id, 'stage_id' => $stage->id,
+            'contact_id' => $staleContact->id, 'title' => 'Sin conversación', 'status' => 'open',
+        ]);
+        $fallback->forceFill(['created_at' => now()->subDay()])->save();
+        // Conversación con mensaje hace 3 días, aunque el deal se creó hoy.
+        $old = $mk('59133333', 'Viejo', now()->subDays(3)->toDateTimeString(), now()->toDateTimeString());
+
+        $this->actingAs($this->user)
+            ->get(route('pipelines.index', ['pipeline' => $pipeline->id]))
+            ->assertInertia(fn ($page) => $page
+                ->component('Pipelines/Index')
+                ->has('deals', 3)
+                ->where('deals.0.id', $recent->id)
+                ->where('deals.0.last_message_text', 'Hola')
+                ->where('deals.1.id', $fallback->id)
+                ->where('deals.2.id', $old->id));
+    }
+
     public function test_etapa_terminal_de_komo_cae_a_la_etapa_con_stage_type(): void
     {
         // Pipeline que ya llegó sincronizado con la etapa terminal "Ganado".

@@ -45,17 +45,23 @@ class PipelineController extends Controller
 
         $deals = $selected
             ? $selected->deals()
+                ->select('deals.*', 'conversations.last_message_at', 'conversations.last_message_text')
+                // La actividad de la conversación decide el orden del deal: un
+                // mensaje nuevo sube la tarjeta a la cima de su columna.
+                ->leftJoin('conversations', 'conversations.id', '=', 'deals.conversation_id')
                 ->with(['contact:id,name,phone', 'assignee:id,name'])
-                ->when($filters['responsible'], fn ($q, $v) => $v === 'none' ? $q->whereNull('assigned_to') : $q->where('assigned_to', $v))
-                ->when($filters['status'], fn ($q, $v) => $q->where('status', $v))
+                ->when($filters['responsible'], fn ($q, $v) => $v === 'none' ? $q->whereNull('deals.assigned_to') : $q->where('deals.assigned_to', $v))
+                ->when($filters['status'], fn ($q, $v) => $q->where('deals.status', $v))
                 ->when($filters['q'] !== '', function ($q) use ($filters) {
                     $t = $filters['q'];
                     $q->where(function ($qq) use ($t) {
-                        $qq->where('title', 'like', "%{$t}%")
+                        $qq->where('deals.title', 'like', "%{$t}%")
                             ->orWhereHas('contact', fn ($cq) => $cq->where('name', 'like', "%{$t}%")->orWhere('phone', 'like', "%{$t}%"));
                     });
                 })
-                ->orderByDesc('created_at')
+                // Más reciente primero: los que no tienen conversación caen a
+                // su fecha de creación (manuales / sin mensajes).
+                ->orderByDesc(DB::raw('COALESCE(conversations.last_message_at, deals.created_at)'))
                 ->get()
             : collect();
 
