@@ -231,15 +231,14 @@ class InboundProcessor
             'audio' => ['audio', null, $message['audio']['id'] ?? null, null],
             'sticker' => ['sticker', null, $message['sticker']['id'] ?? null, null],
             'document' => ['document', $message['document']['filename'] ?? null, $message['document']['id'] ?? null, null],
-            'location' => [
-                'location',
-                trim(($message['location']['name'] ?? '').' '.($message['location']['latitude'] ?? '').','.($message['location']['longitude'] ?? '')),
-                null,
-                null,
-            ],
             'interactive' => $this->parseInteractive($message['interactive'] ?? []),
             'button' => ['interactive', $message['button']['text'] ?? '', null, $message['button']['payload'] ?? null],
-            default => ['text', '[Tipo de mensaje no soportado]', null, null],
+            'contacts' => ['contacts', collect($message['contacts'] ?? [])->pluck('name')->filter()->unique()->implode(', ') ?: null, null, null],
+            'unsupported' => ['text', null, null, null],
+            // Cualquier otro tipo llega aquí. Guardamos el nombre del tipo real
+            // (no un placeholder genérico) para poder identificarlo y añadir su
+            // soporte sin perder el dato.
+            default => ['text', "[Tipo de mensaje no soportado: {$type}]", null, null],
         };
     }
 
