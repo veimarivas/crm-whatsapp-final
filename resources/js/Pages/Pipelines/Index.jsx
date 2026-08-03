@@ -4,12 +4,11 @@ import Modal from '@/Components/Modal';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 
-function money(value, currency) {
-    return new Intl.NumberFormat('es', {
-        style: 'currency',
-        currency: currency || 'BOB',
+function money(value) {
+    const formatted = new Intl.NumberFormat('es', {
         maximumFractionDigits: 0,
     }).format(value || 0);
+    return `Bs. ${formatted}`;
 }
 
 const AVATAR_COLORS = ['from-emerald-500 to-teal-600', 'from-blue-500 to-indigo-600', 'from-purple-500 to-pink-600', 'from-amber-500 to-orange-600', 'from-rose-500 to-red-600', 'from-cyan-500 to-sky-600'];
@@ -243,7 +242,7 @@ function DealFormModal({ open, onClose, deal, pipeline, contacts, members, curre
         assigned_to: deal?.assigned_to ?? '',
         title: deal?.title ?? '',
         value: deal?.value ?? '',
-        currency: deal?.currency ?? currency ?? 'BOB',
+        currency: 'BS',
         notes: deal?.notes ?? '',
         expected_close_date: deal?.expected_close_date?.slice(0, 10) ?? '',
         status: deal?.status ?? 'open',
@@ -310,7 +309,7 @@ function DealFormModal({ open, onClose, deal, pipeline, contacts, members, curre
 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Valor ({data.currency})</label>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Valor (Bs.)</label>
                             <input type="number" step="0.01" min="0" value={data.value} onChange={(e) => setData('value', e.target.value)} className={inputClass('value')} />
                         </div>
                         <div>
