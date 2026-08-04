@@ -53,6 +53,16 @@ Schedule::command('flows:process-timeouts')->everyFiveMinutes();
 // a las 3 AM (poca carga). Se reabren automáticamente si el cliente escribe.
 Schedule::command('wacrm:auto-close-inactive --days=7')->dailyAt('03:00');
 
+// Mantiene el modelo cargado en memoria. Ollama lo descarga tras unos minutos
+// sin uso y recargarlo tarda decenas de segundos: sin esto, el cliente que
+// escribe después de un rato de calma es el que se come el timeout — y la IA
+// falla justo en el primer mensaje de la conversación.
+//
+// Cada 10 minutos con `keep_alive` de 30: alcanza de sobra y no molesta.
+Schedule::command('wacrm:ai-warmup')
+    ->everyTenMinutes()
+    ->withoutOverlapping();
+
 // Refresca la oferta académica que responde la IA: 08:00 antes de abrir,
 // 14:00 después del mediodía y 18:00 para la tarde/noche.
 //

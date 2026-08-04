@@ -50,6 +50,15 @@ class AiAutoReplyJob implements ShouldQueue
      */
     private const DEFAULT_COOLDOWN_HOURS = 3;
 
+    /**
+     * Fallas SEGUIDAS antes de apagar la IA en una conversación.
+     *
+     * Dos y no una: la primera consulta a un modelo frío lo carga en memoria y
+     * se puede pasar del timeout. Con una sola, ese tropiezo dejaba la
+     * conversación sin bot para siempre.
+     */
+    private const MAX_FAILURES = 2;
+
     public function __construct(public readonly string $conversationId) {}
 
     public function handle(ReplyGenerator $generator, Messenger $messenger): void
@@ -155,17 +164,20 @@ class AiAutoReplyJob implements ShouldQueue
 
             $messenger->sendText($conversation, $reply);
             $conversation->increment('ai_reply_count');
-            $conversation->update(['ai_pending' => false]);
+            // Una respuesta buena borra el historial de tropiezos: lo que
+            // importa son las fallas SEGUIDAS, no las de hace tres días.
+            $conversation->update(['ai_pending' => false, 'ai_failure_count' => 0]);
             $this->broadcastPending($conversation, false);
         } catch (\Throwable $e) {
-            Log::warning('Auto-respuesta IA falló, activando fallback', [
+            Log::warning('Auto-respuesta IA falló', [
                 'conversation_id' => $conversation->id,
                 'error' => $e->getMessage(),
+                'intento' => $conversation->ai_failure_count + 1,
             ]);
 
             $conversation->update(['ai_pending' => false]);
             $this->broadcastPending($conversation, false);
-            $this->deliverFallback($conversation);
+            $this->deliverFallback($conversation, $e->getMessage());
         }
     }
 
@@ -177,19 +189,44 @@ class AiAutoReplyJob implements ShouldQueue
      * en vez de una de verdad. Ahora la conversación queda tal cual y el
      * responsable se entera para contestar él.
      *
-     * También apaga la IA en esa conversación: evita reintentos que fallarían
-     * igual. El agente que la tome puede reactivar el toggle IA/Humano.
+     * **Una falla sola ya no apaga la IA.** Antes sí, y era demasiado frágil:
+     * la primera consulta a Ollama carga el modelo en memoria y puede pasarse
+     * del timeout, así que un tropiezo perfectamente normal dejaba la
+     * conversación sin bot PARA SIEMPRE — se veía como "IA apagada" sin que
+     * nadie la hubiera apagado, y con el contador de respuestas en 0. Ahora
+     * el primer fallo avisa y deja que el próximo mensaje reintente (para
+     * entonces el modelo ya está caliente); recién el segundo seguido la
+     * apaga, y deja escrito por qué.
      */
-    private function deliverFallback(Conversation $conversation): void
+    private function deliverFallback(Conversation $conversation, string $error = ''): void
     {
-        $conversation->update(['ai_autoreply_disabled' => true]);
+        $fallas = $conversation->ai_failure_count + 1;
+        $conversation->update(['ai_failure_count' => $fallas]);
+
+        if ($fallas < self::MAX_FAILURES) {
+            $this->notifyHumanNeeded(
+                $conversation,
+                'failed',
+                'La IA no pudo responder (reintenta en el próximo mensaje)',
+                'Falló la IA con '.$this->contactLabel($conversation)
+                    .'. Al cliente no se le envió nada: contestale vos si no puede esperar.',
+            );
+
+            return;
+        }
+
+        $conversation->update([
+            'ai_autoreply_disabled' => true,
+            'ai_disabled_reason' => mb_substr($error, 0, 300),
+            'ai_disabled_at' => now(),
+        ]);
 
         $this->notifyHumanNeeded(
             $conversation,
             'failed',
-            'La IA no pudo responder',
-            'Falló la IA con '.$this->contactLabel($conversation)
-                .'. Al cliente no se le envió nada: contestale vos.',
+            'La IA se apagó en esta conversación',
+            'Falló '.$fallas.' veces seguidas con '.$this->contactLabel($conversation)
+                .'. Al cliente no se le envió nada: contestale vos. Podés reactivarla con el toggle IA/Humano.',
         );
     }
 

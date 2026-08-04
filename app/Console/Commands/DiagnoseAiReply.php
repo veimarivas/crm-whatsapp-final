@@ -30,7 +30,8 @@ class DiagnoseAiReply extends Command
     protected $signature = 'wacrm:ai-doctor
         {--conversation= : UUID de la conversación}
         {--phone= : Teléfono del contacto (se normaliza solo)}
-        {--account= : UUID de la cuenta (por defecto, la primera)}';
+        {--account= : UUID de la cuenta (por defecto, la primera)}
+        {--reactivate : Vuelve a encender la IA en esa conversación}';
 
     protected $description = 'Diagnostica por qué la IA no responde: config, horario, tope, pausa, flows y cola';
 
@@ -177,10 +178,47 @@ class DiagnoseAiReply extends Command
 
         if ($conversation->ai_autoreply_disabled) {
             $this->error('  ✗ IA APAGADA en esta conversación (ai_autoreply_disabled).');
-            $this->line('    Se apaga sola cuando la IA falla una vez. Reactivar: toggle IA/Humano del chat.');
+
+            if ($conversation->ai_disabled_at) {
+                $this->line('    Se apagó sola el '.$conversation->ai_disabled_at->format('d/m/Y H:i')
+                    .' tras fallar '.$conversation->ai_failure_count.' vez/veces seguidas.');
+            } else {
+                $this->line('    Se apagó sola al fallar la IA, o alguien usó el toggle IA/Humano.');
+            }
+
+            if ($conversation->ai_disabled_reason) {
+                $this->line('    Motivo: '.$conversation->ai_disabled_reason);
+            } elseif ($conversation->ai_reply_count === 0) {
+                // El caso que más desconcierta: nunca respondió y ya está
+                // apagada. Casi siempre es el modelo frío en el primer intento.
+                $this->line('    <fg=yellow>Nunca llegó a responder en esta conversación (contador en 0).</>');
+                $this->line('    Suele ser el modelo frío: la primera consulta lo carga en memoria y se pasa del timeout.');
+                $this->line('    Revisá el error exacto: grep "Auto-respuesta IA falló" storage/logs/laravel.log | tail -5');
+            }
+
+            $this->line('    Reactivar: el toggle IA/Humano del chat, o `wacrm:ai-doctor --conversation='
+                .$conversation->id.' --reactivate`');
+
+            if ($this->option('reactivate')) {
+                $conversation->update([
+                    'ai_autoreply_disabled' => false,
+                    'ai_failure_count' => 0,
+                    'ai_disabled_reason' => null,
+                    'ai_disabled_at' => null,
+                ]);
+                $this->info('    ✓ Reactivada. Responderá el próximo mensaje del cliente.');
+
+                return 0;
+            }
+
             $problemas++;
         } else {
             $this->info('  ✓ La IA está habilitada en esta conversación.');
+
+            if ($conversation->ai_failure_count > 0) {
+                $this->warn('    Atención: lleva '.$conversation->ai_failure_count
+                    .' falla(s) seguida(s). A la 2ª se apaga sola.');
+            }
         }
 
         // La causa más confusa de todas: el toggle sigue diciendo "IA activa"
