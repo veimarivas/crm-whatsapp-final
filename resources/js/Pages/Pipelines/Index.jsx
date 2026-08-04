@@ -2,9 +2,10 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import ServiceWindowBadge from '@/Components/ServiceWindowBadge';
 import LiveIndicator from '@/Components/LiveIndicator';
 import Modal from '@/Components/Modal';
+import useBoardActivity from '@/Hooks/useBoardActivity';
 import useLiveBoard from '@/Hooks/useLiveBoard';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 function money(value) {
     const formatted = new Intl.NumberFormat('es', {
@@ -27,9 +28,31 @@ const STATUS_META = {
     lost: { icon: '✕', label: 'Perdido', style: 'bg-red-50 text-red-700 border-red-200', dot: 'bg-red-500' },
 };
 
-function DealCard({ deal, currency, selected, onToggleSelect, anySelected, onDragging, isNew = false }) {
+/**
+ * Colores de la tarjeta, de mayor a menor prioridad. Cada uno responde una
+ * pregunta distinta del asesor y por eso no se mezclan:
+ *
+ * - verde   = contacto nuevo, escribió por primera vez.
+ * - celeste = le entró un mensaje ahora mismo a un deal que ya estaba.
+ * - ámbar   = tiene mensajes sin leer (nadie abrió esa conversación todavía).
+ */
+function cardTone({ mark, unread, isClosed }) {
+    if (mark === 'nuevo') return { ring: 'border-emerald-400 ring-2 ring-emerald-300 bg-emerald-50/60', badge: 'bg-emerald-600', label: 'NUEVO CONTACTO' };
+    if (mark === 'mensaje') return { ring: 'border-sky-400 ring-2 ring-sky-300 bg-sky-50/60', badge: 'bg-sky-600', label: '💬 MENSAJE NUEVO' };
+    if (unread > 0) return { ring: 'border-amber-300 ring-1 ring-amber-200 bg-amber-50/40', badge: null, label: null };
+    if (isClosed) return { ring: 'border-gray-100 opacity-60 hover:opacity-80', badge: null, label: null };
+
+    return { ring: 'border-gray-100 hover:border-gray-300', badge: null, label: null };
+}
+
+function DealCard({ deal, currency, selected, onToggleSelect, anySelected, onDragging, mark = null }) {
     const contactName = deal.contact?.name || deal.contact?.phone || 'Sin contacto';
     const av = avatarFor(contactName);
+    // `unread_count` se pone en cero cuando alguien abre la conversación en el
+    // Inbox, así que el ámbar dura hasta que el mensaje se leyó de verdad —
+    // no es un parpadeo de 20s como la marca.
+    const unread = Number(deal.unread_count || 0);
+    const tone = cardTone({ mark, unread, isClosed: deal.status !== 'open' });
 
     return (
         <div
@@ -37,18 +60,17 @@ function DealCard({ deal, currency, selected, onToggleSelect, anySelected, onDra
             onDragStart={(e) => { e.dataTransfer.setData('text/deal-id', deal.id); e.dataTransfer.effectAllowed = 'move'; onDragging?.(true); }}
             onDragEnd={() => onDragging?.(false)}
             className={`group relative rounded-xl border bg-white p-3 shadow-sm hover:shadow-md transition-all ${anySelected ? '' : 'cursor-grab active:cursor-grabbing'} ${
-                selected
-                    ? 'border-emerald-400 ring-2 ring-emerald-200 bg-emerald-50/30'
-                    : isNew
-                    ? 'border-emerald-400 ring-2 ring-emerald-300 bg-emerald-50/40'
-                    : deal.status !== 'open'
-                    ? 'border-gray-100 opacity-60 hover:opacity-80'
-                    : 'border-gray-100 hover:border-gray-300'
+                selected ? 'border-emerald-400 ring-2 ring-emerald-200 bg-emerald-50/30' : tone.ring
             }`}
         >
-            {isNew && (
-                <span className="absolute -top-2 right-2 z-10 px-1.5 py-0.5 rounded-full bg-emerald-600 text-white text-[9px] font-bold shadow">
-                    NUEVO
+            {tone.label && (
+                <span className={`absolute -top-2 right-2 z-10 px-1.5 py-0.5 rounded-full ${tone.badge} text-white text-[9px] font-bold shadow animate-pulse`}>
+                    {tone.label}
+                </span>
+            )}
+            {! tone.label && unread > 0 && (
+                <span className="absolute -top-2 right-2 z-10 px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[9px] font-bold shadow tabular-nums">
+                    {unread} sin leer
                 </span>
             )}
             <div className={`absolute top-2 left-2 z-10 transition-opacity ${selected || anySelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
@@ -524,24 +546,10 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
         paused: dragging || anySelected,
     });
 
-    // Marca los deals que aparecieron desde el último vistazo: el tablero se
-    // reordena solo, y sin esto no se ve QUÉ cambió.
-    const seenRef = useRef(null);
-    const [fresh, setFresh] = useState(() => new Set());
-    useEffect(() => {
-        const ids = deals.map((d) => d.id);
-        if (seenRef.current === null) { seenRef.current = new Set(ids); return; }
-        const nuevos = ids.filter((id) => !seenRef.current.has(id));
-        seenRef.current = new Set(ids);
-        if (nuevos.length === 0) return;
-        setFresh((prev) => new Set([...prev, ...nuevos]));
-        const t = setTimeout(() => setFresh((prev) => {
-            const next = new Set(prev);
-            nuevos.forEach((id) => next.delete(id));
-            return next;
-        }), 15000);
-        return () => clearTimeout(t);
-    }, [deals]);
+    // Qué cambió desde el último vistazo: contacto nuevo (verde) vs. mensaje
+    // que entró en un deal que ya estaba (celeste). El tablero se reordena
+    // solo, y sin esto hay que compararlo de memoria.
+    const { markOf } = useBoardActivity(deals);
 
     const applyFilter = (patch) => {
         router.get(route('pipelines.index'), { ...filters, pipeline: pipeline?.id, ...patch }, { preserveState: true, preserveScroll: true, replace: true });
@@ -698,6 +706,13 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                     </div>
                 )}
 
+                {/* Leyenda: un color sin explicar se termina ignorando. */}
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-500 px-1">
+                    <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-emerald-400 ring-1 ring-emerald-300" /> Contacto nuevo</span>
+                    <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-sky-400 ring-1 ring-sky-300" /> Mensaje recién llegado</span>
+                    <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-amber-400 ring-1 ring-amber-300" /> Sin leer</span>
+                </div>
+
                 {flash?.success && (
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 flex items-center gap-3 shadow-sm">
                         <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
@@ -745,7 +760,7 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                                     </div>
                                     {/* ~15 tarjetas visibles; de ahí scrollea hacia abajo */}
                                     <div className="flex flex-1 flex-col gap-2 p-2.5 min-h-[180px] overflow-y-auto" style={{ maxHeight: 2500 }}>
-                                        {stageDeals.map((deal) => <DealCard key={deal.id} deal={deal} currency={currency} selected={selectedIds.has(deal.id)} onToggleSelect={toggleSelect} anySelected={anySelected} onDragging={setDragging} isNew={fresh.has(deal.id)} />)}
+                                        {stageDeals.map((deal) => <DealCard key={deal.id} deal={deal} currency={currency} selected={selectedIds.has(deal.id)} onToggleSelect={toggleSelect} anySelected={anySelected} onDragging={setDragging} mark={markOf(deal.id)} />)}
                                         {stageDeals.length === 0 && (
                                             <p className="py-8 text-center text-xs text-gray-400 font-medium">Arrastra oportunidades aquí</p>
                                         )}

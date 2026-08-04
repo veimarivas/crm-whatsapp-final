@@ -45,7 +45,11 @@ class PipelineController extends Controller
 
         $deals = $selected
             ? $selected->deals()
-                ->select('deals.*', 'conversations.last_message_at', 'conversations.last_message_text')
+                // `unread_count` pinta de ámbar la tarjeta que tiene mensajes
+                // que nadie abrió todavía; se pone en cero al entrar a la
+                // conversación en el Inbox, así que el color dura lo que dura
+                // el pendiente real.
+                ->select('deals.*', 'conversations.last_message_at', 'conversations.last_message_text', 'conversations.unread_count')
                 // La actividad de la conversación decide el orden del deal: un
                 // mensaje nuevo sube la tarjeta a la cima de su columna.
                 ->leftJoin('conversations', 'conversations.id', '=', 'deals.conversation_id')
