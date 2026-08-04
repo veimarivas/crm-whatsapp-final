@@ -215,11 +215,7 @@ class AiAutoReplyJob implements ShouldQueue
             return;
         }
 
-        $conversation->update([
-            'ai_autoreply_disabled' => true,
-            'ai_disabled_reason' => mb_substr($error, 0, 300),
-            'ai_disabled_at' => now(),
-        ]);
+        $conversation->setAiEnabled(false, 'Falló '.$fallas.' veces seguidas: '.mb_substr($error, 0, 200));
 
         $this->notifyHumanNeeded(
             $conversation,

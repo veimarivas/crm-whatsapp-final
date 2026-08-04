@@ -224,15 +224,17 @@ class InboxController extends Controller
 
         $validated = $request->validate(['ai_enabled' => 'required|boolean']);
 
-        $conversation->update([
-            'ai_autoreply_disabled' => ! $validated['ai_enabled'],
-            // Al reactivar IA, se reinicia el contador para permitir nuevas respuestas.
-            'ai_reply_count' => $validated['ai_enabled'] ? 0 : $conversation->ai_reply_count,
-            // El contador vuelve a cero: el aviso de tope agotado tambien.
-            'ai_limit_notified_at' => $validated['ai_enabled'] ? null : $conversation->ai_limit_notified_at,
-            // Reactivar a mano tambien levanta la pausa por tope.
-            'ai_paused_until' => $validated['ai_enabled'] ? null : $conversation->ai_paused_until,
-        ]);
+        // `setAiEnabled` reinicia contador y pausa al encender, deja escrito el
+        // motivo al apagar y avisa a Komo para que su toggle no quede mostrando
+        // lo contrario de lo que pasa acá.
+        $conversation->setAiEnabled(
+            $validated['ai_enabled'],
+            'Apagada a mano por '.($request->user()->name ?? 'un agente').' desde el Inbox',
+        );
+
+        if ($validated['ai_enabled']) {
+            $conversation->update(['ai_limit_notified_at' => null]);
+        }
 
         // Si se levantó una pausa a mano, el CRM externo tiene que borrar su
         // aviso: si no, Komo seguiría mostrando "en pausa hasta las HH:MM".

@@ -118,14 +118,11 @@ class TeamApiController extends Controller
         $accountId = $this->accountId($request);
         $conversation = Conversation::where('account_id', $accountId)->findOrFail($conversationId);
 
-        $conversation->update([
-            'ai_autoreply_disabled' => ! $validated['ai_enabled'],
-            'ai_reply_count' => $validated['ai_enabled'] ? 0 : $conversation->ai_reply_count,
-            // El contador vuelve a cero: el aviso de tope agotado tambien.
-            'ai_limit_notified_at' => $validated['ai_enabled'] ? null : $conversation->ai_limit_notified_at,
-            // Reactivar a mano tambien levanta la pausa por tope.
-            'ai_paused_until' => $validated['ai_enabled'] ? null : $conversation->ai_paused_until,
-        ]);
+        $conversation->setAiEnabled($validated['ai_enabled'], 'Apagada desde Komo');
+
+        if ($validated['ai_enabled']) {
+            $conversation->update(['ai_limit_notified_at' => null]);
+        }
 
         return response()->json(['ok' => true, 'ai_enabled' => $validated['ai_enabled']]);
     }

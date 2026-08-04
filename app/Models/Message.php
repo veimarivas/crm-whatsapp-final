@@ -49,9 +49,24 @@ class Message extends Model
                 return;
             }
 
-            Conversation::whereKey($message->conversation_id)
+            $conversation = Conversation::whereKey($message->conversation_id)
                 ->where('ai_autoreply_disabled', false)
-                ->update(['ai_autoreply_disabled' => true]);
+                ->first();
+
+            if (! $conversation) {
+                return;
+            }
+
+            // Con el motivo escrito: «la IA no responde» y «la apagaste vos al
+            // contestar» se ven idénticos desde afuera, y esa ambigüedad es la
+            // que hace perder una tarde buscando un fallo que no existe.
+            $agente = $message->sender_id
+                ? User::whereKey($message->sender_id)->value('name')
+                : null;
+
+            $conversation->setAiEnabled(false, $agente
+                ? "Se apagó sola cuando {$agente} respondió manualmente"
+                : 'Se apagó sola cuando un agente respondió manualmente');
         });
     }
 

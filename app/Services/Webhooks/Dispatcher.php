@@ -17,6 +17,9 @@ class Dispatcher
         'message.sent',
         'message.transcribed',
         'ai.pending_changed',
+        // Komo espeja el toggle IA/Humano del lead: sin este aviso su
+        // pantalla decia 'IA activa' mientras aca estaba apagada.
+        'ai.mode_changed',
         'contact.created',
         'broadcast.completed',
         'deal.stage_changed',
