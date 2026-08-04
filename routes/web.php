@@ -86,6 +86,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/settings/ai/documents', [\App\Http\Controllers\AiController::class, 'storeDocument'])->name('settings.ai.documents.store');
     Route::delete('/settings/ai/documents/{document}', [\App\Http\Controllers\AiController::class, 'destroyDocument'])->name('settings.ai.documents.destroy');
     Route::post('/settings/ai/reindex', [\App\Http\Controllers\AiController::class, 'reindex'])->name('settings.ai.reindex');
+    Route::post('/settings/ai/sync-oferta', [\App\Http\Controllers\AiController::class, 'syncKnowledge'])->name('settings.ai.sync-oferta');
     Route::get('/settings/ai/stats', [\App\Http\Controllers\AiController::class, 'stats'])->name('settings.ai.stats');
     Route::get('/settings/response-time', [\App\Http\Controllers\AiController::class, 'responseTime'])->name('settings.response-time');
 

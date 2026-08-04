@@ -23,7 +23,7 @@ const tabs = [
     { key: 'knowledge', label: 'Base de conocimiento', icon: 'M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25' },
 ];
 
-export default function Ai({ config, documents }) {
+export default function Ai({ config, documents, catalog = null, syncHours = ['08:00', '14:00', '18:00'] }) {
     const { flash } = usePage().props;
 
     const DEFAULT_HOURS = {
@@ -57,6 +57,34 @@ export default function Ai({ config, documents }) {
         form.setData('business_hours', next);
     };
     const toggleHours = () => form.setData('business_hours', hoursEnabled ? null : DEFAULT_HOURS);
+
+    // Cargar 7 días a mano, campo por campo, es catorce inputs para decir
+    // "lunes a viernes de 8 a 18". Los presets y el "copiar a todos" resuelven
+    // el 95% de los casos en un clic.
+    const PRESETS = [
+        { label: 'Lun–Vie 08:00–18:00', hours: { mon: [['08:00', '18:00']], tue: [['08:00', '18:00']], wed: [['08:00', '18:00']], thu: [['08:00', '18:00']], fri: [['08:00', '18:00']], sat: [], sun: [] } },
+        { label: 'Lun–Vie 08:00–19:00 + Sáb 09:00–13:00', hours: DEFAULT_HOURS },
+        { label: 'Lun–Sáb 08:00–20:00', hours: { mon: [['08:00', '20:00']], tue: [['08:00', '20:00']], wed: [['08:00', '20:00']], thu: [['08:00', '20:00']], fri: [['08:00', '20:00']], sat: [['08:00', '20:00']], sun: [] } },
+    ];
+
+    const copiarATodos = (day) => {
+        const range = (form.data.business_hours ?? DEFAULT_HOURS)[day]?.[0];
+        if (!range) return;
+        const next = {};
+        Object.keys(DAY_LABELS).forEach((d) => { next[d] = [[range[0], range[1]]]; });
+        form.setData('business_hours', next);
+    };
+
+    const cerrarDia = (day) => {
+        const next = { ...(form.data.business_hours ?? DEFAULT_HOURS) };
+        next[day] = [];
+        form.setData('business_hours', next);
+    };
+
+    // Rango invertido (fin antes que inicio) = cruza la medianoche. Es válido
+    // y el servidor lo entiende, pero conviene decirlo o se lee como un error
+    // de tipeo.
+    const cruzaMedianoche = (r) => r?.[0] && r?.[1] && r[1] < r[0];
 
     const isOllama = form.data.provider === 'ollama';
 
@@ -365,18 +393,59 @@ export default function Ai({ config, documents }) {
                                             </div>
                                         </label>
 
+                                        {/* Estado ahora mismo: lo que de verdad se quiere saber al
+                                            abrir esta pantalla. */}
+                                        {config && (
+                                            <div className={`flex flex-wrap items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold ring-1 ${
+                                                !hoursEnabled ? 'bg-gray-50 text-gray-600 ring-gray-200'
+                                                    : config.within_business_hours ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                                                    : 'bg-amber-50 text-amber-800 ring-amber-200'
+                                            }`}>
+                                                <span className={`w-2 h-2 rounded-full ${!hoursEnabled ? 'bg-gray-400' : config.within_business_hours ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                                                {!hoursEnabled ? 'Atención 24/7 — la IA responde siempre'
+                                                    : config.within_business_hours ? 'Ahora mismo: dentro de horario, la IA responde'
+                                                    : 'Ahora mismo: fuera de horario'}
+                                                {hoursEnabled && !config.within_business_hours && config.next_opening_at && (
+                                                    <span className="font-medium text-amber-700">
+                                                        · vuelve a atender {new Date(config.next_opening_at).toLocaleString('es', { weekday: 'long', hour: '2-digit', minute: '2-digit' })}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+
                                         {hoursEnabled && (
                                             <div className="rounded-xl bg-gray-50 border border-gray-200 p-4 sm:p-5 space-y-4">
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 pr-1">Aplicar:</span>
+                                                    {PRESETS.map((p) => (
+                                                        <button
+                                                            key={p.label}
+                                                            type="button"
+                                                            onClick={() => form.setData('business_hours', p.hours)}
+                                                            className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white border border-gray-200 text-gray-700 hover:border-emerald-400 hover:text-emerald-700 shadow-sm"
+                                                        >
+                                                            {p.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+
                                                 <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
                                                     {Object.entries(DAY_LABELS).map(([day, label]) => {
                                                         const range = hours[day]?.[0] ?? ['', ''];
                                                         const closed = range[0] === '' || range[1] === '';
                                                         return (
-                                                            <div key={day} className={`rounded-lg p-2.5 border ${closed ? 'bg-gray-100/80 border-gray-200' : 'bg-white border-emerald-200'}`}>
+                                                            <div key={day} className={`group rounded-lg p-2.5 border ${closed ? 'bg-gray-100/80 border-gray-200' : 'bg-white border-emerald-200'}`}>
                                                                 <p className="text-[10px] font-bold uppercase text-gray-500 text-center mb-1.5">{label}</p>
                                                                 <input type="time" value={range[0]} onChange={(e) => setDayRange(day, e.target.value, range[1])} className="w-full text-xs border-0 bg-transparent p-0 focus:ring-0 focus:text-emerald-700" />
                                                                 <input type="time" value={range[1]} onChange={(e) => setDayRange(day, range[0], e.target.value)} className="w-full text-xs border-0 bg-transparent p-0 focus:ring-0 focus:text-emerald-700" />
                                                                 {closed && <p className="text-[9px] text-gray-400 text-center mt-1">Cerrado</p>}
+                                                                {cruzaMedianoche(range) && <p className="text-[9px] text-sky-600 text-center mt-1">cruza medianoche</p>}
+                                                                {!closed && (
+                                                                    <div className="flex justify-center gap-1.5 mt-1.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                                                                        <button type="button" onClick={() => copiarATodos(day)} title="Copiar este horario a todos los días" className="text-[9px] font-bold text-emerald-600 hover:underline">todos</button>
+                                                                        <button type="button" onClick={() => cerrarDia(day)} title="Marcar como cerrado" className="text-[9px] font-bold text-gray-400 hover:text-red-600">cerrar</button>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         );
                                                     })}
@@ -391,7 +460,10 @@ export default function Ai({ config, documents }) {
                                                         className={inputClass}
                                                     />
                                                 </div>
-                                                <p className="text-[10px] text-gray-400">Zona horaria: {form.data.timezone}. Solo se envía una vez por día por conversación.</p>
+                                                <p className="text-[10px] text-gray-400">
+                                                    Zona horaria: {form.data.timezone}. Se envía una sola vez por día y por conversación.
+                                                    Si tu mensaje no menciona una hora, se le agrega sola la de reapertura («te respondemos mañana a las 08:00»).
+                                                </p>
                                             </div>
                                         )}
                                     </div>
@@ -410,6 +482,74 @@ export default function Ai({ config, documents }) {
 
                             {/* Knowledge Base */}
                             <TabPanel>
+                                {/* Oferta académica: lo que la IA usa como fuente cerrada.
+                                    Va arriba de todo porque es de donde salen casi todas
+                                    las respuestas — y de donde salían las invenciones
+                                    cuando estaba desactualizada. */}
+                                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-5">
+                                    <div className="p-5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-emerald-50 to-transparent">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-md">
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.438 60.438 0 00-.491 6.347A48.62 48.62 0 0112 20.904a48.62 48.62 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.636 50.636 0 00-2.658-.813A59.906 59.906 0 0112 3.493a59.903 59.903 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5" />
+                                                </svg>
+                                            </div>
+                                            <div>
+                                                <h3 className="text-base font-bold text-gray-900">Oferta académica vigente</h3>
+                                                <p className="text-xs text-gray-400 mt-0.5">
+                                                    Se refresca sola a las {syncHours.join(', ')} — la IA no consulta la base académica en cada mensaje
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => router.post(route('settings.ai.sync-oferta'), {}, { preserveScroll: true })}
+                                            className="px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 shadow-lg shadow-emerald-500/20 hover:opacity-90"
+                                        >
+                                            ⟳ Actualizar ahora
+                                        </button>
+                                    </div>
+
+                                    <div className="p-5 sm:p-6 space-y-4">
+                                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                                            {config?.knowledge_synced_at ? (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-bold ring-1 ring-emerald-200">
+                                                    Actualizado {new Date(config.knowledge_synced_at).toLocaleString('es', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 font-bold ring-1 ring-amber-200">
+                                                    Nunca se sincronizó — la IA no conoce la oferta todavía
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {catalog ? (
+                                            <details className="group rounded-xl border border-gray-200 bg-gray-50 overflow-hidden">
+                                                <summary className="px-4 py-2.5 cursor-pointer list-none text-xs font-bold text-gray-700 hover:bg-gray-100 flex items-center justify-between">
+                                                    Ver exactamente lo que sabe la IA
+                                                    <svg className="w-4 h-4 text-gray-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                                                </summary>
+                                                <pre className="px-4 py-3 text-[11px] leading-relaxed text-gray-700 whitespace-pre-wrap max-h-96 overflow-y-auto border-t border-gray-200 bg-white">
+                                                    {catalog}
+                                                </pre>
+                                            </details>
+                                        ) : (
+                                            <p className="text-xs text-gray-500 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                                                Sin catálogo cargado. Mientras no lo haya, la IA no tiene una lista cerrada de programas
+                                                contra la cual contrastar lo que le preguntan — que es justo cuando empieza a inventar.
+                                                Apretá «Actualizar ahora».
+                                            </p>
+                                        )}
+
+                                        <p className="text-[11px] text-gray-400 leading-relaxed">
+                                            El catálogo entra completo en cada respuesta: es la lista cerrada de lo que se ofrece.
+                                            El detalle de cada programa (módulos, docentes y fechas de clase) se consulta solo cuando
+                                            el cliente pregunta por ese programa. Un programa que sale de inscripciones desaparece
+                                            de acá en la siguiente actualización.
+                                        </p>
+                                    </div>
+                                </div>
+
                                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                                     <div className="p-5 border-b border-gray-100 flex items-center justify-between gap-3 bg-gradient-to-r from-gray-50 to-transparent">
                                         <div className="flex items-center gap-3">
@@ -446,8 +586,18 @@ export default function Ai({ config, documents }) {
                                                         </svg>
                                                     </div>
                                                     <div className="min-w-0">
-                                                        <p className="font-semibold text-gray-900 text-sm truncate">{doc.title}</p>
-                                                        <p className="text-xs text-gray-400">{doc.chunks_count} fragmentos indexados</p>
+                                                        <p className="font-semibold text-gray-900 text-sm truncate flex items-center gap-1.5">
+                                                            {doc.title}
+                                                            {doc.is_pinned && (
+                                                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 shrink-0" title="Entra completo en cada respuesta de la IA">
+                                                                    FIJO
+                                                                </span>
+                                                            )}
+                                                        </p>
+                                                        <p className="text-xs text-gray-400">
+                                                            {doc.chunks_count} fragmentos indexados
+                                                            {doc.title?.startsWith('[OFERTA]') && ' · se regenera solo'}
+                                                        </p>
                                                     </div>
                                                 </div>
                                                 <button

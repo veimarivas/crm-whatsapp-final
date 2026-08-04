@@ -124,7 +124,7 @@ class AiAutoReplyJob implements ShouldQueue
             $lastSent = cache()->get("after_hours_sent:{$conversation->id}:{$todayKey}");
             if (! $lastSent) {
                 try {
-                    $messenger->sendText($conversation, $config->after_hours_message);
+                    $messenger->sendText($conversation, $this->afterHoursText($config));
                     cache()->put("after_hours_sent:{$conversation->id}:{$todayKey}", true, now()->endOfDay());
                 } catch (\Throwable $e) {
                     Log::warning('After-hours message falló', ['conv_id' => $conversation->id, 'error' => $e->getMessage()]);
@@ -273,6 +273,36 @@ class AiAutoReplyJob implements ShouldQueue
      * Komo lo usa para mostrar la misma burbuja violeta que el Inbox de wacrm.
      * Best-effort: si falla no bloquea al bot.
      */
+    /**
+     * Aviso de fuera de horario, con la hora real de reapertura si se puede
+     * calcular.
+     *
+     * "Te respondemos mañana a las 08:00" corta la ansiedad de quien escribe
+     * de noche; "estamos fuera de horario" a secas invita a insistir cinco
+     * veces. El texto que configuró el negocio se respeta tal cual: solo se
+     * le agrega la línea, y únicamente si no menciona ya un horario.
+     */
+    private function afterHoursText(AiConfig $config): string
+    {
+        $mensaje = $config->after_hours_message;
+        $proxima = $config->nextOpeningAt();
+
+        if (! $proxima || preg_match('/\d{1,2}[:h]\d{2}/', $mensaje)) {
+            return $mensaje;
+        }
+
+        $tz = $config->timezone ?: 'America/La_Paz';
+        $ahora = now($tz);
+
+        $cuando = match (true) {
+            $proxima->isSameDay($ahora) => 'hoy a las '.$proxima->format('H:i'),
+            $proxima->isSameDay($ahora->copy()->addDay()) => 'mañana a las '.$proxima->format('H:i'),
+            default => 'el '.$proxima->locale('es')->isoFormat('dddd D [a las] HH:mm'),
+        };
+
+        return trim($mensaje)."\n\nTe respondemos {$cuando}. 🙌";
+    }
+
     private function broadcastPending(Conversation $conversation, bool $pending): void
     {
         try {

@@ -8,10 +8,12 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Notification;
 use App\Services\Ai\Chunker;
+use App\Services\Ai\OfertaAcademica;
 use App\Services\Ai\ReplyGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -39,12 +41,52 @@ class AiController extends Controller
                 'timezone' => $config->timezone,
                 'has_key' => true,
                 'has_embeddings_key' => $config->hasSemanticSearch(),
+                // Estado en vivo del horario: leer una grilla de 7 días y
+                // deducir si ahora mismo atiende es justo lo que nadie hace.
+                'within_business_hours' => $config->isWithinBusinessHours(),
+                'next_opening_at' => $config->nextOpeningAt()?->toIso8601String(),
+                'knowledge_synced_at' => $config->knowledge_synced_at?->toIso8601String(),
             ] : null,
             'documents' => AiKnowledgeDocument::forAccount($accountId)
                 ->withCount('chunks')
+                ->orderByDesc('is_pinned')
                 ->orderByDesc('updated_at')
-                ->get(['id', 'title', 'updated_at']),
+                ->get(['id', 'title', 'is_pinned', 'updated_at']),
+            // El catálogo vigente, para poder LEER lo que la IA está usando
+            // como fuente. Sin esto, "la IA responde cualquier cosa" no se
+            // puede diagnosticar: no hay forma de ver qué sabe.
+            'catalog' => AiKnowledgeDocument::forAccount($accountId)
+                ->where('is_pinned', true)
+                ->orderBy('created_at')
+                ->value('content'),
+            'syncHours' => ['08:00', '14:00', '18:00'],
         ]);
+    }
+
+    /**
+     * Refresca la oferta académica a pedido, sin esperar al próximo horario.
+     *
+     * Corre en primer plano porque quien aprieta el botón quiere ver el
+     * resultado ahora; con pocas decenas de programas tarda un par de
+     * segundos. Si la BD académica no responde, el comando conserva el
+     * conocimiento anterior y avisa.
+     */
+    public function syncKnowledge(Request $request): RedirectResponse
+    {
+        $accountId = $request->user()->account_id;
+
+        $code = Artisan::call('wacrm:sync-oferta-academica', ['--account' => $accountId]);
+
+        if ($code !== 0) {
+            return back()->with('error', 'No se pudo leer la base académica. Se conservó el conocimiento anterior.');
+        }
+
+        $count = AiKnowledgeDocument::forAccount($accountId)
+            ->where('title', 'like', OfertaAcademica::DOC_PREFIX.'%')
+            ->where('is_pinned', false)
+            ->count();
+
+        return back()->with('success', "Conocimiento actualizado: {$count} programas en inscripciones.");
     }
 
     public function update(Request $request): RedirectResponse

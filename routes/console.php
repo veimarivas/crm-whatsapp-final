@@ -52,3 +52,25 @@ Schedule::command('flows:process-timeouts')->everyFiveMinutes();
 // Cierra conversaciones abiertas sin actividad en 7 días. Se ejecuta 1×/día
 // a las 3 AM (poca carga). Se reabren automáticamente si el cliente escribe.
 Schedule::command('wacrm:auto-close-inactive --days=7')->dailyAt('03:00');
+
+// Refresca la oferta académica que responde la IA: 08:00 antes de abrir,
+// 14:00 después del mediodía y 18:00 para la tarde/noche.
+//
+// Tres veces al día y no en cada mensaje a propósito: consultar la BD
+// académica por consulta multiplica la latencia de cada respuesta y da
+// resultados distintos a dos personas que preguntan lo mismo. Acá se redacta
+// una vez y todos leen el mismo texto.
+//
+// `withoutOverlapping` porque con muchos programas la corrida tarda y dos
+// pasadas encimadas se pisan el borrado/regenerado.
+Schedule::command('wacrm:sync-oferta-academica')
+    ->dailyAt('08:00')
+    ->withoutOverlapping();
+
+Schedule::command('wacrm:sync-oferta-academica')
+    ->dailyAt('14:00')
+    ->withoutOverlapping();
+
+Schedule::command('wacrm:sync-oferta-academica')
+    ->dailyAt('18:00')
+    ->withoutOverlapping();
