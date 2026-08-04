@@ -4,6 +4,7 @@ namespace App\Services\Ai;
 
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Lee la oferta académica vigente de `esam_datos` y la redacta como texto
@@ -34,13 +35,74 @@ class OfertaAcademica
     public const DOC_CATALOGO = '[OFERTA] Catálogo de programas vigentes';
 
     /**
-     * Programas con inscripciones abiertas, con su tipo.
+     * De dónde sale el área del programa.
+     *
+     * `esam_datos` es una BD externa que este proyecto no controla ni migra, y
+     * el área puede estar como tabla relacionada (`areas` + `programas.area_id`)
+     * o como columna suelta. Se detecta en vez de asumir: si se asume mal, la
+     * consulta revienta y la sincronización nocturna deja de correr — y como
+     * conserva el conocimiento anterior, el fallo es silencioso durante días.
+     *
+     * @return array{modo: 'tabla'|'columna'|'ninguno', columna: string|null}
+     */
+    private function fuenteArea(): array
+    {
+        static $cache = null;
+
+        if ($cache !== null) {
+            return $cache;
+        }
+
+        $schema = Schema::connection('esam_datos');
+
+        try {
+            if ($schema->hasColumn('programas', 'area_id') && $schema->hasTable('areas')) {
+                $nombre = collect(['nombre', 'descripcion', 'name', 'titulo'])
+                    ->first(fn ($c) => $schema->hasColumn('areas', $c));
+
+                if ($nombre) {
+                    return $cache = ['modo' => 'tabla', 'columna' => $nombre];
+                }
+            }
+
+            foreach (['area', 'area_nombre', 'nombre_area'] as $columna) {
+                if ($schema->hasColumn('programas', $columna)) {
+                    return $cache = ['modo' => 'columna', 'columna' => $columna];
+                }
+            }
+        } catch (\Throwable) {
+            // BD inaccesible: el que llame ya maneja el error.
+        }
+
+        return $cache = ['modo' => 'ninguno', 'columna' => null];
+    }
+
+    /** ¿Cada sesión tiene su propio docente, o el docente es del módulo? */
+    private function horarioTieneDocente(): bool
+    {
+        static $cache = null;
+
+        if ($cache !== null) {
+            return $cache;
+        }
+
+        try {
+            return $cache = Schema::connection('esam_datos')->hasColumn('horarios', 'docente_id');
+        } catch (\Throwable) {
+            return $cache = false;
+        }
+    }
+
+    /**
+     * Programas con inscripciones abiertas, con su tipo y su área.
      *
      * @return \Illuminate\Support\Collection<int, object>
      */
     public function programas()
     {
-        return DB::connection('esam_datos')
+        $area = $this->fuenteArea();
+
+        $query = DB::connection('esam_datos')
             ->table('programas as p')
             ->leftJoin('tipos as t', 't.id', '=', 'p.tipo_id')
             ->where('p.estado_id', self::ESTADO_INSCRIPCIONES)
@@ -52,9 +114,16 @@ class OfertaAcademica
                 'p.moodle_link', 'p.ceub', 'p.inscripciones_habilitadas',
                 'p.cantidad_inscritos_minimo',
                 't.nombre as tipo_nombre', 't.descripcion as tipo_descripcion',
-            ])
-            ->orderBy('p.nombre')
-            ->get();
+            ]);
+
+        if ($area['modo'] === 'tabla') {
+            $query->leftJoin('areas as a', 'a.id', '=', 'p.area_id')
+                ->addSelect("a.{$area['columna']} as area_nombre");
+        } elseif ($area['modo'] === 'columna') {
+            $query->addSelect("p.{$area['columna']} as area_nombre");
+        }
+
+        return $query->orderBy('p.nombre')->get();
     }
 
     /**
@@ -72,18 +141,70 @@ class OfertaAcademica
     }
 
     /**
-     * @return \Illuminate\Support\Collection<int, object> horarios confirmados
+     * Horarios confirmados de un módulo. Un módulo tiene VARIAS sesiones (una
+     * por semana, normalmente), y cada una puede dictarla un docente distinto:
+     * si la tabla `horarios` trae su propio `docente_id`, se usa ese.
+     *
+     * @return \Illuminate\Support\Collection<int, object>
      */
     public function horarios(int|string $moduloId)
     {
-        return DB::connection('esam_datos')
-            ->table('horarios')
-            ->where('modulo_id', $moduloId)
-            ->where('estado', 'Confirmado')
-            ->orderBy('fecha_desarrollo')
-            ->orderBy('hora_inicio')
+        $query = DB::connection('esam_datos')
+            ->table('horarios as h')
+            ->where('h.modulo_id', $moduloId)
+            ->where('h.estado', 'Confirmado')
+            ->orderBy('h.fecha_desarrollo')
+            ->orderBy('h.hora_inicio')
             ->limit(50) // un semestre de clases semanales ≈ 16
-            ->get(['fecha_desarrollo', 'hora_inicio', 'hora_fin']);
+            ->select(['h.fecha_desarrollo', 'h.hora_inicio', 'h.hora_fin']);
+
+        if ($this->horarioTieneDocente()) {
+            $query->leftJoin('docentes as hd', 'hd.id', '=', 'h.docente_id')
+                ->addSelect(['hd.nombres as docente_nombres', 'hd.apellidos as docente_apellidos']);
+        }
+
+        return $query->get();
+    }
+
+    /** Nombre completo del docente de una fila, o cadena vacía. */
+    private function docente(?object $fila): string
+    {
+        return trim(($fila->docente_nombres ?? '').' '.($fila->docente_apellidos ?? ''));
+    }
+
+    /**
+     * Resumen de las sesiones de un módulo para el catálogo: cuántas son, entre
+     * qué fechas y en qué franja horaria.
+     *
+     * En el catálogo va el resumen y no la lista completa por una razón de
+     * tamaño: veinte programas × ocho módulos × dieciséis sesiones no entra en
+     * el contexto del modelo, y lo que se pasa se trunca en silencio. La lista
+     * sesión por sesión vive en el documento de detalle del programa, que se
+     * inyecta entero apenas el cliente lo nombra.
+     *
+     * @param  \Illuminate\Support\Collection<int, object>  $horarios
+     */
+    private function resumenHorarios($horarios): string
+    {
+        if ($horarios->isEmpty()) {
+            return 'sin fechas confirmadas';
+        }
+
+        $primera = $this->fecha($horarios->first()->fecha_desarrollo);
+        $ultima = $this->fecha($horarios->last()->fecha_desarrollo);
+        $total = $horarios->count();
+
+        $franjas = $horarios
+            ->map(fn ($h) => substr($h->hora_inicio, 0, 5).' a '.substr($h->hora_fin, 0, 5))
+            ->unique()
+            ->values();
+
+        $horario = $franjas->count() === 1 ? $franjas->first() : 'horarios variables';
+
+        $sesiones = $total === 1 ? '1 sesión' : "{$total} sesiones";
+        $rango = $primera === $ultima ? "el {$primera}" : "del {$primera} al {$ultima}";
+
+        return "{$sesiones} {$rango}, {$horario}";
     }
 
     /**
@@ -94,8 +215,10 @@ class OfertaAcademica
      * que recuerda de otras partes del contexto.
      *
      * @param  \Illuminate\Support\Collection<int, object>  $programas
+     * @param  int  $nivel  2 = con resumen de horarios · 1 = módulos y docentes
+     *                      · 0 = solo la ficha de cada programa
      */
-    public function catalogo($programas): string
+    public function catalogo($programas, int $nivel = 2): string
     {
         $ahora = Carbon::now(config('app.timezone', 'America/La_Paz'));
         $total = $programas->count();
@@ -120,8 +243,24 @@ class OfertaAcademica
             'PROGRAMAS DISPONIBLES:',
         ];
 
-        foreach ($programas->values() as $i => $p) {
-            $lineas[] = ($i + 1).'. '.trim($p->nombre);
+        // Agrupados por área: "¿qué tienen en el área de salud?" es una de las
+        // preguntas más comunes, y con la lista plana el modelo tenía que
+        // deducir el área del nombre del programa — o sea, adivinarla.
+        $porArea = $programas->groupBy(fn ($p) => trim($p->area_nombre ?? '') ?: 'Sin área asignada');
+
+        if ($porArea->count() > 1 || ! $porArea->has('Sin área asignada')) {
+            $n = 0;
+            foreach ($porArea->sortKeys() as $area => $delArea) {
+                $lineas[] = '';
+                $lineas[] = "ÁREA: {$area} ({$delArea->count()})";
+                foreach ($delArea as $p) {
+                    $lineas[] = (++$n).'. '.trim($p->nombre);
+                }
+            }
+        } else {
+            foreach ($programas->values() as $i => $p) {
+                $lineas[] = ($i + 1).'. '.trim($p->nombre);
+            }
         }
 
         $lineas[] = '';
@@ -132,6 +271,7 @@ class OfertaAcademica
             $lineas[] = '• '.trim($p->nombre);
 
             $ficha = array_filter([
+                trim($p->area_nombre ?? '') !== '' ? "Área: {$p->area_nombre}" : null,
                 $p->tipo_nombre ? "Tipo: {$p->tipo_nombre}" : null,
                 $p->gestion ? "Gestión: {$p->gestion}" : null,
                 $p->duracion_meses ? "Duración: {$p->duracion_meses} meses" : null,
@@ -147,24 +287,70 @@ class OfertaAcademica
                 $lineas[] = '  '.$dato;
             }
 
-            // Los nombres de los módulos van en el catálogo (son pocos y son
-            // lo que más se pregunta). Los horarios NO: son cientos de líneas
-            // y harían que el catálogo no entre en el contexto del modelo.
-            $modulos = $this->modulos($p->id);
+            // Cada módulo con su docente y un RESUMEN de sus sesiones. La lista
+            // sesión por sesión no entra acá (ver resumenHorarios): vive en el
+            // documento de detalle, que se inyecta entero apenas el cliente
+            // nombra el programa.
+            $modulos = $nivel >= 1 ? $this->modulos($p->id) : collect();
 
             if ($modulos->isNotEmpty()) {
                 $lineas[] = '  Módulos:';
                 foreach ($modulos->values() as $j => $m) {
-                    $docente = trim(($m->docente_nombres ?? '').' '.($m->docente_apellidos ?? ''));
-                    $lineas[] = '    '.($j + 1).'. '.trim($m->nombre).($docente !== '' ? " — Docente: {$docente}" : '');
+                    $horarios = $nivel >= 2 ? $this->horarios($m->id) : collect();
+
+                    // El docente del módulo; si las sesiones traen el suyo y es
+                    // otro, se nombran todos — un módulo puede repartirse entre
+                    // dos docentes y decir solo uno es un dato equivocado.
+                    $docentes = collect([$this->docente($m)])
+                        ->merge($horarios->map(fn ($h) => $this->docente($h)))
+                        ->filter()
+                        ->unique()
+                        ->values();
+
+                    $linea = '    '.($j + 1).'. '.trim($m->nombre);
+
+                    if ($docentes->isNotEmpty()) {
+                        $linea .= ' — '.($docentes->count() === 1 ? 'Docente: ' : 'Docentes: ').$docentes->join(', ');
+                    }
+
+                    $lineas[] = $linea;
+
+                    if ($nivel >= 2) {
+                        $lineas[] = '       Horarios: '.$this->resumenHorarios($horarios);
+                    }
                 }
             }
         }
 
         $lineas[] = '';
-        $lineas[] = 'Las fechas y horas exactas de clase de cada módulo están en el documento de detalle de cada programa. Si no las tienes a la vista, dilo y ofrece pasar con un asesor en lugar de estimarlas.';
+        $lineas[] = 'Las fechas de clase de arriba son un resumen (cuántas sesiones y entre qué fechas). El listado sesión por sesión está en el documento de detalle de cada programa. Si el cliente pide las fechas exactas y no las tienes a la vista, dilo y ofrece pasar con un asesor en lugar de estimarlas.';
 
         return implode("\n", $lineas);
+    }
+
+    /**
+     * El catálogo más completo que entre en el presupuesto de caracteres.
+     *
+     * Con muchos programas, el texto con horarios por módulo se pasa del
+     * contexto del modelo. Truncarlo por el final sería lo peor posible: se
+     * perderían programas ENTEROS y la IA diría que no existen. Así que se
+     * recorta por DETALLE — primero se van los horarios, después los módulos —
+     * y la lista de programas queda completa siempre, que es lo único que no
+     * puede faltar.
+     */
+    public function catalogoAjustado($programas, int $limite = 14000): string
+    {
+        foreach ([2, 1, 0] as $nivel) {
+            $texto = $this->catalogo($programas, $nivel);
+
+            if (mb_strlen($texto) <= $limite) {
+                return $texto;
+            }
+        }
+
+        // Ni la lista pelada entra: mejor eso truncado que nada, y el detalle
+        // de cada programa sigue disponible por separado.
+        return mb_substr($this->catalogo($programas, 0), 0, $limite);
     }
 
     /**
@@ -180,6 +366,10 @@ class OfertaAcademica
             "Gestión: {$p->gestion}",
             'Estado: Inscripciones abiertas',
         ];
+
+        if (trim($p->area_nombre ?? '') !== '') {
+            $lineas[] = "Área: {$p->area_nombre}";
+        }
 
         if ($p->duracion_meses) {
             $lineas[] = "Duración: {$p->duracion_meses} meses";
@@ -218,18 +408,36 @@ class OfertaAcademica
             foreach ($modulos->values() as $i => $m) {
                 $lineas[] = ($i + 1).'. '.trim($m->nombre);
 
-                $docente = trim(($m->docente_nombres ?? '').' '.($m->docente_apellidos ?? ''));
-                if ($docente !== '') {
-                    // Solo el nombre: el correo del docente es interno.
-                    $lineas[] = "   Docente: {$docente}";
+                $horarios = $this->horarios($m->id);
+                $docenteModulo = $this->docente($m);
+
+                // Docente(s) del módulo. Solo el nombre: el correo es interno.
+                $docentes = collect([$docenteModulo])
+                    ->merge($horarios->map(fn ($h) => $this->docente($h)))
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                if ($docentes->count() === 1) {
+                    $lineas[] = "   Docente: {$docentes->first()}";
+                } elseif ($docentes->count() > 1) {
+                    $lineas[] = '   Docentes: '.$docentes->join(', ');
                 }
 
-                $horarios = $this->horarios($m->id);
-
                 if ($horarios->isNotEmpty()) {
-                    $lineas[] = '   Todos los horarios de este módulo (orden cronológico):';
+                    $lineas[] = "   Este módulo tiene {$horarios->count()} sesión(es). Todos sus horarios, en orden cronológico:";
                     foreach ($horarios as $h) {
-                        $lineas[] = '     - '.$this->fecha($h->fecha_desarrollo)." de {$h->hora_inicio} a {$h->hora_fin}";
+                        $linea = '     - '.$this->fecha($h->fecha_desarrollo)." de {$h->hora_inicio} a {$h->hora_fin}";
+
+                        // El docente de la sesión solo se repite si el módulo
+                        // se reparte entre varios: si es siempre el mismo,
+                        // ponerlo en cada línea es ruido.
+                        $docenteSesion = $this->docente($h);
+                        if ($docenteSesion !== '' && $docentes->count() > 1) {
+                            $linea .= " (docente: {$docenteSesion})";
+                        }
+
+                        $lineas[] = $linea;
                     }
                 } else {
                     // Decirlo explícitamente evita que el modelo llene el

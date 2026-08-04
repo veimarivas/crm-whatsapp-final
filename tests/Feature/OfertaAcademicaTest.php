@@ -16,18 +16,33 @@ use Tests\TestCase;
  */
 class OfertaAcademicaTest extends TestCase
 {
-    private function oferta(array $modulos = []): OfertaAcademica
+    private function oferta(array $modulos = [], array $horarios = []): OfertaAcademica
     {
         // Se saltea la BD académica: acá interesa la redacción.
-        return new class($modulos) extends OfertaAcademica
+        return new class($modulos, $horarios) extends OfertaAcademica
         {
-            public function __construct(private array $fakeModulos) {}
+            public function __construct(private array $fakeModulos, private array $fakeHorarios) {}
 
             public function modulos(int|string $programaId)
             {
                 return collect($this->fakeModulos);
             }
+
+            public function horarios(int|string $moduloId)
+            {
+                return collect($this->fakeHorarios);
+            }
         };
+    }
+
+    /** @return object una sesión de clase */
+    private function sesion(string $fecha, string $inicio = '19:00:00', string $fin = '22:00:00', array $docente = []): object
+    {
+        return (object) array_merge([
+            'fecha_desarrollo' => $fecha,
+            'hora_inicio' => $inicio,
+            'hora_fin' => $fin,
+        ], $docente);
     }
 
     private function programa(array $override = []): object
@@ -51,6 +66,7 @@ class OfertaAcademicaTest extends TestCase
             'cantidad_inscritos_minimo' => 15,
             'tipo_nombre' => 'Maestría',
             'tipo_descripcion' => null,
+            'area_nombre' => 'Ciencias Sociales',
         ], $override);
     }
 
@@ -81,6 +97,108 @@ class OfertaAcademicaTest extends TestCase
 
         $this->assertStringContainsString('1. Políticas públicas — Docente: Juan Pérez', $texto);
         $this->assertStringContainsString('2. Presupuesto', $texto);
+    }
+
+    public function test_el_area_va_en_la_ficha_y_agrupa_el_indice(): void
+    {
+        $texto = $this->oferta()->catalogo(collect([
+            $this->programa(['nombre' => 'Maestría en Gestión Pública', 'area_nombre' => 'Ciencias Sociales']),
+            $this->programa(['id' => 2, 'nombre' => 'Maestría en Salud Familiar', 'area_nombre' => 'Salud']),
+        ]));
+
+        $this->assertStringContainsString('ÁREA: Salud (1)', $texto);
+        $this->assertStringContainsString('ÁREA: Ciencias Sociales (1)', $texto);
+        $this->assertStringContainsString('Área: Salud', $texto, 'También en la ficha del programa.');
+    }
+
+    public function test_si_ninguno_tiene_area_la_lista_va_plana(): void
+    {
+        // Un único encabezado "Sin área asignada" sobre toda la lista no
+        // aporta nada y ocupa contexto.
+        $texto = $this->oferta()->catalogo(collect([$this->programa(['area_nombre' => null])]));
+
+        $this->assertStringContainsString('1. Maestría en Gestión Pública', $texto);
+        $this->assertStringNotContainsString('ÁREA:', $texto);
+    }
+
+    public function test_el_programa_sin_area_no_desaparece_cuando_los_demas_si_la_tienen(): void
+    {
+        $texto = $this->oferta()->catalogo(collect([
+            $this->programa(['nombre' => 'Maestría en Salud Familiar', 'area_nombre' => 'Salud']),
+            $this->programa(['id' => 2, 'nombre' => 'Diplomado suelto', 'area_nombre' => null]),
+        ]));
+
+        $this->assertStringContainsString('ÁREA: Salud (1)', $texto);
+        $this->assertStringContainsString('Sin área asignada', $texto);
+        $this->assertStringContainsString('Diplomado suelto', $texto);
+    }
+
+    public function test_el_catalogo_resume_las_sesiones_de_cada_modulo(): void
+    {
+        $oferta = $this->oferta(
+            [(object) ['id' => 1, 'nombre' => 'Políticas públicas', 'docente_nombres' => 'Juan', 'docente_apellidos' => 'Pérez']],
+            [
+                $this->sesion('2026-09-10'),
+                $this->sesion('2026-09-17'),
+                $this->sesion('2026-09-24'),
+            ],
+        );
+
+        $texto = $oferta->catalogo(collect([$this->programa()]));
+
+        $this->assertStringContainsString('Horarios: 3 sesiones del 10/09/2026 al 24/09/2026, 19:00 a 22:00', $texto);
+    }
+
+    public function test_un_modulo_repartido_entre_dos_docentes_los_nombra_a_los_dos(): void
+    {
+        $oferta = $this->oferta(
+            [(object) ['id' => 1, 'nombre' => 'Políticas públicas', 'docente_nombres' => 'Juan', 'docente_apellidos' => 'Pérez']],
+            [
+                $this->sesion('2026-09-10', docente: ['docente_nombres' => 'Juan', 'docente_apellidos' => 'Pérez']),
+                $this->sesion('2026-09-17', docente: ['docente_nombres' => 'Rosa', 'docente_apellidos' => 'Vargas']),
+            ],
+        );
+
+        $catalogo = $oferta->catalogo(collect([$this->programa()]));
+        $detalle = $oferta->programa($this->programa());
+
+        $this->assertStringContainsString('Docentes: Juan Pérez, Rosa Vargas', $catalogo);
+        $this->assertStringContainsString('Docentes: Juan Pérez, Rosa Vargas', $detalle);
+        // En el detalle, cada sesión dice quién la dicta.
+        $this->assertStringContainsString('17/09/2026 de 19:00:00 a 22:00:00 (docente: Rosa Vargas)', $detalle);
+    }
+
+    public function test_el_detalle_lista_todas_las_sesiones_del_modulo(): void
+    {
+        $sesiones = collect(range(1, 12))->map(fn ($i) => $this->sesion(sprintf('2026-09-%02d', $i)))->all();
+
+        $oferta = $this->oferta(
+            [(object) ['id' => 1, 'nombre' => 'Políticas públicas', 'docente_nombres' => 'Juan', 'docente_apellidos' => 'Pérez']],
+            $sesiones,
+        );
+
+        $texto = $oferta->programa($this->programa());
+
+        $this->assertStringContainsString('tiene 12 sesión(es)', $texto);
+        $this->assertStringContainsString('01/09/2026', $texto);
+        $this->assertStringContainsString('12/09/2026', $texto);
+    }
+
+    public function test_si_no_entra_se_recorta_el_detalle_y_no_la_lista_de_programas(): void
+    {
+        $oferta = $this->oferta(
+            collect(range(1, 8))->map(fn ($i) => (object) ['id' => $i, 'nombre' => "Módulo número {$i} con un nombre largo", 'docente_nombres' => 'Juan', 'docente_apellidos' => 'Pérez'])->all(),
+            [$this->sesion('2026-09-10'), $this->sesion('2026-09-17')],
+        );
+
+        $programas = collect(range(1, 30))->map(fn ($i) => $this->programa(['id' => $i, 'nombre' => "Programa de prueba número {$i}"]));
+
+        $texto = $oferta->catalogoAjustado($programas, 6000);
+
+        $this->assertLessThanOrEqual(6000, mb_strlen($texto));
+        // Lo que no puede faltar nunca: ningún programa desaparece.
+        $this->assertStringContainsString('Programa de prueba número 1', $texto);
+        $this->assertStringContainsString('Programa de prueba número 30', $texto);
     }
 
     public function test_las_fechas_salen_en_formato_local(): void

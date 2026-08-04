@@ -92,7 +92,10 @@ class SyncOfertaAcademica extends Command
             $catalogo = AiKnowledgeDocument::create([
                 'account_id' => $accountId,
                 'title' => OfertaAcademica::DOC_CATALOGO,
-                'content' => $oferta->catalogo($programas),
+                // Ajustado: con muchos programas el catálogo con horarios no
+                // entra en el contexto del modelo, y se recorta por detalle
+                // antes que perder programas enteros.
+                'content' => $oferta->catalogoAjustado($programas),
                 'is_pinned' => true,
             ]);
             $chunker->reindex($catalogo);
