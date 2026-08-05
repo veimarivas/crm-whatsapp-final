@@ -195,9 +195,23 @@ class Client
             ],
         ];
 
-        $response = Http::withToken($this->config->api_key)
-            ->timeout((int) config('services.ai_context.cloud_timeout', 45))
-            ->post(rtrim($baseUrl, '/').'/chat/completions', $payload);
+        // Modelos que "piensan" antes de responder (qwen3, gpt-oss…): sin esto
+        // gastan TODO el presupuesto de tokens deliberando en inglés y la
+        // respuesta al cliente nunca llega a escribirse. `hidden` pide que el
+        // proveedor devuelva solo la conclusión.
+        $razonamiento = array_filter([
+            'reasoning_format' => config('services.ai_context.reasoning_format', 'hidden'),
+            'reasoning_effort' => config('services.ai_context.reasoning_effort'),
+        ]);
+
+        $response = $this->postChat($baseUrl, $payload + $razonamiento);
+
+        // No todos los modelos aceptan esos parámetros y responden 400. Se
+        // reintenta sin ellos: el filtro de `<think>` del sanitizador cubre el
+        // caso igual, así que perder esta optimización no rompe nada.
+        if ($response->status() === 400 && $razonamiento !== [] && str_contains(mb_strtolower((string) $response->body()), 'reasoning')) {
+            $response = $this->postChat($baseUrl, $payload);
+        }
 
         if ($response->failed()) {
             // El 429 se nombra aparte: en un plan gratuito es lo más probable
@@ -210,6 +224,13 @@ class Client
         }
 
         return trim($response->json('choices.0.message.content') ?? '');
+    }
+
+    private function postChat(string $baseUrl, array $payload): \Illuminate\Http\Client\Response
+    {
+        return Http::withToken($this->config->api_key)
+            ->timeout((int) config('services.ai_context.cloud_timeout', 45))
+            ->post(rtrim($baseUrl, '/').'/chat/completions', $payload);
     }
 
     private function openai(array $messages, ?string $system, int $maxTokens): string

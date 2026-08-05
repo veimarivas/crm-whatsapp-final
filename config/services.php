@@ -144,6 +144,17 @@ return [
         // Timeout para proveedores en la nube (Groq, OpenAI). Son rapidos: si
         // no contestaron en 45s, algo va mal y conviene fallar y avisar.
         'cloud_timeout' => (int) env('AI_CLOUD_TIMEOUT', 45),
+
+        // Con un proveedor en la nube el cuello de botella no es el tiempo:
+        // responde en segundos. Se le da mas margen de tokens para que un
+        // modelo que razona pueda pensar Y contestar. El largo final igual lo
+        // acota `max_chars`.
+        'max_tokens_cloud' => (int) env('AI_MAX_TOKENS_CLOUD', 1200),
+
+        // Modelos que deliberan antes de responder. `hidden` = que el
+        // proveedor devuelva solo la conclusión, sin el bloque <think>.
+        'reasoning_format' => env('AI_REASONING_FORMAT', 'hidden'),
+        'reasoning_effort' => env('AI_REASONING_EFFORT'),
     ],
 
 ];

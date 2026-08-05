@@ -23,6 +23,28 @@ class ReplySanitizer
             return '';
         }
 
+        // Razonamiento del modelo. Los modelos "thinking" (qwen3, gpt-oss…)
+        // escriben su deliberación en <think>…</think> antes de la respuesta:
+        // está en inglés, es larguísima y es exactamente lo que el cliente NO
+        // tiene que ver. Se quita siempre, aunque el proveedor ya deba
+        // filtrarla — depende del modelo y no se puede confiar en que lo haga.
+        $texto = preg_replace('#<think>.*?</think>#su', '', $texto);
+
+        // Y si quedó cortada a la mitad (se acabaron los tokens pensando), lo
+        // que sigue no es respuesta: es media deliberación.
+        if (($abre = mb_strpos($texto, '<think>')) !== false) {
+            $texto = mb_substr($texto, 0, $abre);
+        }
+
+        // Algunos cierran sin abrir cuando el proveedor ya recortó el bloque.
+        $texto = preg_replace('#^.*?</think>#su', '', $texto);
+
+        $texto = trim($texto);
+
+        if ($texto === '') {
+            return '';
+        }
+
         // Encabezados markdown: "## Programas" → "Programas"
         $texto = preg_replace('/^\s{0,3}#{1,6}\s*/m', '', $texto);
 

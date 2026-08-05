@@ -140,12 +140,19 @@ class ReplyGenerator
             ]]);
         }
 
+        // En CPU cada token generado son décimas de segundo, así que se acota
+        // fuerte. En la nube el tiempo no es el problema y conviene dar aire:
+        // un modelo que razona necesita tokens para pensar Y para contestar —
+        // con el presupuesto justo se queda sin margen a mitad de la
+        // deliberación y no llega a escribir la respuesta.
+        $maxTokens = $config->provider === 'ollama'
+            ? (int) config('services.ai_context.max_tokens', 350)
+            : (int) config('services.ai_context.max_tokens_cloud', 1200);
+
         $reply = Client::for($config)->chat(
             $messages,
             $this->buildSystemPrompt($config, $conversation),
-            // Una respuesta de WhatsApp no necesita 800 tokens, y cada token
-            // generado son décimas de segundo en CPU.
-            (int) config('services.ai_context.max_tokens', 400),
+            $maxTokens,
         );
 
         // El modelo no siempre obedece el formato; esto no se discute con él.
@@ -314,6 +321,8 @@ class ReplyGenerator
         // mejor que cualquier cantidad de prohibiciones.
         $parts[] = implode("\n", [
             '=== CÓMO ESCRIBIR LA RESPUESTA (lo más importante) ===',
+            'SIEMPRE EN ESPAÑOL. Aunque razones en otro idioma, lo que le llega al cliente va en español de Bolivia, sin una sola palabra en inglés.',
+            'No muestres tu razonamiento ni escribas etiquetas como <think>. Solo la respuesta final.',
             'Responde SOLO lo que el cliente preguntó. No agregues datos que no pidió.',
             'CORTO: máximo 4 líneas y unas 600 letras. Es un chat, no un folleto. Si hay más para contar, terminá ofreciendo ampliar y esperá a que el cliente pregunte.',
             'Nada de asteriscos, almohadillas ni viñetas de markdown.',
