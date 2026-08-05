@@ -56,6 +56,37 @@ class Client
         }
     }
 
+    /**
+     * Junta mensajes seguidos del mismo rol.
+     *
+     * Nosotros insertamos los datos de la oferta como un mensaje `user` justo
+     * antes de la pregunta del cliente, así que quedan dos `user` seguidos.
+     * OpenAI y Groq lo toleran; Gemini viene de una API que exige alternancia
+     * estricta y su capa de compatibilidad puede rechazarlo. Unirlos no cambia
+     * lo que lee el modelo y evita un 400 por una cuestión de forma.
+     *
+     * @param  array<int, array{role: string, content: string}>  $messages
+     * @return array<int, array{role: string, content: string}>
+     */
+    private function mergeConsecutive(array $messages): array
+    {
+        $salida = [];
+
+        foreach ($messages as $mensaje) {
+            $ultimo = count($salida) - 1;
+
+            if ($ultimo >= 0 && $salida[$ultimo]['role'] === $mensaje['role']) {
+                $salida[$ultimo]['content'] .= "\n\n".$mensaje['content'];
+
+                continue;
+            }
+
+            $salida[] = $mensaje;
+        }
+
+        return $salida;
+    }
+
     /** Host del proveedor en la nube que esté configurado. */
     private function baseUrlDelProveedor(): string
     {
@@ -206,10 +237,10 @@ class Client
             'model' => $this->config->model,
             'max_tokens' => $maxTokens,
             'temperature' => 0.2, // igual que en Ollama: menos margen para inventar
-            'messages' => [
+            'messages' => $this->mergeConsecutive([
                 ...($system ? [['role' => 'system', 'content' => $system]] : []),
                 ...$messages,
-            ],
+            ]),
         ];
 
         // Modelos que "piensan" antes de responder (qwen3, gpt-oss…): sin esto
