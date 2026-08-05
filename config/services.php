@@ -155,6 +155,21 @@ return [
         // proveedor devuelva solo la conclusión, sin el bloque <think>.
         'reasoning_format' => env('AI_REASONING_FORMAT', 'hidden'),
         'reasoning_effort' => env('AI_REASONING_EFFORT'),
+
+        /*
+        | Proveedor de respaldo cuando el principal se queda sin cuota.
+        |
+        | El caso natural es el modelo local: mas lento, pero sin limites y sin
+        | que los mensajes salgan del servidor. Vale mas una respuesta lenta
+        | que un cliente esperando.
+        |
+        |   AI_FALLBACK_PROVIDER=ollama
+        |   AI_FALLBACK_MODEL=qwen2.5:7b
+        */
+        'fallback_provider' => env('AI_FALLBACK_PROVIDER'),
+        'fallback_model' => env('AI_FALLBACK_MODEL'),
+        'fallback_base_url' => env('AI_FALLBACK_BASE_URL'),
+        'fallback_api_key' => env('AI_FALLBACK_API_KEY'),
     ],
 
 ];

@@ -274,8 +274,15 @@ class Client
         // arreglar, es "esperá un minuto". El que llama lo reintenta en vez de
         // dar la respuesta por perdida.
         if ($response->status() === 429) {
+            // El motivo REAL del proveedor va incluido. Taparlo con un texto
+            // propio hace perder la diferencia entre «gastaste la cuota» y
+            // «este modelo no tiene cupo gratuito en tu proyecto» — que se
+            // arreglan de forma completamente distinta.
+            $detalle = $response->json('error.message') ?? $response->body();
+
             throw new RateLimitedException(
-                "{$etiqueta}: límite de uso alcanzado (plan gratuito): se reintenta en unos minutos",
+                "{$etiqueta}: límite de uso alcanzado, se reintenta en unos minutos. Dijo: "
+                .mb_substr(trim((string) $detalle), 0, 300),
             );
         }
 

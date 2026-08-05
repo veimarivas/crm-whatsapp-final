@@ -166,7 +166,31 @@ class ReplyGenerator
 
         $system = $this->buildSystemPrompt($config, $conversation);
 
-        $reply = $this->limpiar(Client::for($config)->chat($messages, $system, $maxTokens));
+        try {
+            $reply = $this->limpiar(Client::for($config)->chat($messages, $system, $maxTokens));
+        } catch (RateLimitedException $e) {
+            // Cuota agotada en el proveedor principal. Si hay uno de respaldo
+            // configurado, se responde con ese en vez de hacer esperar al
+            // cliente: lo natural es un proveedor local (Ollama), que es más
+            // lento pero no tiene cuota. Si no hay respaldo, sube y el job
+            // reintenta más tarde.
+            $respaldo = $this->configDeRespaldo($config);
+
+            if (! $respaldo) {
+                throw $e;
+            }
+
+            Log::info('Cuota agotada; se responde con el proveedor de respaldo', [
+                'principal' => $config->provider,
+                'respaldo' => $respaldo->provider.'/'.$respaldo->model,
+            ]);
+
+            $maxTokens = $respaldo->provider === 'ollama'
+                ? (int) config('services.ai_context.max_tokens', 350)
+                : $maxTokens;
+
+            $reply = $this->limpiar(Client::for($respaldo)->chat($messages, $system, $maxTokens));
+        }
 
         // Vacío casi siempre significa lo mismo: el modelo se gastó todo el
         // presupuesto deliberando y no llegó a escribir la respuesta. Antes
@@ -184,6 +208,43 @@ class ReplyGenerator
         }
 
         return $reply;
+    }
+
+    /**
+     * Proveedor de respaldo para cuando el principal se queda sin cuota.
+     *
+     * Se configura en el `.env` y no en la base porque es una decisión de
+     * infraestructura, no de la cuenta:
+     *
+     *   AI_FALLBACK_PROVIDER=ollama
+     *   AI_FALLBACK_MODEL=qwen2.5:7b
+     *
+     * El caso natural es un modelo local: más lento, pero sin cuota y sin que
+     * los mensajes salgan del servidor. Vale más una respuesta lenta que un
+     * cliente esperando.
+     */
+    private function configDeRespaldo(AiConfig $config): ?AiConfig
+    {
+        $provider = config('services.ai_context.fallback_provider');
+
+        if (! $provider || $provider === $config->provider) {
+            return null;
+        }
+
+        $respaldo = $config->replicate();
+        $respaldo->provider = $provider;
+        $respaldo->model = config('services.ai_context.fallback_model') ?: $config->model;
+
+        if ($provider === 'ollama') {
+            $respaldo->base_url = config('services.ai_context.fallback_base_url')
+                ?: 'http://127.0.0.1:11434';
+        }
+
+        if ($clave = config('services.ai_context.fallback_api_key')) {
+            $respaldo->api_key = $clave;
+        }
+
+        return $respaldo;
     }
 
     /** Deja la respuesta como se manda por WhatsApp: sin markdown y acotada. */
