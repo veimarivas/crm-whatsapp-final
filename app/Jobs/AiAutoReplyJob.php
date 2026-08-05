@@ -207,9 +207,25 @@ class AiAutoReplyJob implements ShouldQueue
         //
         // Con el candado, el que llega y encuentra ocupado se vuelve a encolar
         // para dentro de un rato en vez de irse a morir a la cola del modelo.
-        $lock = Cache::lock('ai:generando:'.$config->account_id, $this->timeout + 30);
+        // No todos los almacenes de caché soportan candados atómicos, y ahí
+        // `Cache::lock()` no devuelve false: LANZA. Como esto corre antes del
+        // try/catch, el job moría entero — sin apagar la burbuja, sin registrar
+        // el motivo y sin que se viera nada en el diagnóstico, solo un job
+        // fallido más. Si no hay candado disponible, se sigue sin él: el
+        // problema que resuelve (dos consultas encimadas) es menos grave que
+        // no responder nunca.
+        $lock = rescue(
+            fn () => Cache::lock('ai:generando:'.$config->account_id, $this->timeout + 30),
+            function () {
+                Log::warning('El almacén de caché no soporta candados: la IA corre sin serializar. '
+                    .'Con CACHE_STORE=database o redis se evita que dos consultas se pisen.');
 
-        if (! $lock->get()) {
+                return null;
+            },
+            report: false,
+        );
+
+        if ($lock && ! $lock->get()) {
             if ($this->requeues >= self::MAX_REQUEUES) {
                 Log::warning('La IA sigue ocupada tras varios intentos; se abandona esta respuesta', [
                     'conversation_id' => $conversation->id,
@@ -273,7 +289,7 @@ class AiAutoReplyJob implements ShouldQueue
         } finally {
             // Sin esto, un fallo dejaría el candado puesto hasta que expire y
             // la IA muda para toda la cuenta mientras tanto.
-            $lock->release();
+            $lock?->release();
         }
     }
 

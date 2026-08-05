@@ -117,6 +117,34 @@ class DiagnoseAiReply extends Command
         $this->line("  · Jobs en cola: {$pendientes}");
         $this->line("  · Fallidos en las últimas 24 h: {$fallidos}");
 
+        // Contarlos no sirve de nada: lo que importa es POR QUÉ fallaron. Un
+        // job que revienta fuera del try/catch no apaga la IA ni deja motivo
+        // en la conversación — se ve como «sin bloqueos» y aun así el cliente
+        // no recibe nada.
+        if ($fallidos > 0) {
+            $this->newLine();
+            $this->warn('  Últimos fallos (esto es lo que hay que mirar):');
+
+            $ultimos = DB::table('failed_jobs')
+                ->orderByDesc('failed_at')
+                ->limit(3)
+                ->get(['payload', 'exception', 'failed_at']);
+
+            foreach ($ultimos as $fila) {
+                $clase = json_decode($fila->payload, true)['displayName'] ?? 'job';
+                // La primera línea de la excepción es el mensaje; el resto es
+                // el stack trace y acá no aporta.
+                $mensaje = trim(strtok((string) $fila->exception, "\n"));
+
+                $this->line('    · '.$fila->failed_at.'  '.class_basename($clase));
+                $this->line('      '.mb_substr($mensaje, 0, 200));
+            }
+
+            $this->line('');
+            $this->line('    Detalle completo: php artisan queue:failed');
+            $this->line('    Reintentar todos:  php artisan queue:retry all');
+        }
+
         if ($pendientes > 20) {
             $this->warn('  ✗ Hay muchos jobs encolados: el worker puede estar caído.');
             $this->line('    systemctl status crm-whatsapp-queue.service');
