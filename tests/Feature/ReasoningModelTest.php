@@ -127,6 +127,23 @@ class ReasoningModelTest extends TestCase
         });
     }
 
+    public function test_si_solo_razono_y_no_contesto_se_reintenta_sin_razonar(): void
+    {
+        // El caso real: la burbuja aparece, se va enseguida y no llega nada.
+        // El modelo gastó todo el presupuesto deliberando y devolvió puro
+        // <think>, que al limpiarse queda vacío.
+        Http::fakeSequence()
+            ->push(['choices' => [['message' => ['content' => '<think>Analyzing the request...']]]], 200)
+            ->push(['choices' => [['message' => ['content' => 'Tenemos 2 programas del área de salud.']]]], 200);
+
+        $reply = app(ReplyGenerator::class)->generate($this->config, $this->conversation);
+
+        $this->assertSame('Tenemos 2 programas del área de salud.', $reply);
+
+        // El reintento va sin razonar: si vuelve a deliberar, vuelve a fallar.
+        Http::assertSent(fn ($request) => ($request['reasoning_effort'] ?? null) === 'none');
+    }
+
     public function test_el_prompt_exige_espanol(): void
     {
         Http::fake(['*' => Http::response(['choices' => [['message' => ['content' => 'ok']]]])]);

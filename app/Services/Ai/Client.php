@@ -95,12 +95,12 @@ class Client
     /**
      * @param  array<int, array{role: 'user'|'assistant', content: string}>  $messages
      */
-    public function chat(array $messages, ?string $system = null, int $maxTokens = 500): string
+    public function chat(array $messages, ?string $system = null, int $maxTokens = 500, bool $sinRazonamiento = false): string
     {
         return match ($this->config->provider) {
             'anthropic' => $this->anthropic($messages, $system, $maxTokens),
             'ollama' => $this->ollama($messages, $system, $maxTokens),
-            'groq' => $this->openaiCompatible($messages, $system, $maxTokens, self::GROQ_URL, 'Groq'),
+            'groq' => $this->openaiCompatible($messages, $system, $maxTokens, self::GROQ_URL, 'Groq', $sinRazonamiento),
             default => $this->openai($messages, $system, $maxTokens),
         };
     }
@@ -183,7 +183,7 @@ class Client
      * en aceleradores propios y devuelve en un par de segundos lo que en este
      * VPS por CPU tardaba minutos.
      */
-    private function openaiCompatible(array $messages, ?string $system, int $maxTokens, string $baseUrl, string $etiqueta): string
+    private function openaiCompatible(array $messages, ?string $system, int $maxTokens, string $baseUrl, string $etiqueta, bool $sinRazonamiento = false): string
     {
         $payload = [
             'model' => $this->config->model,
@@ -199,10 +199,15 @@ class Client
         // gastan TODO el presupuesto de tokens deliberando en inglés y la
         // respuesta al cliente nunca llega a escribirse. `hidden` pide que el
         // proveedor devuelva solo la conclusión.
-        $razonamiento = array_filter([
-            'reasoning_format' => config('services.ai_context.reasoning_format', 'hidden'),
-            'reasoning_effort' => config('services.ai_context.reasoning_effort'),
-        ]);
+        //  es el reintento: el modelo gasto todo el
+        // presupuesto deliberando y devolvio contenido vacio. Sin razonar,
+        // contesta directo.
+        $razonamiento = $sinRazonamiento
+            ? ['reasoning_effort' => 'none']
+            : array_filter([
+                'reasoning_format' => config('services.ai_context.reasoning_format', 'hidden'),
+                'reasoning_effort' => config('services.ai_context.reasoning_effort'),
+            ]);
 
         $response = $this->postChat($baseUrl, $payload + $razonamiento);
 

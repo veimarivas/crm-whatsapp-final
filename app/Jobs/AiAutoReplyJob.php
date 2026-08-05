@@ -283,7 +283,20 @@ class AiAutoReplyJob implements ShouldQueue
             }
 
             if ($reply === '') {
-                AiReplyAttempt::registrar($conversation, 'vacia', null, $inicio);
+                AiReplyAttempt::registrar($conversation, 'vacia', 'el modelo no devolvió texto', $inicio);
+
+                // El cliente preguntó y no recibió NADA. Antes esto era
+                // silencio absoluto: ni error, ni aviso, ni rastro. Que la IA
+                // no sepa qué decir es justamente cuando tiene que entrar un
+                // humano.
+                $this->notifyHumanNeeded(
+                    $conversation,
+                    'failed',
+                    'La IA no supo qué responder',
+                    'El modelo no devolvió texto para '.$this->contactLabel($conversation)
+                        .'. Al cliente no se le envió nada: contestale vos.',
+                );
+
                 $conversation->update(['ai_pending' => false, 'ai_pending_at' => null]);
                 $this->broadcastPending($conversation, false);
 

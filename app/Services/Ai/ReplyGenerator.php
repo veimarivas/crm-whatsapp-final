@@ -149,12 +149,31 @@ class ReplyGenerator
             ? (int) config('services.ai_context.max_tokens', 350)
             : (int) config('services.ai_context.max_tokens_cloud', 1200);
 
-        $reply = Client::for($config)->chat(
-            $messages,
-            $this->buildSystemPrompt($config, $conversation),
-            $maxTokens,
-        );
+        $system = $this->buildSystemPrompt($config, $conversation);
 
+        $reply = $this->limpiar(Client::for($config)->chat($messages, $system, $maxTokens));
+
+        // Vacío casi siempre significa lo mismo: el modelo se gastó todo el
+        // presupuesto deliberando y no llegó a escribir la respuesta. Antes
+        // eso era silencio absoluto — el cliente preguntaba y no pasaba nada,
+        // sin error ni registro. Un reintento sin razonar lo resuelve.
+        if ($reply === '' && $config->provider !== 'ollama') {
+            Log::info('Respuesta vacía; se reintenta sin razonamiento', [
+                'account_id' => $config->account_id,
+                'model' => $config->model,
+            ]);
+
+            $reply = $this->limpiar(
+                Client::for($config)->chat($messages, $system, $maxTokens, sinRazonamiento: true),
+            );
+        }
+
+        return $reply;
+    }
+
+    /** Deja la respuesta como se manda por WhatsApp: sin markdown y acotada. */
+    private function limpiar(string $reply): string
+    {
         // El modelo no siempre obedece el formato; esto no se discute con él.
         $sanitizer = new ReplySanitizer();
         $reply = $sanitizer->clean($reply);
