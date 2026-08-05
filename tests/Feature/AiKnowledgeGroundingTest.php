@@ -164,7 +164,11 @@ class AiKnowledgeGroundingTest extends TestCase
     {
         $prompt = $this->preguntar('cuánto cuesta?');
 
-        $this->assertStringContainsString('No tengo ese dato a la mano', $prompt);
+        // Y le dice qué decir en su lugar: que lo solicita al área académica.
+        // «No lo tengo a la mano» y «te paso con un asesor» dejan al cliente
+        // con la sensación de que lo derivan; esto dice que alguien se ocupa.
+        $this->assertStringContainsString('solicitar esa información al área académica', $prompt);
+        $this->assertStringContainsString('NUNCA digas que no lo tenés', $prompt);
     }
 
     public function test_nombrar_un_programa_trae_su_detalle_completo(): void

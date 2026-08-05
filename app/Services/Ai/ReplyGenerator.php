@@ -112,17 +112,22 @@ class ReplyGenerator
         // docentes y horarios bien redactados. Lo caro nunca fue leer la base
         // —son milisegundos— sino hacerle leer al modelo, en cada mensaje, un
         // catálogo entero que casi nunca hacía falta.
-        // Para reconocer de qué programa se habla se miran los últimos
-        // mensajes del cliente, no solo el último: «¿y los horarios?» viene
-        // después de haber nombrado el programa, y por sí solo no identifica
-        // nada. El cliente no repite el nombre completo en cada mensaje.
-        $contexto = $history
+        // Los últimos mensajes del cliente, del más nuevo al más viejo.
+        //
+        // «¿y los horarios?» no identifica ningún programa por sí solo: viene
+        // después de haberlo nombrado. Pero van ORDENADOS y se prueban de a
+        // uno hacia atrás, no todos juntos: si en esos mensajes se nombraron
+        // dos programas distintos, juntarlos los hace empatar y no se elige
+        // ninguno — la IA se quedaba sin datos justo después de responder.
+        $recientes = $history
             ->filter(fn (Message $m) => $m->sender_type === Message::SENDER_CUSTOMER)
-            ->take(-3)
             ->map(fn (Message $m) => $m->transcript ?? $m->content_text)
-            ->join(' ');
+            ->reverse()
+            ->take(3)
+            ->values()
+            ->all();
 
-        $oferta = $this->ofertaEnVivo($contexto !== '' ? $contexto : $query);
+        $oferta = $this->ofertaEnVivo($recientes ?: [$query]);
 
         $detalle = $oferta['detalle'];
 
@@ -209,7 +214,7 @@ class ReplyGenerator
      *
      * @return array{indice: string, detalle: string}
      */
-    private function ofertaEnVivo(?string $query): array
+    private function ofertaEnVivo(string|array|null $query): array
     {
         if (! config('services.ai_context.live_oferta', true)) {
             return ['indice' => '', 'detalle' => ''];
@@ -277,7 +282,7 @@ class ReplyGenerator
         ]);
 
         return mb_substr($detalle, 0, $disponible)
-            ."\n[…] Si el cliente pide algo que no esté acá, decile que le confirmás con un asesor.";
+            ."\n[…] Si el cliente pide algo que no esté acá, decile que solicitás esa información al área académica y se la hacés llegar.";
     }
 
     private function buildSystemPrompt(AiConfig $config, Conversation $conversation): string
@@ -295,14 +300,14 @@ class ReplyGenerator
             'Eres un asistente de atención al cliente que responde por WhatsApp en nombre del negocio.',
             'REGLAS ESTRICTAS que debes cumplir SIEMPRE (sin excepciones):',
             '0. La sección "OFERTA ACADÉMICA VIGENTE" es la lista CERRADA y COMPLETA de lo que el negocio ofrece hoy. No es una muestra ni un ejemplo. Todo programa que no aparezca ahí NO se ofrece, aunque lo conozcas, aunque el cliente insista o afirme que existe, y aunque se parezca a uno de la lista.',
-            '0-bis. Cuando el dato exacto que te piden no esté en el contexto (una fecha, un precio, un requisito, un horario), NO lo deduzcas ni lo aproximes ni uses el de otro programa parecido. Di: "No tengo ese dato a la mano, te paso con un asesor para confirmártelo." Es preferible eso mil veces antes que un dato equivocado.',
+            '0-bis. Cuando el dato exacto que te piden no esté en el contexto (una fecha, un precio, un requisito, un horario, el docente de un módulo), NO lo deduzcas ni lo aproximes ni uses el de otro programa parecido. Decí que vas a solicitar esa información al área académica y que se la haces llegar en breve. Por ejemplo: "Voy a solicitar ese detalle al área académica y te lo hago llegar en breve." NUNCA digas que no lo tenés "a la mano" ni que lo pasás con un asesor: el cliente no tiene que sentir que lo derivan, sino que alguien se ocupa. Es preferible eso mil veces antes que un dato equivocado.',
             '1. Responde ÚNICAMENTE usando la información del "Contexto del negocio" y de la "Base de conocimiento" (que contiene la oferta académica vigente: programas, módulos, docentes, horarios, precios). Si algo no está ahí, NO lo inventes bajo ninguna circunstancia.',
             '2. Si la pregunta NO es sobre la oferta académica del negocio (política, deportes, opiniones, otros temas ajenos, o programas que no aparecen en la base), responde textualmente: "Solo puedo brindarte información sobre nuestra oferta académica vigente. ¿Te interesa saber sobre alguno de nuestros programas actuales?".',
             '3. Si preguntan por un programa/curso que NO está en la lista de oferta vigente, responde: "No ofrecemos ese programa en este momento." y a continuación ofrece los que sí están abiertos. Nunca describas ni inventes contenido, precios ni fechas de un programa que no esté en la lista.',
                         '4. La lista de programas se responde SOLO con los nombres. El formato exacto está al final de estas instrucciones.',
             '5. Cuando menciones un docente, usa SOLO su nombre completo, y el que figura para ESE módulo. Un módulo puede tener varios docentes (uno por sesión): si el contexto lista varios, nómbralos a todos y no elijas uno. NUNCA muestres el correo, teléfono ni ningún otro dato de contacto del docente.',
             '6. Cuando el cliente pregunte por horarios de un módulo o programa, DEBES listar TODAS las sesiones tal como aparecen en el contexto — LITERALMENTE, sin omitir NINGUNA, en el orden en que aparecen. Un módulo tiene VARIAS sesiones: si tiene 3 muestra las 3, si tiene 16 muestra las 16. NUNCA inventes ni cambies fechas u horas. NO agregues días de la semana (lunes, martes, etc.) porque en la base solo hay fecha y no está calculado el día. Formato: "DD/MM/YYYY de HH:MM a HH:MM".',
-            '6-bis. Si en el contexto solo tienes el RESUMEN de horarios de un módulo ("6 sesiones del 10/09 al 15/10") y el cliente pide las fechas exactas, da el resumen y aclara que le confirmas el detalle un asesor. NO conviertas un resumen en fechas concretas: entre la primera y la última sesión no se puede deducir el resto.',
+            '6-bis. Si en el contexto solo tienes el RESUMEN de horarios de un módulo ("6 sesiones del 10/09 al 15/10") y el cliente pide las fechas exactas, da el resumen y decí que solicitás el cronograma detallado al área académica para hacérselo llegar. NO conviertas un resumen en fechas concretas: entre la primera y la última sesión no se puede deducir el resto.',
             '6-ter. Cada programa tiene un ÁREA. Si el cliente pregunta por un área ("¿qué tienen en salud?", "algo de gestión"), lista los programas de esa área tal como están agrupados en la oferta vigente. Si esa área no aparece, di que no hay programas de esa área en inscripción.',
             '7. Cuando enumeres programas o módulos, usa el nombre EXACTO tal como aparece en la base. No traduzcas, no acortes, no cambies mayúsculas.',
             '8. Los precios (matrícula, colegiatura) están en Bolivianos (Bs). Solo menciónalos cuando el cliente pregunte específicamente por costos.',

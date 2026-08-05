@@ -63,7 +63,7 @@ class OfertaAcademica
                 'OFERTA ACADÉMICA VIGENTE (actualizado '.$ahora->format('d/m/Y H:i').')',
                 '',
                 'En este momento NO hay ningún programa con inscripciones abiertas.',
-                'Si preguntan por programas, decí que por ahora no hay inscripciones abiertas y ofrecé pasar con un asesor.',
+                'Si preguntan por programas, decí que por ahora no hay inscripciones abiertas y ofrecé avisarle en cuanto se abran.',
             ]);
         }
 
@@ -94,7 +94,7 @@ class OfertaAcademica
             $lineas[] = '';
         }
 
-        $lineas[] = 'Precios, fechas de inicio, módulos, docentes y horarios de cada programa NO están en esta lista: te los paso aparte cuando el cliente pregunte por un programa concreto. Si te preguntan un dato que no tenés a la vista, pedile al cliente que te diga de qué programa habla.';
+        $lineas[] = 'Precios, fechas de inicio, módulos, docentes y horarios de cada programa NO están en esta lista: te los paso aparte cuando el cliente pregunte por un programa concreto. Si te preguntan un dato que no tenés a la vista, pedile al cliente que te diga de qué programa habla, o decile que solicitás esa información al área académica y se la hacés llegar.';
 
         return implode("\n", $lineas);
     }
@@ -220,28 +220,48 @@ class OfertaAcademica
      *
      * @return array{indice: string, detalle: string}
      */
-    public function contextoPara(?string $query): array
+    public function contextoPara(string|array|null $query): array
     {
         $programas = $this->programasCacheadas();
 
         $indice = $this->indice($programas);
-        $query = trim((string) $query);
 
-        if ($query === '' || $programas->isEmpty()) {
+        // Puede llegar el último mensaje o los últimos, del más reciente al
+        // más viejo.
+        $consultas = array_values(array_filter(array_map('trim', (array) $query)));
+        $ultima = $consultas[0] ?? '';
+
+        if ($ultima === '' || $programas->isEmpty()) {
             return ['indice' => $indice, 'detalle' => ''];
         }
 
-        // ¿Nombró un programa? Entonces va su detalle completo: módulos,
-        // docentes y todas las sesiones.
-        $elegido = $this->buscarPrograma($programas, $query);
+        // Búsqueda progresiva, del mensaje más nuevo hacia atrás.
+        //
+        // Mirar los últimos mensajes juntos resolvía «¿y los horarios?», pero
+        // rompía otra cosa: si en esos mensajes se nombraron DOS programas,
+        // empataban y no se elegía ninguno — justo después de una respuesta la
+        // IA se quedaba sin datos. Con la búsqueda progresiva gana el más
+        // reciente, que es del que se está hablando.
+        $elegido = null;
+        $acumulado = '';
+
+        foreach ($consultas as $consulta) {
+            $acumulado = trim($acumulado.' '.$consulta);
+            $elegido = $this->buscarPrograma($programas, $acumulado);
+
+            if ($elegido) {
+                break;
+            }
+        }
 
         if ($elegido) {
             return ['indice' => $indice, 'detalle' => $this->programa($elegido)];
         }
 
         // Pregunta genérica sobre la oferta (precios, fechas, duración): el
-        // resumen de todos, sin el detalle de horarios.
-        if ($this->preguntaPorDatosGenerales($query)) {
+        // resumen de todos, sin el detalle de horarios. Se mira solo el último
+        // mensaje: es lo que el cliente está preguntando ahora.
+        if ($this->preguntaPorDatosGenerales($ultima)) {
             return ['indice' => $indice, 'detalle' => $this->resumen($programas)];
         }
 
@@ -533,7 +553,7 @@ class OfertaAcademica
                 'Actualizado: '.$ahora->format('d/m/Y H:i'),
                 '',
                 'En este momento NO hay ningún programa con inscripciones abiertas.',
-                'Ante cualquier consulta sobre programas, responde que por ahora no hay inscripciones abiertas y ofrece pasar con un asesor.',
+                'Ante cualquier consulta sobre programas, responde que por ahora no hay inscripciones abiertas y ofrece avisarle en cuanto se abran.',
             ]);
         }
 
@@ -627,7 +647,7 @@ class OfertaAcademica
         }
 
         $lineas[] = '';
-        $lineas[] = 'Las fechas de clase de arriba son un resumen (cuántas sesiones y entre qué fechas). El listado sesión por sesión está en el documento de detalle de cada programa. Si el cliente pide las fechas exactas y no las tienes a la vista, dilo y ofrece pasar con un asesor en lugar de estimarlas.';
+        $lineas[] = 'Las fechas de clase de arriba son un resumen (cuántas sesiones y entre qué fechas). El listado sesión por sesión está en el documento de detalle de cada programa. Si el cliente pide las fechas exactas y no las tienes a la vista, dilo y decí que solicitás el cronograma al área académica, en lugar de estimarlas.';
 
         return implode("\n", $lineas);
     }

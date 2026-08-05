@@ -213,6 +213,39 @@ class OfertaAcademicaTest extends TestCase
         $this->assertSame(1, $elegido->id);
     }
 
+    public function test_gana_el_programa_del_que_se_habla_ahora(): void
+    {
+        $oferta = new class extends OfertaAcademica
+        {
+            public function programasCacheadas()
+            {
+                return collect([
+                    (object) ['id' => 1, 'nombre' => 'Diplomado en Banca Y Finanzas', 'codigo' => 'B', 'gestion' => '2026', 'duracion_meses' => 6, 'n_modulos' => 4, 'fecha_inicio' => null, 'fecha_conclusion' => null, 'hora_inicio' => null, 'hora_fin' => null, 'matricula' => 0, 'colegiatura' => 0, 'ceub' => 0, 'cantidad_inscritos_minimo' => 0, 'tipo_nombre' => 'Diplomado', 'tipo_descripcion' => null, 'area_nombre' => null],
+                    (object) ['id' => 2, 'nombre' => 'Diplomado Ecografía Básica Abdominal', 'codigo' => 'E', 'gestion' => '2026', 'duracion_meses' => 6, 'n_modulos' => 4, 'fecha_inicio' => null, 'fecha_conclusion' => null, 'hora_inicio' => null, 'hora_fin' => null, 'matricula' => 0, 'colegiatura' => 0, 'ceub' => 0, 'cantidad_inscritos_minimo' => 0, 'tipo_nombre' => 'Diplomado', 'tipo_descripcion' => null, 'area_nombre' => null],
+                ]);
+            }
+
+            public function modulos(int|string $programaId)
+            {
+                return collect([(object) ['id' => $programaId, 'nombre' => 'Módulo de '.$programaId, 'docente_nombres' => 'Ana', 'docente_apellidos' => 'Luz']]);
+            }
+
+            public function horarios(int|string $moduloId)
+            {
+                return collect();
+            }
+        };
+
+        // El cliente preguntó por banca, le respondieron, y ahora pregunta por
+        // ecografía. Juntar los dos mensajes hacía empatar los programas y no
+        // se elegía ninguno: la IA se quedaba sin datos justo después de
+        // responder. Van del más nuevo al más viejo y gana el actual.
+        $contexto = $oferta->contextoPara(['ahora me interesa ecografía', 'info del diplomado en banca']);
+
+        $this->assertStringContainsString('Ecografía', $contexto['detalle']);
+        $this->assertStringNotContainsString('Banca', $contexto['detalle']);
+    }
+
     public function test_una_palabra_compartida_no_alcanza(): void
     {
         $programas = collect([

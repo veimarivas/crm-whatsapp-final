@@ -142,8 +142,11 @@ class LiveOfertaTest extends TestCase
 
         $this->preguntar('y los horarios?');
 
-        $this->assertStringContainsString('banca', $capturado);
-        $this->assertStringContainsString('horarios', $capturado);
+        // Llegan ORDENADOS, del más nuevo al más viejo: se prueban de a uno
+        // hacia atrás para que gane el programa del que se habla ahora, en vez
+        // de empatar con otro nombrado antes.
+        $this->assertSame('y los horarios?', $capturado[0]);
+        $this->assertStringContainsString('banca', $capturado[1]);
     }
 
     public function test_un_saludo_no_arrastra_detalle(): void
