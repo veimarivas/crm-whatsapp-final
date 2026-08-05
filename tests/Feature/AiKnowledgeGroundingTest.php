@@ -82,18 +82,46 @@ class AiKnowledgeGroundingTest extends TestCase
 
         app(ReplyGenerator::class)->generate($this->config, $this->conversation);
 
+        // Todo lo que ve el modelo: el prompt de sistema (reglas + catálogo) y
+        // los mensajes, donde ahora viaja el detalle recuperado.
         $enviado = '';
         Http::assertSent(function ($request) use (&$enviado) {
             foreach ($request['messages'] ?? [] as $m) {
-                if (($m['role'] ?? '') === 'system') {
-                    $enviado = $m['content'];
-                }
+                $enviado .= ($m['content'] ?? '')."\n";
             }
 
             return true;
         });
 
         return $enviado;
+    }
+
+    /** Solo el prompt de sistema, que es el que tiene que ser estable. */
+    private function promptDeSistema(string $texto): string
+    {
+        Message::create([
+            'account_id' => $this->account->id,
+            'conversation_id' => $this->conversation->id,
+            'sender_type' => Message::SENDER_CUSTOMER,
+            'content_type' => 'text',
+            'content_text' => $texto,
+        ]);
+
+        Http::fake(['*' => Http::response(['message' => ['content' => 'ok']])]);
+        app(ReplyGenerator::class)->generate($this->config, $this->conversation);
+
+        $system = '';
+        Http::assertSent(function ($request) use (&$system) {
+            foreach ($request['messages'] ?? [] as $m) {
+                if (($m['role'] ?? '') === 'system') {
+                    $system = $m['content'];
+                }
+            }
+
+            return true;
+        });
+
+        return $system;
     }
 
     private function documento(string $titulo, string $contenido, bool $pinned = false): AiKnowledgeDocument
@@ -164,6 +192,39 @@ class AiKnowledgeGroundingTest extends TestCase
         $prompt = $this->preguntar('horarios del diplomado en tributación por favor');
 
         $this->assertStringContainsString('SESION_FINAL_MARCA', $prompt, 'El final del documento tiene que llegar al modelo.');
+    }
+
+    public function test_el_prompt_de_sistema_no_cambia_entre_preguntas(): void
+    {
+        // Es lo que hace que el servidor sin GPU sea usable: llama.cpp
+        // reutiliza la caché del prefijo común, así que reglas + catálogo se
+        // leen una vez y no en cada consulta. Si algo variable se cuela acá
+        // (el detalle del programa, la hora, el nombre del cliente en medio),
+        // el prefijo deja de coincidir y se releen miles de tokens cada vez.
+        $this->documento(
+            '[OFERTA] Catálogo de programas vigentes',
+            "OFERTA ACADÉMICA VIGENTE\n1. Maestría en Gestión Pública",
+            pinned: true,
+        );
+        $this->documento('[OFERTA] Maestría en Gestión Pública', "Programa: Maestría en Gestión Pública\n- 10/09/2026");
+
+        $primero = $this->promptDeSistema('hola');
+        $segundo = $this->promptDeSistema('me pasás los horarios de la maestría en gestión pública?');
+
+        $this->assertSame($primero, $segundo);
+    }
+
+    public function test_la_respuesta_se_acota_para_no_tardar_minutos(): void
+    {
+        $this->preguntar('hola');
+
+        Http::assertSent(function ($request) {
+            // 800 tokens a la velocidad de generación de un VPS sin GPU son
+            // minutos de espera para un mensaje de WhatsApp.
+            $this->assertSame(350, $request['options']['num_predict']);
+
+            return true;
+        });
     }
 
     public function test_sin_catalogo_avisa_que_no_hay_de_donde_responder(): void

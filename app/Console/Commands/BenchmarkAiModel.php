@@ -83,10 +83,38 @@ class BenchmarkAiModel extends Command
             $this->line('  Verificá que el cron de schedule:run esté vivo: crontab -l | grep schedule:run');
         }
 
-        if ($largo['prompt_tps'] > 0 && $largo['prompt_tps'] < 40) {
-            $this->warn('Evaluación de prompt lenta: '.$largo['prompt_tps'].' tokens/s.');
-            $this->line('→ Un prompt de 6.000 tokens tardaría ~'.round(6000 / max(1, $largo['prompt_tps'])).'s solo en leerse.');
-            $this->line('  Bajá AI_PINNED_BUDGET (catálogo) y AI_HISTORY_MESSAGES (historial) en el .env.');
+        // El número que decide todo: a cuántos tokens por segundo LEE. Debajo
+        // de ~200 tok/s es CPU pura, y ahí el tamaño del prompt manda sobre
+        // todo lo demás.
+        $tps = $largo['prompt_tps'];
+
+        if ($tps > 0) {
+            $this->line("Lectura de prompt: {$tps} tokens/s.");
+
+            // Presupuesto: cuántos caracteres entran en el tiempo que estamos
+            // dispuestos a esperar. ~3 caracteres por token en español.
+            $segundosObjetivo = 40;
+            $caracteres = (int) round($tps * $segundosObjetivo * 3, -3);
+
+            if ($tps < 200) {
+                $this->warn('Es inferencia por CPU: el tamaño del prompt es lo que manda.');
+                $this->line("→ Para que lea el prompt en ~{$segundosObjetivo}s, el total no debería pasar de ~{$caracteres} caracteres.");
+                $this->newLine();
+                $this->line('  Valores sugeridos para tu .env:');
+                $this->line('    AI_PINNED_BUDGET='.max(1500, (int) round($caracteres * 0.45, -2)));
+                $this->line('    AI_CHUNK_BUDGET='.max(800, (int) round($caracteres * 0.2, -2)));
+                $this->line('    AI_HISTORY_MESSAGES='.($tps < 100 ? 6 : 10));
+                $this->line('    AI_HISTORY_CHARS='.($tps < 100 ? 400 : 600));
+                $this->line('    AI_MAX_TOKENS='.($tps < 100 ? 300 : 350));
+                $this->line('    OLLAMA_TIMEOUT=240');
+                $this->newLine();
+
+                if ($tps < 100) {
+                    $this->warn('Con menos de 100 tok/s, un modelo más chico rinde mucho más que seguir recortando:');
+                    $this->line('    ollama pull qwen2.5:3b   (y cambiarlo en Ajustes → IA)');
+                    $this->line('  Un 3B lee y genera ~2-3× más rápido; para responder sobre un catálogo alcanza.');
+                }
+            }
         }
 
         if ($largo['gen_tps'] > 0 && $largo['gen_tps'] < 5) {

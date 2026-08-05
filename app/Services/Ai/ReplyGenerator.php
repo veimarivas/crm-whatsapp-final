@@ -90,18 +90,32 @@ class ReplyGenerator
             $messages = [['role' => 'user', 'content' => 'Hola']];
         }
 
+        $query = $lastCustomer ? ($lastCustomer->transcript ?? $lastCustomer->content_text) : null;
+
+        // El detalle del programa consultado se inserta ANTES del último
+        // mensaje del cliente, no dentro del prompt de sistema: así el prefijo
+        // (reglas + catálogo) queda idéntico entre consultas y llama.cpp lo
+        // reutiliza de su caché en vez de releer miles de tokens cada vez.
+        $detalle = $this->retrieveKnowledge($config, $query);
+
+        if ($detalle !== '') {
+            array_splice($messages, count($messages) - 1, 0, [[
+                'role' => 'user',
+                'content' => "[Datos de nuestra base para responder esto — fechas y horarios exactos]\n{$detalle}",
+            ]]);
+        }
+
         return Client::for($config)->chat(
             $messages,
-            $this->buildSystemPrompt(
-                $config,
-                $conversation,
-                $lastCustomer ? ($lastCustomer->transcript ?? $lastCustomer->content_text) : null
-            ),
-            800, // maxTokens: margen para respuestas ricas cuando el knowledge base es grande
+            $this->buildSystemPrompt($config, $conversation),
+            // Una respuesta de WhatsApp no necesita 800 tokens, y cada token
+            // generado son décimas de segundo en CPU. 350 alcanza de sobra
+            // para listar programas u horarios.
+            (int) config('services.ai_context.max_tokens', 350),
         );
     }
 
-    private function buildSystemPrompt(AiConfig $config, Conversation $conversation, ?string $query): string
+    private function buildSystemPrompt(AiConfig $config, Conversation $conversation): string
     {
         // Reglas duras de comportamiento: la IA queda encerrada al contexto
         // provisto (system_prompt del negocio + base de conocimiento). Si la
@@ -150,14 +164,19 @@ class ReplyGenerator
             $parts[] = "=== OFERTA ACADÉMICA VIGENTE (lista cerrada: lo que no está acá, no se ofrece) ===\n{$pinned}";
         }
 
-        $knowledge = $this->retrieveKnowledge($config, $query);
-
-        if ($knowledge !== '') {
-            $parts[] = "=== DETALLE CONSULTADO (fechas y horarios exactos) ===\n{$knowledge}";
-        } elseif ($pinned === '') {
+        if ($pinned === '') {
             $parts[] = "=== BASE DE CONOCIMIENTO ===\n(vacía — si el cliente pregunta algo específico que no esté en el \"Contexto del negocio\", ofrece pasar con un humano)";
         }
 
+        // El detalle recuperado NO va acá: va como mensaje aparte.
+        //
+        // Motivo de rendimiento, y es el que más pesa en un servidor sin GPU:
+        // llama.cpp reutiliza la caché de atención del PREFIJO común entre
+        // consultas. Reglas + catálogo son idénticos para toda la cuenta, así
+        // que si el prompt de sistema no cambia, esos miles de tokens se leen
+        // UNA vez y las consultas siguientes arrancan desde ahí. Metiendo el
+        // detalle —que cambia con cada pregunta— dentro del system, el prefijo
+        // dejaba de coincidir y había que releer todo cada vez.
         return implode("\n\n", $parts);
     }
 

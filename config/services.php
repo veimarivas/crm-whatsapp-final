@@ -110,6 +110,11 @@ return [
         'chunk_budget' => (int) env('AI_CHUNK_BUDGET', 3000),
         'history_messages' => (int) env('AI_HISTORY_MESSAGES', 12),
         'history_chars' => (int) env('AI_HISTORY_CHARS', 800),
+
+        // Tope de la respuesta. Cada token generado son décimas de segundo en
+        // CPU: 800 podían ser minutos de espera para un mensaje de WhatsApp
+        // que nadie quiere leer tan largo.
+        'max_tokens' => (int) env('AI_MAX_TOKENS', 350),
     ],
 
 ];

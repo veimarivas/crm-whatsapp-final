@@ -99,14 +99,17 @@ class Phase6Test extends TestCase
             ->assertOk()
             ->assertJsonPath('draft', 'Atendemos de lunes a viernes de 8am a 5pm.');
 
-        // El system prompt llegó con el fragmento de la base de conocimiento.
+        // El fragmento de la base de conocimiento llegó al modelo. Va como
+        // mensaje aparte, no dentro del system: el prompt de sistema tiene que
+        // ser idéntico entre consultas para que el modelo reutilice su caché.
         Http::assertSent(function ($request) {
             if (! str_contains($request->url(), 'openai.com')) {
                 return false;
             }
-            $system = collect($request['messages'])->firstWhere('role', 'system')['content'] ?? '';
 
-            return str_contains($system, 'horario de atencion');
+            $todo = collect($request['messages'])->pluck('content')->implode("\n");
+
+            return str_contains($todo, 'horario de atencion');
         });
     }
 

@@ -129,16 +129,18 @@ class AiAudioTranscriptionTest extends TestCase
 
         $this->runBot();
 
-        // La recuperación semántica/lexical usó el transcript del audio para
-        // traer el fragmento, que llega en el system prompt.
+        // La recuperación usó el transcript del audio para traer el fragmento.
+        // Viaja como mensaje aparte y ya no dentro del system: así el prefijo
+        // (reglas + catálogo) queda igual entre consultas y el modelo lo
+        // reutiliza de su caché en vez de releerlo entero cada vez.
         Http::assertSent(function ($request) {
             if (! str_contains($request->url(), 'openai.com')) {
                 return false;
             }
 
-            $system = collect($request['messages'])->firstWhere('role', 'system')['content'] ?? '';
+            $todo = collect($request['messages'])->pluck('content')->implode("\n");
 
-            return str_contains($system, 'tecnicatura superior en desarrollo de software');
+            return str_contains($todo, 'tecnicatura superior en desarrollo de software');
         });
     }
 }
