@@ -197,6 +197,55 @@ class OfertaAcademicaTest extends TestCase
         $this->assertSame(1, $elegido->id);
     }
 
+    public function test_una_palabra_propia_alcanza_para_reconocer_el_programa(): void
+    {
+        $programas = collect([
+            $this->programa(['id' => 1, 'nombre' => 'Diplomado en Banca Y Finanzas']),
+            $this->programa(['id' => 2, 'nombre' => 'Diplomado en Peritaje y Avaluó de bienes Inmuebles']),
+        ]);
+
+        // El caso real que fallaba: exigir DOS palabras del título hacía que
+        // «los módulos del diplomado en banca» no matcheara —falta
+        // «finanzas»— y el cliente recibía «no tengo esos datos» con la
+        // información sentada en la base.
+        $elegido = $this->oferta()->buscarPrograma($programas, 'cuáles son los módulos y horarios del diplomado en banca?');
+
+        $this->assertSame(1, $elegido->id);
+    }
+
+    public function test_una_palabra_compartida_no_alcanza(): void
+    {
+        $programas = collect([
+            $this->programa(['id' => 1, 'nombre' => 'MAESTRÍA EN INGENIERÍA ELÉCTRICA Y AUTOMATIZACIÓN INDUSTRIAL']),
+            $this->programa(['id' => 2, 'nombre' => 'MAESTRÍA EN INGENIERÍA VIAL CON MENCIÓN EN CARRETERAS']),
+        ]);
+
+        // «ingeniería» está en los dos: elegir uno sería adivinar, y dar los
+        // horarios del programa equivocado es peor que pedir que aclare.
+        $this->assertNull($this->oferta()->buscarPrograma($programas, 'info de la maestría en ingeniería'));
+    }
+
+    public function test_distingue_dos_programas_que_comparten_una_palabra(): void
+    {
+        $programas = collect([
+            $this->programa(['id' => 1, 'nombre' => 'MAESTRÍA EN INGENIERÍA ELÉCTRICA Y AUTOMATIZACIÓN INDUSTRIAL']),
+            $this->programa(['id' => 2, 'nombre' => 'MAESTRÍA EN INGENIERÍA VIAL CON MENCIÓN EN CARRETERAS']),
+        ]);
+
+        $elegido = $this->oferta()->buscarPrograma($programas, 'la maestría de ingeniería vial');
+
+        $this->assertSame(2, $elegido->id);
+    }
+
+    public function test_las_palabras_de_la_pregunta_no_cuentan_como_nombre(): void
+    {
+        $programas = collect([$this->programa(['id' => 1, 'nombre' => 'Diplomado en Banca Y Finanzas'])]);
+
+        // «módulos», «horarios» y «docentes» aparecen en las preguntas todo el
+        // tiempo: si contaran, cualquier consulta arrastraría un programa.
+        $this->assertNull($this->oferta()->buscarPrograma($programas, 'qué módulos y horarios manejan?'));
+    }
+
     public function test_una_palabra_generica_no_elige_programa(): void
     {
         $programas = collect([

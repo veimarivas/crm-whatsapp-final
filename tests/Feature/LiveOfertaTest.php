@@ -116,6 +116,36 @@ class LiveOfertaTest extends TestCase
             'El detalle cambia con cada pregunta: dentro del system rompería la caché del prefijo.');
     }
 
+    public function test_reconoce_el_programa_por_lo_que_se_venia_hablando(): void
+    {
+        // «¿y los horarios?» no identifica nada por sí solo. El cliente no
+        // repite el nombre completo en cada mensaje, así que la búsqueda mira
+        // los últimos mensajes suyos y no solo el último.
+        $capturado = null;
+
+        $this->mock(OfertaAcademica::class, function ($mock) use (&$capturado) {
+            $mock->shouldReceive('disponible')->andReturn(true);
+            $mock->shouldReceive('contextoPara')->andReturnUsing(function ($query) use (&$capturado) {
+                $capturado = $query;
+
+                return ['indice' => 'OFERTA VIGENTE', 'detalle' => ''];
+            });
+        });
+
+        Message::create([
+            'account_id' => $this->account->id,
+            'conversation_id' => $this->conversation->id,
+            'sender_type' => Message::SENDER_CUSTOMER,
+            'content_type' => 'text',
+            'content_text' => 'me interesa el diplomado en banca',
+        ]);
+
+        $this->preguntar('y los horarios?');
+
+        $this->assertStringContainsString('banca', $capturado);
+        $this->assertStringContainsString('horarios', $capturado);
+    }
+
     public function test_un_saludo_no_arrastra_detalle(): void
     {
         $this->ofertaViva('OFERTA VIGENTE', '');

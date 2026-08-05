@@ -112,7 +112,17 @@ class ReplyGenerator
         // docentes y horarios bien redactados. Lo caro nunca fue leer la base
         // —son milisegundos— sino hacerle leer al modelo, en cada mensaje, un
         // catálogo entero que casi nunca hacía falta.
-        $oferta = $this->ofertaEnVivo($query);
+        // Para reconocer de qué programa se habla se miran los últimos
+        // mensajes del cliente, no solo el último: «¿y los horarios?» viene
+        // después de haber nombrado el programa, y por sí solo no identifica
+        // nada. El cliente no repite el nombre completo en cada mensaje.
+        $contexto = $history
+            ->filter(fn (Message $m) => $m->sender_type === Message::SENDER_CUSTOMER)
+            ->take(-3)
+            ->map(fn (Message $m) => $m->transcript ?? $m->content_text)
+            ->join(' ');
+
+        $oferta = $this->ofertaEnVivo($contexto !== '' ? $contexto : $query);
 
         $detalle = $oferta['detalle'];
 

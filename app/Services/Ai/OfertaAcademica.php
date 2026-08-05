@@ -258,34 +258,53 @@ class OfertaAcademica
     public function buscarPrograma($programas, string $query): ?object
     {
         $normalizar = fn (string $s) => mb_strtolower(preg_replace('/[^\p{L}\p{N}\s]/u', ' ', $s));
-        $consulta = $normalizar($query);
+        $consulta = ' '.$normalizar($query).' ';
 
         // Palabras que están en casi todos los títulos y no distinguen nada.
         $vacias = ['maestria', 'maestría', 'diplomado', 'curso', 'programa', 'especialidad',
-            'para', 'con', 'del', 'las', 'los', 'una', 'este', 'sobre', 'quiero', 'informacion', 'información'];
+            'para', 'con', 'del', 'las', 'los', 'una', 'este', 'sobre', 'quiero', 'informacion', 'información',
+            'modulos', 'módulos', 'horarios', 'docentes', 'precio', 'costo'];
 
-        $mejor = null;
-        $mejorPuntaje = 0;
+        $palabrasPorPrograma = [];
 
         foreach ($programas as $p) {
-            $palabras = collect(preg_split('/\s+/', $normalizar($p->nombre)))
-                ->filter(fn ($w) => mb_strlen($w) >= 4 && ! in_array($w, $vacias, true));
-
-            if ($palabras->isEmpty()) {
-                continue;
-            }
-
-            $aciertos = $palabras->filter(fn ($w) => str_contains($consulta, $w))->count();
-
-            // Al menos dos palabras propias (o todas, si el título es corto):
-            // «gestión» sola matchearía media oferta.
-            if ($aciertos >= min(2, $palabras->count()) && $aciertos > $mejorPuntaje) {
-                $mejor = $p;
-                $mejorPuntaje = $aciertos;
-            }
+            $palabrasPorPrograma[$p->id] = collect(preg_split('/\s+/', $normalizar($p->nombre)))
+                ->filter(fn ($w) => mb_strlen($w) >= 4 && ! in_array($w, $vacias, true))
+                ->unique()
+                ->values();
         }
 
-        return $mejor;
+        // Cuántos programas usa cada palabra: «banca» identifica uno solo,
+        // «gestión» puede estar en tres y no identifica nada.
+        $frecuencia = collect($palabrasPorPrograma)->flatten()->countBy();
+
+        $puntajes = [];
+
+        foreach ($programas as $p) {
+            $propias = $palabrasPorPrograma[$p->id]->filter(fn ($w) => $frecuencia[$w] === 1);
+
+            // Se cuentan solo las palabras que identifican a ESTE programa. Con
+            // el criterio anterior —dos palabras del título— «los módulos del
+            // diplomado en banca» no matcheaba (falta «finanzas») y el cliente
+            // recibía un "no tengo esos datos" con la información en la base.
+            $puntajes[$p->id] = $propias->filter(fn ($w) => str_contains($consulta, ' '.$w))->count();
+        }
+
+        $maximo = max($puntajes ?: [0]);
+
+        if ($maximo === 0) {
+            return null;
+        }
+
+        $ganadores = array_keys($puntajes, $maximo, true);
+
+        // Empate = ambigüedad real: elegir uno sería adivinar, y contestar los
+        // horarios del programa equivocado es peor que pedir que aclare.
+        if (count($ganadores) > 1) {
+            return null;
+        }
+
+        return collect($programas)->firstWhere('id', $ganadores[0]);
     }
 
     /** Resumen de todos: lo que se necesita para hablar de precios y fechas. */
