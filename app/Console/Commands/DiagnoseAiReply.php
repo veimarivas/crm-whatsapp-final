@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\AiAutoReplyJob;
 use App\Jobs\QueuePingJob;
 use App\Models\Account;
 use App\Models\AiConfig;
@@ -35,6 +36,7 @@ class DiagnoseAiReply extends Command
         {--phone= : Teléfono del contacto (se normaliza solo)}
         {--account= : UUID de la cuenta (por defecto, la primera)}
         {--reactivate : Vuelve a encender la IA en esa conversación}
+        {--reactivate-all : Vuelve a encender la IA en TODAS las conversaciones apagadas por fallas}
         {--skip-worker : No probar la cola (la prueba tarda unos segundos)}';
 
     protected $description = 'Diagnostica por qué la IA no responde: config, horario, tope, pausa, flows y cola';
@@ -128,6 +130,12 @@ class DiagnoseAiReply extends Command
             $problemas += $this->checkWorker();
         }
 
+        if ($this->option('reactivate-all')) {
+            $this->reactivarTodas($accountId);
+
+            return self::SUCCESS;
+        }
+
         $conversation = $this->resolveConversation($accountId);
 
         if ($conversation) {
@@ -190,6 +198,62 @@ class DiagnoseAiReply extends Command
         $this->line('    sudo systemctl restart crm-whatsapp-queue.service');
 
         return 1;
+    }
+
+    /**
+     * Reenciende la IA en todo lo que se apagó solo por fallas.
+     *
+     * Después de cambiar de proveedor —o de arreglar el que estaba lento— las
+     * conversaciones que se apagaron por timeouts siguen apagadas: nadie las
+     * vuelve a encender. Una por una es inviable, y mientras tanto esos
+     * clientes escriben y no les contesta nadie.
+     *
+     * No toca las que apagó una persona a propósito: ahí la decisión fue de
+     * alguien y no de un error.
+     */
+    private function reactivarTodas(string $accountId): void
+    {
+        $this->newLine();
+        $this->line('<options=bold>Reactivando conversaciones apagadas por fallas</>');
+
+        $apagadas = Conversation::forAccount($accountId)
+            ->where('ai_autoreply_disabled', true)
+            ->where(fn ($q) => $q->where('ai_failure_count', '>', 0)->orWhereNull('ai_disabled_reason'))
+            ->get();
+
+        if ($apagadas->isEmpty()) {
+            $this->info('  No hay ninguna apagada por fallas.');
+
+            return;
+        }
+
+        $respondidas = 0;
+
+        foreach ($apagadas as $conversation) {
+            $conversation->setAiEnabled(true);
+
+            $contacto = $conversation->contact?->name ?: $conversation->contact?->phone ?: $conversation->id;
+            $this->line("  ✓ {$contacto}");
+
+            // Si el último mensaje es del cliente, quedó una pregunta sin
+            // responder: reactivar sin contestarla la deja esperando hasta que
+            // vuelva a escribir, y puede no volver.
+            $ultimo = Message::where('conversation_id', $conversation->id)
+                ->latest('created_at')
+                ->first(['sender_type']);
+
+            if ($ultimo?->sender_type === Message::SENDER_CUSTOMER) {
+                AiAutoReplyJob::dispatch($conversation->id);
+                $respondidas++;
+            }
+        }
+
+        $this->newLine();
+        $this->info($apagadas->count().' conversación(es) reactivada(s).');
+
+        if ($respondidas > 0) {
+            $this->line("  {$respondidas} tenían una pregunta sin responder: se encoló la respuesta.");
+        }
     }
 
     /** Cómo sacar la IA de la cola general, si está tapando al resto. */
@@ -273,13 +337,22 @@ class DiagnoseAiReply extends Command
                 .$conversation->id.' --reactivate`');
 
             if ($this->option('reactivate')) {
-                $conversation->update([
-                    'ai_autoreply_disabled' => false,
-                    'ai_failure_count' => 0,
-                    'ai_disabled_reason' => null,
-                    'ai_disabled_at' => null,
-                ]);
-                $this->info('    ✓ Reactivada. Responderá el próximo mensaje del cliente.');
+                // `setAiEnabled` además limpia pausa y contadores, y avisa a
+                // Komo para que su toggle no quede mostrando lo contrario.
+                $conversation->setAiEnabled(true);
+                $this->info('    ✓ Reactivada.');
+
+                // Si el último mensaje es del cliente, hay una pregunta sin
+                // responder: reactivar y no contestarla la deja esperando a
+                // que el cliente insista, y puede no insistir.
+                $ultimo = Message::where('conversation_id', $conversation->id)
+                    ->latest('created_at')
+                    ->first(['sender_type']);
+
+                if ($ultimo?->sender_type === Message::SENDER_CUSTOMER) {
+                    AiAutoReplyJob::dispatch($conversation->id);
+                    $this->info('    ✓ Quedaba una pregunta sin responder: se encoló la respuesta.');
+                }
 
                 return 0;
             }
