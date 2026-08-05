@@ -286,9 +286,32 @@ class Client
             );
         }
 
+        // 404 con Gemini casi siempre es el nombre del modelo.
+        //
+        // Su catálogo devuelve los ids como `models/gemini-2.5-flash`, pero en
+        // el chat se escribe sin ese prefijo (o al revés, según de dónde se
+        // copie). En vez de que el cliente se quede sin respuesta por un
+        // detalle de formato, se prueba la otra forma.
+        if ($response->status() === 404 && $this->config->provider === 'gemini') {
+            $alternativo = str_starts_with($payload['model'], 'models/')
+                ? substr($payload['model'], 7)
+                : 'models/'.$payload['model'];
+
+            $reintento = $this->postChat($baseUrl, [...$payload, ...$razonamiento, 'model' => $alternativo]);
+
+            if ($reintento->successful()) {
+                return trim($reintento->json('choices.0.message.content') ?? '');
+            }
+        }
+
         if ($response->failed()) {
+            // Con el cuerpo de la respuesta: «HTTP 404» a secas no dice nada,
+            // y el proveedor casi siempre explica qué pasó — qué modelo no
+            // encontró, qué parámetro no acepta. Taparlo obliga a adivinar.
+            $detalle = $response->json('error.message') ?? mb_substr($response->body(), 0, 300);
+
             throw new RuntimeException(
-                "{$etiqueta}: ".($response->json('error.message') ?? 'HTTP '.$response->status()),
+                "{$etiqueta}: HTTP {$response->status()} — ".trim((string) $detalle),
             );
         }
 
