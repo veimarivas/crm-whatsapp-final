@@ -6,12 +6,15 @@ const DEFAULT_MODELS = {
     openai: 'gpt-4o-mini',
     anthropic: 'claude-sonnet-5',
     ollama: 'qwen2.5:7b',
+    // El nombre exacto se elige con: php artisan wacrm:ai-models
+    groq: 'llama-3.3-70b-versatile',
 };
 
 const PROVIDER_META = {
     openai: { name: 'OpenAI', gradient: 'from-emerald-500 to-teal-600' },
     anthropic: { name: 'Anthropic', gradient: 'from-orange-500 to-amber-600' },
     ollama: { name: 'Ollama', gradient: 'from-sky-500 to-indigo-600' },
+    groq: { name: 'Groq', gradient: 'from-rose-500 to-orange-600' },
 };
 
 const inputClass = 'w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 focus:bg-white transition-all';
@@ -180,7 +183,15 @@ export default function Ai({ config, documents, catalog = null, syncHours = ['08
                                                     <option value="openai">OpenAI</option>
                                                     <option value="anthropic">Anthropic</option>
                                                     <option value="ollama">Ollama (local)</option>
+                                                    <option value="groq">Groq (nube, plan gratuito)</option>
                                                 </select>
+                                                {form.data.provider === 'groq' && (
+                                                    <p className="mt-1.5 text-[11px] text-gray-500 leading-relaxed">
+                                                        Responde en segundos en vez de minutos, pero los mensajes salen del servidor:
+                                                        el nombre y el texto del cliente viajan a Groq. Para ver los modelos exactos
+                                                        que ofrece: <span className="font-mono">php artisan wacrm:ai-models</span>
+                                                    </p>
+                                                )}
                                             </div>
                                             <div>
                                                 <label htmlFor="model" className="block text-sm font-semibold text-gray-700 mb-1.5">Modelo</label>

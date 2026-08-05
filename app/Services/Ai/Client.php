@@ -39,10 +39,57 @@ class Client
                 return Http::timeout(3)->get($baseUrl.'/api/tags')->successful();
             }
 
+            // Groq sí se consulta de verdad: es un servicio externo y su plan
+            // gratuito puede estar limitado o la clave revocada, y eso no se
+            // ve mirando si el campo está lleno. `/models` no consume cuota de
+            // inferencia.
+            if ($this->config->provider === 'groq') {
+                return Http::withToken($this->config->api_key)
+                    ->timeout(5)
+                    ->get(self::GROQ_URL.'/models')
+                    ->successful();
+            }
+
             return filled($this->config->api_key);
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    /**
+     * Modelos que ofrece el proveedor ahora mismo.
+     *
+     * Los catálogos cambian y un nombre inventado falla recién al responderle
+     * a un cliente. Esto lo lista para elegir uno que exista.
+     *
+     * @return array<int, string>
+     */
+    public function availableModels(): array
+    {
+        $base = match ($this->config->provider) {
+            'groq' => self::GROQ_URL,
+            'openai' => 'https://api.openai.com/v1',
+            'ollama' => null,
+            default => null,
+        };
+
+        if ($this->config->provider === 'ollama') {
+            $url = rtrim($this->config->base_url ?: 'http://127.0.0.1:11434', '/').'/api/tags';
+
+            return collect(Http::timeout(10)->get($url)->json('models') ?? [])
+                ->pluck('name')
+                ->all();
+        }
+
+        if (! $base) {
+            return [];
+        }
+
+        return collect(Http::withToken($this->config->api_key)->timeout(10)->get($base.'/models')->json('data') ?? [])
+            ->pluck('id')
+            ->sort()
+            ->values()
+            ->all();
     }
 
     /**
@@ -53,9 +100,13 @@ class Client
         return match ($this->config->provider) {
             'anthropic' => $this->anthropic($messages, $system, $maxTokens),
             'ollama' => $this->ollama($messages, $system, $maxTokens),
+            'groq' => $this->openaiCompatible($messages, $system, $maxTokens, self::GROQ_URL, 'Groq'),
             default => $this->openai($messages, $system, $maxTokens),
         };
     }
+
+    /** Groq habla el mismo protocolo que OpenAI; solo cambia el host. */
+    public const GROQ_URL = 'https://api.groq.com/openai/v1';
 
     /**
      * Ollama local (o cualquier endpoint compatible con /api/chat).
@@ -122,6 +173,43 @@ class Client
         }
 
         return trim($response->json('message.content') ?? '');
+    }
+
+    /**
+     * Cualquier proveedor que hable el protocolo de OpenAI.
+     *
+     * Groq entra por acá: mismo formato de request y de respuesta, solo cambia
+     * el host. La diferencia real no es el protocolo sino el hardware — corre
+     * en aceleradores propios y devuelve en un par de segundos lo que en este
+     * VPS por CPU tardaba minutos.
+     */
+    private function openaiCompatible(array $messages, ?string $system, int $maxTokens, string $baseUrl, string $etiqueta): string
+    {
+        $payload = [
+            'model' => $this->config->model,
+            'max_tokens' => $maxTokens,
+            'temperature' => 0.2, // igual que en Ollama: menos margen para inventar
+            'messages' => [
+                ...($system ? [['role' => 'system', 'content' => $system]] : []),
+                ...$messages,
+            ],
+        ];
+
+        $response = Http::withToken($this->config->api_key)
+            ->timeout((int) config('services.ai_context.cloud_timeout', 45))
+            ->post(rtrim($baseUrl, '/').'/chat/completions', $payload);
+
+        if ($response->failed()) {
+            // El 429 se nombra aparte: en un plan gratuito es lo más probable
+            // y no se arregla mirando la API key.
+            $mensaje = $response->status() === 429
+                ? 'límite de uso alcanzado (plan gratuito): reintentá en unos minutos'
+                : ($response->json('error.message') ?? 'HTTP '.$response->status());
+
+            throw new RuntimeException("{$etiqueta}: {$mensaje}");
+        }
+
+        return trim($response->json('choices.0.message.content') ?? '');
     }
 
     private function openai(array $messages, ?string $system, int $maxTokens): string

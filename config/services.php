@@ -140,6 +140,10 @@ return [
         // Vacio = cola general. Si se pone un valor hay que levantar un worker
         // que consuma esa cola, o la IA se queda sin quien la atienda.
         'queue' => env('AI_QUEUE'),
+
+        // Timeout para proveedores en la nube (Groq, OpenAI). Son rapidos: si
+        // no contestaron en 45s, algo va mal y conviene fallar y avisar.
+        'cloud_timeout' => (int) env('AI_CLOUD_TIMEOUT', 45),
     ],
 
 ];
