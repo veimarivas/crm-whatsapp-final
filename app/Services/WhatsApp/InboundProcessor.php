@@ -6,6 +6,7 @@ use App\Jobs\AiAutoReplyJob;
 use App\Jobs\ProcessAutomationEventJob;
 use App\Jobs\ProcessFlowMessageJob;
 use App\Jobs\TranscribeAudioJob;
+use App\Models\AiReplyAttempt;
 use App\Models\AutoTagRule;
 use App\Models\BroadcastRecipient;
 use App\Models\Contact;
@@ -216,6 +217,12 @@ class InboundProcessor
         // transcript, así la IA nunca contesta a un audio que no escuchó.
         if ($storedMessage->content_type !== 'audio') {
             AiAutoReplyJob::dispatch($conversation->id);
+
+            // Marca del encolado, no del resultado. Es lo que permite
+            // distinguir «el job corrió y decidió callarse» de «el job nunca
+            // corrió»: sin esta fila, las dos cosas se ven igual — un registro
+            // vacío — y son problemas completamente distintos.
+            AiReplyAttempt::registrar($conversation, 'encolada', 'cola: '.(config('services.ai_context.queue') ?: 'default'));
         }
     }
 

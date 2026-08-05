@@ -155,6 +155,36 @@ class AiAttemptLogTest extends TestCase
             ->expectsOutputToContain('Respondió');
     }
 
+    public function test_encolada_sin_decision_significa_que_el_job_no_corrio(): void
+    {
+        // El caso que costó días de diagnóstico: mensajes llegando, IA
+        // habilitada, sin fallos… y ningún registro. «No corrió» y «corrió y
+        // se calló» se veían igual: un registro vacío. Ahora se distinguen.
+        AiReplyAttempt::registrar($this->conversation, 'encolada', 'cola: default');
+
+        AiReplyAttempt::where('conversation_id', $this->conversation->id)
+            ->update(['created_at' => now()->subMinutes(10)]);
+
+        Http::fake(['*/models' => Http::response(['data' => []])]);
+
+        $this->artisan('wacrm:ai-doctor', ['--conversation' => $this->conversation->id, '--skip-worker' => true])
+            ->expectsOutputToContain('el job nunca se ejecutó')
+            ->assertFailed();
+    }
+
+    public function test_un_encolado_reciente_todavia_no_es_un_problema(): void
+    {
+        // Recién encolado: puede estar corriendo ahora mismo. Acusar al worker
+        // acá sería tan falso como el ping que confundía «ocupado» con «caído».
+        AiReplyAttempt::registrar($this->conversation, 'encolada', 'cola: default');
+
+        Http::fake(['*/models' => Http::response(['data' => []])]);
+
+        $this->artisan('wacrm:ai-doctor', ['--conversation' => $this->conversation->id, '--skip-worker' => true])
+            ->doesntExpectOutputToContain('el job nunca se ejecutó')
+            ->assertSuccessful();
+    }
+
     public function test_un_fallo_al_registrar_no_rompe_la_respuesta(): void
     {
         // Es un registro, no una función del producto: si la tabla no existe

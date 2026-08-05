@@ -22,6 +22,7 @@ class AiReplyAttempt extends Model
 
     /** Decisiones posibles, con su explicación para el diagnóstico. */
     public const LABELS = [
+        'encolada' => 'Mensaje recibido: se encoló la respuesta',
         'enviada' => 'Respondió',
         'sin_config' => 'La cuenta no tiene IA activa',
         'ia_apagada' => 'La IA está apagada en esta conversación',

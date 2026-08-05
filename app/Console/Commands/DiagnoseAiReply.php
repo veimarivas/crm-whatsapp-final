@@ -117,6 +117,15 @@ class DiagnoseAiReply extends Command
 
         $this->line("  · Jobs en cola: {$pendientes}");
         $this->line("  · Fallidos en las últimas 24 h: {$fallidos}");
+        $this->line('  · La IA usa la cola: '.(config('services.ai_context.queue') ?: 'default'));
+
+        // Con `AI_QUEUE` puesto y sin worker dedicado, los jobs se encolan y no
+        // los levanta nadie: no fallan, no aparecen, simplemente no pasa nada.
+        if ($cola = config('services.ai_context.queue')) {
+            $enEsaCola = DB::table('jobs')->where('queue', $cola)->count();
+            $this->line("    Pendientes en «{$cola}»: {$enEsaCola}"
+                .($enEsaCola > 0 ? '  ← si esto no baja, falta el worker de esa cola' : ''));
+        }
 
         // La trampa que se lleva puestas las respuestas: si la cola da por
         // abandonado un job antes de que termine, lo vuelve a repartir MIENTRAS
@@ -477,6 +486,21 @@ class DiagnoseAiReply extends Command
                 if ($intento->detail) {
                     $this->line('      '.mb_substr($intento->detail, 0, 150));
                 }
+            }
+
+            // Encolado y nada después: el job no llegó a ejecutarse. No es que
+            // la IA decidiera callarse — nadie la ejecutó. Es un problema del
+            // worker o de la cola, no de la IA, y se arregla en otro lado.
+            $ultima = $intentos->first(); // el más reciente
+
+            if ($ultima->decision === 'encolada' && $ultima->created_at->lt(now()->subMinutes(2))) {
+                $this->newLine();
+                $this->error('  ✗ La respuesta se encoló hace '.$ultima->created_at->diffForHumans().' y el job nunca se ejecutó.');
+                $this->line('    No es la IA: es la cola. Revisá que un worker consuma la cola «'
+                    .(config('services.ai_context.queue') ?: 'default').'»:');
+                $this->line('      php artisan queue:work --queue='.(config('services.ai_context.queue') ?: 'default').' --once');
+                $this->line('    Si AI_QUEUE está configurado, hace falta un worker dedicado a esa cola.');
+                $problemas++;
             }
         } else {
             $this->newLine();
