@@ -73,7 +73,7 @@ class AiDoctorTest extends TestCase
     {
         $this->ollamaArriba();
 
-        $this->artisan('wacrm:ai-doctor', ['--conversation' => $this->conversation->id])
+        $this->artisan('wacrm:ai-doctor', ['--conversation' => $this->conversation->id, '--skip-worker' => true])
             ->expectsOutputToContain('Sin bloqueos detectados')
             ->assertSuccessful();
     }
@@ -87,7 +87,7 @@ class AiDoctorTest extends TestCase
             'ai_paused_until' => now()->addHours(2),
         ]);
 
-        $this->artisan('wacrm:ai-doctor', ['--conversation' => $this->conversation->id])
+        $this->artisan('wacrm:ai-doctor', ['--conversation' => $this->conversation->id, '--skip-worker' => true])
             ->expectsOutputToContain('EN PAUSA hasta')
             ->assertFailed();
     }
@@ -97,7 +97,7 @@ class AiDoctorTest extends TestCase
         $this->ollamaArriba();
         $this->conversation->update(['ai_autoreply_disabled' => true]);
 
-        $this->artisan('wacrm:ai-doctor', ['--conversation' => $this->conversation->id])
+        $this->artisan('wacrm:ai-doctor', ['--conversation' => $this->conversation->id, '--skip-worker' => true])
             ->expectsOutputToContain('IA APAGADA en esta conversación')
             ->assertFailed();
     }
@@ -107,7 +107,7 @@ class AiDoctorTest extends TestCase
         $this->ollamaArriba();
         AiConfig::forAccount($this->account->id)->update(['auto_reply_enabled' => false]);
 
-        $this->artisan('wacrm:ai-doctor')
+        $this->artisan('wacrm:ai-doctor', ['--skip-worker' => true])
             ->expectsOutputToContain('Auto-respuesta activada')
             ->assertFailed();
     }
@@ -116,7 +116,7 @@ class AiDoctorTest extends TestCase
     {
         Http::fake(['*/api/tags' => Http::response('', 500)]);
 
-        $this->artisan('wacrm:ai-doctor', ['--conversation' => $this->conversation->id])
+        $this->artisan('wacrm:ai-doctor', ['--conversation' => $this->conversation->id, '--skip-worker' => true])
             ->expectsOutputToContain('El proveedor responde')
             ->assertFailed();
     }
@@ -124,8 +124,33 @@ class AiDoctorTest extends TestCase
     public function test_encuentra_la_conversacion_por_telefono(): void
     {
         $this->ollamaArriba();
-        $this->artisan('wacrm:ai-doctor', ['--phone' => '59171234567'])
+        $this->artisan('wacrm:ai-doctor', ['--phone' => '59171234567', '--skip-worker' => true])
             ->expectsOutputToContain('Ana')
+            ->assertSuccessful();
+    }
+
+    public function test_detecta_el_worker_caido(): void
+    {
+        $this->ollamaArriba();
+
+        // Cola falsa: el job se encola y nadie lo procesa, que es exactamente
+        // lo que pasa con el worker muerto. «0 jobs en cola» no lo delataba.
+        \Illuminate\Support\Facades\Queue::fake();
+
+        $this->artisan('wacrm:ai-doctor', ['--conversation' => $this->conversation->id])
+            ->expectsOutputToContain('El worker NO procesó el job de prueba')
+            ->assertFailed();
+    }
+
+    public function test_da_por_vivo_el_worker_que_procesa(): void
+    {
+        $this->ollamaArriba();
+
+        // Cola sincrónica: el job corre al encolarse, como haría un worker sano.
+        config(['queue.default' => 'sync']);
+
+        $this->artisan('wacrm:ai-doctor', ['--conversation' => $this->conversation->id])
+            ->expectsOutputToContain('El worker está procesando la cola')
             ->assertSuccessful();
     }
 
@@ -135,7 +160,7 @@ class AiDoctorTest extends TestCase
         // Tope alcanzado pero sin pausa todavía: el próximo entrante la activa.
         $this->conversation->update(['ai_reply_count' => 3, 'ai_paused_until' => null]);
 
-        $this->artisan('wacrm:ai-doctor', ['--conversation' => $this->conversation->id])
+        $this->artisan('wacrm:ai-doctor', ['--conversation' => $this->conversation->id, '--skip-worker' => true])
             ->expectsOutputToContain('la manda a pausa')
             ->assertFailed();
     }

@@ -154,6 +154,7 @@ class AiFailurePolicyTest extends TestCase
         $this->artisan('wacrm:ai-doctor', [
             '--conversation' => $this->conversation->id,
             '--reactivate' => true,
+            '--skip-worker' => true,
         ])->expectsOutputToContain('Reactivada');
 
         $this->conversation->refresh();

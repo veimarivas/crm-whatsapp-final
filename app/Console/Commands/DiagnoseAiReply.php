@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\QueuePingJob;
 use App\Models\Account;
 use App\Models\AiConfig;
 use App\Models\Contact;
@@ -10,7 +11,9 @@ use App\Models\FlowRun;
 use App\Models\Message;
 use App\Services\Ai\Client;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Por qué la IA no contestó esta conversación.
@@ -31,7 +34,8 @@ class DiagnoseAiReply extends Command
         {--conversation= : UUID de la conversación}
         {--phone= : Teléfono del contacto (se normaliza solo)}
         {--account= : UUID de la cuenta (por defecto, la primera)}
-        {--reactivate : Vuelve a encender la IA en esa conversación}';
+        {--reactivate : Vuelve a encender la IA en esa conversación}
+        {--skip-worker : No probar la cola (la prueba tarda unos segundos)}';
 
     protected $description = 'Diagnostica por qué la IA no responde: config, horario, tope, pausa, flows y cola';
 
@@ -117,6 +121,13 @@ class DiagnoseAiReply extends Command
             $problemas++;
         }
 
+        // «0 jobs en cola» no prueba nada: puede ser un worker que los consume
+        // al instante o que nadie encola. Este ping lo distingue de verdad, y
+        // sin worker la IA no responde por más que todo lo demás esté bien.
+        if (! $this->option('skip-worker')) {
+            $problemas += $this->checkWorker();
+        }
+
         $conversation = $this->resolveConversation($accountId);
 
         if ($conversation) {
@@ -134,6 +145,36 @@ class DiagnoseAiReply extends Command
         }
 
         return $problemas === 0 ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * ¿Hay alguien procesando la cola? Se encola un job trivial y se espera
+     * unos segundos a que deje su marca.
+     */
+    private function checkWorker(): int
+    {
+        $token = (string) Str::uuid();
+        QueuePingJob::dispatch($token);
+
+        $this->line('  · Probando el worker…');
+
+        for ($i = 0; $i < 12; $i++) { // hasta ~12s
+            if (Cache::has(QueuePingJob::cacheKey($token))) {
+                Cache::forget(QueuePingJob::cacheKey($token));
+                $this->info('  ✓ El worker está procesando la cola.');
+
+                return 0;
+            }
+
+            sleep(1);
+        }
+
+        $this->error('  ✗ El worker NO procesó el job de prueba en 12s.');
+        $this->line('    Sin worker, la IA no responde nunca: el job se encola y se queda ahí.');
+        $this->line('    sudo systemctl status crm-whatsapp-queue.service');
+        $this->line('    sudo systemctl restart crm-whatsapp-queue.service');
+
+        return 1;
     }
 
     private function resolveConversation(string $accountId): ?Conversation
