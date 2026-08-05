@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\AiConfig;
+use App\Models\AiReplyAttempt;
 use App\Models\Conversation;
 use App\Models\FlowRun;
 use App\Models\Message;
@@ -106,7 +107,13 @@ class AiAutoReplyJob implements ShouldQueue
     {
         $conversation = Conversation::find($this->conversationId);
 
-        if (! $conversation || $conversation->ai_autoreply_disabled) {
+        if (! $conversation) {
+            return;
+        }
+
+        if ($conversation->ai_autoreply_disabled) {
+            AiReplyAttempt::registrar($conversation, 'ia_apagada', $conversation->ai_disabled_reason);
+
             return;
         }
 
@@ -116,6 +123,8 @@ class AiAutoReplyJob implements ShouldQueue
             ->first();
 
         if (! $config) {
+            AiReplyAttempt::registrar($conversation, 'sin_config');
+
             return;
         }
 
@@ -135,6 +144,8 @@ class AiAutoReplyJob implements ShouldQueue
         // En pausa: se calla sin volver a avisar. El aviso ya salió cuando se
         // alcanzó el tope; repetirlo en cada mensaje sería ruido.
         if ($conversation->ai_paused_until) {
+            AiReplyAttempt::registrar($conversation, 'pausa', 'hasta '.$conversation->ai_paused_until->format('d/m H:i'));
+
             return;
         }
 
@@ -146,6 +157,8 @@ class AiAutoReplyJob implements ShouldQueue
             $reanuda = now()->addHours($horas);
 
             $conversation->update(['ai_paused_until' => $reanuda]);
+
+            AiReplyAttempt::registrar($conversation, 'tope', 'reanuda '.$reanuda->format('d/m H:i'));
 
             $this->notifyHumanNeeded(
                 $conversation,
@@ -164,6 +177,8 @@ class AiAutoReplyJob implements ShouldQueue
             ->exists();
 
         if ($flowActive) {
+            AiReplyAttempt::registrar($conversation, 'flow_activo');
+
             return;
         }
 
@@ -226,6 +241,8 @@ class AiAutoReplyJob implements ShouldQueue
         );
 
         if ($lock && ! $lock->get()) {
+            AiReplyAttempt::registrar($conversation, $this->requeues >= self::MAX_REQUEUES ? 'abandonada' : 'ocupado', 'intento '.($this->requeues + 1));
+
             if ($this->requeues >= self::MAX_REQUEUES) {
                 Log::warning('La IA sigue ocupada tras varios intentos; se abandona esta respuesta', [
                     'conversation_id' => $conversation->id,
@@ -245,6 +262,7 @@ class AiAutoReplyJob implements ShouldQueue
         // vez; si contestamos igual, le llegan DOS mensajes —uno por cada
         // pregunta— y el primero además responde a un contexto viejo.
         $mensajeAlEmpezar = $this->lastCustomerMessageId($conversation);
+        $inicio = microtime(true);
 
         try {
             $reply = $generator->generate($config, $conversation);
@@ -257,6 +275,7 @@ class AiAutoReplyJob implements ShouldQueue
                     'conversation_id' => $conversation->id,
                 ]);
 
+                AiReplyAttempt::registrar($conversation, 'descartada', null, $inicio);
                 $conversation->update(['ai_pending' => false, 'ai_pending_at' => null]);
                 $this->broadcastPending($conversation, false);
 
@@ -264,6 +283,7 @@ class AiAutoReplyJob implements ShouldQueue
             }
 
             if ($reply === '') {
+                AiReplyAttempt::registrar($conversation, 'vacia', null, $inicio);
                 $conversation->update(['ai_pending' => false, 'ai_pending_at' => null]);
                 $this->broadcastPending($conversation, false);
 
@@ -271,6 +291,7 @@ class AiAutoReplyJob implements ShouldQueue
             }
 
             $messenger->sendText($conversation, $reply);
+            AiReplyAttempt::registrar($conversation, 'enviada', mb_substr($reply, 0, 120), $inicio);
             $conversation->increment('ai_reply_count');
             // Una respuesta buena borra el historial de tropiezos: lo que
             // importa son las fallas SEGUIDAS, no las de hace tres días.
@@ -283,6 +304,7 @@ class AiAutoReplyJob implements ShouldQueue
                 'intento' => $conversation->ai_failure_count + 1,
             ]);
 
+            AiReplyAttempt::registrar($conversation, 'fallo', $e->getMessage(), $inicio);
             $conversation->update(['ai_pending' => false, 'ai_pending_at' => null]);
             $this->broadcastPending($conversation, false);
             $this->deliverFallback($conversation, $e->getMessage());

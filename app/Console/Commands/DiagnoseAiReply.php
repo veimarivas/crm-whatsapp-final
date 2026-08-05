@@ -6,6 +6,7 @@ use App\Jobs\AiAutoReplyJob;
 use App\Jobs\QueuePingJob;
 use App\Models\Account;
 use App\Models\AiConfig;
+use App\Models\AiReplyAttempt;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\FlowRun;
@@ -450,6 +451,36 @@ class DiagnoseAiReply extends Command
             } else {
                 $this->line('  · La IA está generando una respuesta ahora mismo ('.$minutos.' min).');
             }
+        }
+
+        // Lo que decidió el bot en los últimos mensajes. Todas las formas de
+        // no responder se ven igual desde afuera; acá se ven distintas.
+        $intentos = AiReplyAttempt::where('conversation_id', $conversation->id)
+            ->latest('created_at')
+            ->limit(8)
+            ->get();
+
+        if ($intentos->isNotEmpty()) {
+            $this->newLine();
+            $this->line('  <options=bold>Qué hizo la IA con cada mensaje:</>');
+
+            foreach ($intentos->reverse() as $intento) {
+                $etiqueta = AiReplyAttempt::LABELS[$intento->decision] ?? $intento->decision;
+                $ms = $intento->duration_ms ? ' ('.round($intento->duration_ms / 1000, 1).'s)' : '';
+
+                $linea = '    '.$intento->created_at->format('d/m H:i:s').'  '.$etiqueta.$ms;
+
+                $intento->decision === 'enviada'
+                    ? $this->info($linea)
+                    : $this->warn($linea);
+
+                if ($intento->detail) {
+                    $this->line('      '.mb_substr($intento->detail, 0, 150));
+                }
+            }
+        } else {
+            $this->newLine();
+            $this->line('  · Sin intentos registrados todavía (el registro empieza con el próximo mensaje).');
         }
 
         if (FlowRun::where('conversation_id', $conversation->id)->where('status', FlowRun::STATUS_ACTIVE)->exists()) {
