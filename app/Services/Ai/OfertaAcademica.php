@@ -121,6 +121,17 @@ class OfertaAcademica
         $schema = Schema::connection('esam_datos');
 
         try {
+            // Un programa puede estar en VARIAS áreas: la relación vive en la
+            // tabla puente `areas_programas`, no en una columna de `programas`.
+            if ($schema->hasTable('areas_programas') && $schema->hasTable('areas')) {
+                $nombre = collect(['nombre', 'descripcion', 'name', 'titulo'])
+                    ->first(fn ($c) => $schema->hasColumn('areas', $c));
+
+                if ($nombre) {
+                    return $cache = ['modo' => 'pivote', 'columna' => $nombre];
+                }
+            }
+
             if ($schema->hasColumn('programas', 'area_id') && $schema->hasTable('areas')) {
                 $nombre = collect(['nombre', 'descripcion', 'name', 'titulo'])
                     ->first(fn ($c) => $schema->hasColumn('areas', $c));
@@ -347,7 +358,57 @@ class OfertaAcademica
             $query->addSelect("p.{$area['columna']} as area_nombre");
         }
 
-        return $query->orderBy('p.nombre')->get();
+        $programas = $query->orderBy('p.nombre')->get();
+
+        // Con tabla puente el área se resuelve aparte: una sola consulta para
+        // todos los programas, no una por programa.
+        if ($area['modo'] === 'pivote') {
+            $areas = $this->areasPorPrograma($programas->pluck('id')->all(), $area['columna']);
+
+            $programas->each(fn ($p) => $p->area_nombre = $areas[$p->id] ?? null);
+        }
+
+        return $programas;
+    }
+
+    /**
+     * Áreas de cada programa, desde la tabla puente.
+     *
+     * Los nombres de las columnas del puente se detectan igual que el resto:
+     * es una BD que este proyecto no controla, y asumir mal significa que la
+     * consulta revienta y la sincronización deja de correr en silencio.
+     *
+     * @param  array<int, mixed>  $programaIds
+     * @return array<mixed, string>  programa_id => "Salud, Gestión"
+     */
+    private function areasPorPrograma(array $programaIds, string $columnaNombre): array
+    {
+        if (empty($programaIds)) {
+            return [];
+        }
+
+        $schema = Schema::connection('esam_datos');
+
+        $colPrograma = collect(['programa_id', 'programas_id', 'id_programa'])
+            ->first(fn ($c) => $schema->hasColumn('areas_programas', $c));
+
+        $colArea = collect(['area_id', 'areas_id', 'id_area'])
+            ->first(fn ($c) => $schema->hasColumn('areas_programas', $c));
+
+        if (! $colPrograma || ! $colArea) {
+            return [];
+        }
+
+        return DB::connection('esam_datos')
+            ->table('areas_programas as ap')
+            ->join('areas as a', 'a.id', '=', "ap.{$colArea}")
+            ->whereIn("ap.{$colPrograma}", $programaIds)
+            ->get(["ap.{$colPrograma} as programa_id", "a.{$columnaNombre} as area"])
+            ->groupBy('programa_id')
+            // Un programa en varias áreas se nombra en todas: elegir una sola
+            // lo escondería de las demás.
+            ->map(fn ($filas) => $filas->pluck('area')->filter()->unique()->join(', '))
+            ->all();
     }
 
     /**

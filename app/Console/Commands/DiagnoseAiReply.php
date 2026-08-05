@@ -117,6 +117,24 @@ class DiagnoseAiReply extends Command
         $this->line("  · Jobs en cola: {$pendientes}");
         $this->line("  · Fallidos en las últimas 24 h: {$fallidos}");
 
+        // La trampa que se lleva puestas las respuestas: si la cola da por
+        // abandonado un job antes de que termine, lo vuelve a repartir MIENTRAS
+        // SIGUE CORRIENDO. Resultado: el cliente recibe la respuesta dos veces
+        // y el job muere con MaxAttemptsExceeded.
+        $conexion = config('queue.default');
+        // `sync` no tiene `retry_after`: el job corre en el acto y nadie lo
+        // puede repartir dos veces. Solo aplica a las colas de verdad.
+        $retryAfter = (int) config("queue.connections.{$conexion}.retry_after", 0);
+        $jobTimeout = (int) config('services.ollama.timeout', 180) + 30;
+
+        if ($retryAfter > 0 && $retryAfter <= $jobTimeout) {
+            $this->error("  ✗ queue.connections.{$conexion}.retry_after = {$retryAfter}s, y la IA puede tardar {$jobTimeout}s.");
+            $this->line('    La cola reparte el job de nuevo mientras el primero sigue trabajando:');
+            $this->line('    el cliente recibe dos respuestas y el job muere por "attempted too many times".');
+            $this->line('    Arreglo: DB_QUEUE_RETRY_AFTER=600 en el .env (debe superar al timeout de la IA).');
+            $problemas++;
+        }
+
         // Contarlos no sirve de nada: lo que importa es POR QUÉ fallaron. Un
         // job que revienta fuera del try/catch no apaga la IA ni deja motivo
         // en la conversación — se ve como «sin bloqueos» y aun así el cliente

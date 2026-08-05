@@ -40,7 +40,20 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            /*
+             * TIENE que ser mayor que el job más lento, con margen.
+             *
+             * Con 90 s (el default de Laravel) y una respuesta de IA que puede
+             * tardar 150, la cola daba el job por abandonado a los 90 s y lo
+             * volvía a repartir MIENTRAS SEGUÍA CORRIENDO. De ahí salían dos
+             * cosas a la vez: respuestas duplicadas al cliente y
+             * `MaxAttemptsExceededException` (el job tiene tries=1, así que el
+             * segundo intento lo mataba).
+             *
+             * 600 s cubre con holgura el peor caso (`OLLAMA_TIMEOUT` + 30).
+             * Si se sube el timeout de la IA, hay que subir esto también.
+             */
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 600),
             'after_commit' => false,
         ],
 
