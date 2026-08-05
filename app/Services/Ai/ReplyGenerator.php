@@ -159,7 +159,10 @@ class ReplyGenerator
             $reply = $sanitizer->trimToLastComplete($reply);
         }
 
-        return $reply;
+        // Y el largo: pedirle brevedad no alcanza, se va de largo igual. Una
+        // parrafada en un chat no se lee — es mejor contestar corto y que el
+        // cliente pida más, que además deja la conversación abierta.
+        return $sanitizer->fitToChat($reply, (int) config('services.ai_context.max_chars', 700));
     }
 
     /**
@@ -312,7 +315,8 @@ class ReplyGenerator
         $parts[] = implode("\n", [
             '=== CÓMO ESCRIBIR LA RESPUESTA (lo más importante) ===',
             'Responde SOLO lo que el cliente preguntó. No agregues datos que no pidió.',
-            'Es un chat de WhatsApp: 2 a 6 líneas. Nada de asteriscos, almohadillas ni viñetas de markdown.',
+            'CORTO: máximo 4 líneas y unas 600 letras. Es un chat, no un folleto. Si hay más para contar, terminá ofreciendo ampliar y esperá a que el cliente pregunte.',
+            'Nada de asteriscos, almohadillas ni viñetas de markdown.',
             '',
             'Si te piden la lista de programas, responde EXACTAMENTE con este formato:',
             '',

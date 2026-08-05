@@ -220,8 +220,10 @@ class AiKnowledgeGroundingTest extends TestCase
 
         Http::assertSent(function ($request) {
             // 800 tokens a la velocidad de generación de un VPS sin GPU son
-            // minutos de espera para un mensaje de WhatsApp.
-            $this->assertSame(350, $request['options']['num_predict']);
+            // minutos de espera para un mensaje de WhatsApp — que además nadie
+            // quiere leer tan largo.
+            $this->assertSame((int) config('services.ai_context.max_tokens'), $request['options']['num_predict']);
+            $this->assertLessThanOrEqual(250, $request['options']['num_predict']);
 
             return true;
         });

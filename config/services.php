@@ -116,7 +116,12 @@ return [
         // Tope de la respuesta. Cada token generado son décimas de segundo en
         // CPU: 800 podían ser minutos de espera para un mensaje de WhatsApp
         // que nadie quiere leer tan largo.
-        'max_tokens' => (int) env('AI_MAX_TOKENS', 350),
+        'max_tokens' => (int) env('AI_MAX_TOKENS', 220),
+
+        // Largo maximo de la respuesta que se envia. El modelo se va de largo
+        // aunque se le pida brevedad; una parrafada en un chat no se lee.
+        // Se corta en la ultima idea completa y se ofrece ampliar.
+        'max_chars' => (int) env('AI_MAX_CHARS', 700),
 
         // Consultar la oferta a la BD académica en el momento, en vez de usar
         // la foto indexada. Es lo que hace que el prompt lleve SOLO lo que la

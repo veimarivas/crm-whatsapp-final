@@ -173,8 +173,28 @@ class AiAutoReplyJob implements ShouldQueue
         // Dura ~25s. Best-effort: si falla no bloquea al bot.
         $this->sendTypingToCustomer($conversation);
 
+        // Con qué mensaje del cliente arranca esta respuesta. Generar tarda
+        // decenas de segundos y en ese rato el cliente puede escribir otra
+        // vez; si contestamos igual, le llegan DOS mensajes —uno por cada
+        // pregunta— y el primero además responde a un contexto viejo.
+        $mensajeAlEmpezar = $this->lastCustomerMessageId($conversation);
+
         try {
             $reply = $generator->generate($config, $conversation);
+
+            // Llegó una pregunta nueva mientras pensábamos: esta respuesta ya
+            // nació vieja. Se descarta y contesta el job del mensaje nuevo,
+            // que tiene todo el contexto —incluida esta pregunta—.
+            if ($this->lastCustomerMessageId($conversation) !== $mensajeAlEmpezar) {
+                Log::info('Respuesta de IA descartada: el cliente volvió a escribir mientras se generaba', [
+                    'conversation_id' => $conversation->id,
+                ]);
+
+                $conversation->update(['ai_pending' => false, 'ai_pending_at' => null]);
+                $this->broadcastPending($conversation, false);
+
+                return;
+            }
 
             if ($reply === '') {
                 $conversation->update(['ai_pending' => false, 'ai_pending_at' => null]);
@@ -355,6 +375,15 @@ class AiAutoReplyJob implements ShouldQueue
         };
 
         return trim($mensaje)."\n\nTe respondemos {$cuando}. 🙌";
+    }
+
+    /** Último mensaje del cliente en esta conversación. */
+    private function lastCustomerMessageId(Conversation $conversation): ?string
+    {
+        return Message::where('conversation_id', $conversation->id)
+            ->where('sender_type', Message::SENDER_CUSTOMER)
+            ->latest('created_at')
+            ->value('id');
     }
 
     private function broadcastPending(Conversation $conversation, bool $pending): void

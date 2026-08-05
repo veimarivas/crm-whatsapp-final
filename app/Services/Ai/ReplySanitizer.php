@@ -64,6 +64,46 @@ class ReplySanitizer
     }
 
     /**
+     * Acota la respuesta a lo que se lee cómodo en WhatsApp.
+     *
+     * El modelo se va de largo aunque se le pida brevedad, y una parrafada de
+     * 2.000 caracteres en un chat no se lee: el cliente abandona. Se corta en
+     * la última idea completa que entre y se ofrece ampliar, que además es
+     * mejor para vender — deja la puerta abierta a la siguiente pregunta en
+     * lugar de vaciar todo el catálogo de una.
+     */
+    public function fitToChat(string $reply, int $maxChars): string
+    {
+        $texto = trim($reply);
+
+        if ($maxChars <= 0 || mb_strlen($texto) <= $maxChars) {
+            return $texto;
+        }
+
+        // Se corta por líneas: en una lista numerada, cortar a mitad de un
+        // ítem se ve peor que mostrar uno menos.
+        $lineas = preg_split('/\n/', $texto);
+        $acumulado = '';
+
+        foreach ($lineas as $linea) {
+            $tentativa = $acumulado === '' ? $linea : $acumulado."\n".$linea;
+
+            if (mb_strlen($tentativa) > $maxChars) {
+                break;
+            }
+
+            $acumulado = $tentativa;
+        }
+
+        // Si ni la primera línea entra, se corta por oración.
+        if ($acumulado === '') {
+            $acumulado = $this->trimToLastComplete(mb_substr($texto, 0, $maxChars));
+        }
+
+        return trim($acumulado)."\n\n¿Querés que te amplíe alguno?";
+    }
+
+    /**
      * Corta hasta la última línea completa, para que no se vea partido.
      */
     public function trimToLastComplete(string $reply): string
