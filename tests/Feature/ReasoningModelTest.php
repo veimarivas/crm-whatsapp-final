@@ -119,9 +119,12 @@ class ReasoningModelTest extends TestCase
         app(ReplyGenerator::class)->generate($this->config, $this->conversation);
 
         Http::assertSent(function ($request) {
-            // Con el presupuesto de CPU (350) el modelo se quedaba sin tokens
-            // a mitad de la deliberación y no llegaba a contestar.
-            $this->assertSame(1200, $request['max_tokens']);
+            // Con el presupuesto de CPU (220) el modelo se quedaba sin tokens
+            // a mitad de la deliberación y no llegaba a contestar. En la nube
+            // se le da más margen, pero acotado: cada token cuenta contra la
+            // cuota del plan gratuito.
+            $this->assertSame((int) config('services.ai_context.max_tokens_cloud'), $request['max_tokens']);
+            $this->assertGreaterThan((int) config('services.ai_context.max_tokens'), $request['max_tokens']);
 
             return true;
         });

@@ -218,14 +218,19 @@ class Client
             $response = $this->postChat($baseUrl, $payload);
         }
 
-        if ($response->failed()) {
-            // El 429 se nombra aparte: en un plan gratuito es lo más probable
-            // y no se arregla mirando la API key.
-            $mensaje = $response->status() === 429
-                ? 'límite de uso alcanzado (plan gratuito): reintentá en unos minutos'
-                : ($response->json('error.message') ?? 'HTTP '.$response->status());
+        // El 429 tiene su propia excepción: no es un fallo que haya que
+        // arreglar, es "esperá un minuto". El que llama lo reintenta en vez de
+        // dar la respuesta por perdida.
+        if ($response->status() === 429) {
+            throw new RateLimitedException(
+                "{$etiqueta}: límite de uso alcanzado (plan gratuito): se reintenta en unos minutos",
+            );
+        }
 
-            throw new RuntimeException("{$etiqueta}: {$mensaje}");
+        if ($response->failed()) {
+            throw new RuntimeException(
+                "{$etiqueta}: ".($response->json('error.message') ?? 'HTTP '.$response->status()),
+            );
         }
 
         return trim($response->json('choices.0.message.content') ?? '');

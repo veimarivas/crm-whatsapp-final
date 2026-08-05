@@ -149,7 +149,7 @@ return [
         // responde en segundos. Se le da mas margen de tokens para que un
         // modelo que razona pueda pensar Y contestar. El largo final igual lo
         // acota `max_chars`.
-        'max_tokens_cloud' => (int) env('AI_MAX_TOKENS_CLOUD', 1200),
+        'max_tokens_cloud' => (int) env('AI_MAX_TOKENS_CLOUD', 700),
 
         // Modelos que deliberan antes de responder. `hidden` = que el
         // proveedor devuelva solo la conclusión, sin el bloque <think>.

@@ -34,6 +34,7 @@ class AiReplyAttempt extends Model
         'abandonada' => 'El modelo siguió ocupado tras varios intentos',
         'descartada' => 'El cliente escribió de nuevo mientras se generaba',
         'vacia' => 'El modelo devolvió una respuesta vacía',
+        'limite_proveedor' => 'Cuota del proveedor agotada: se reintenta',
         'fallo' => 'Falló la generación',
     ];
 

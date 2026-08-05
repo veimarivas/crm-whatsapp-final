@@ -83,6 +83,14 @@ class AiAutoReplyJob implements ShouldQueue
 
     private const REQUEUE_SECONDS = 25;
 
+    /**
+     * Espera cuando el proveedor devuelve 429.
+     *
+     * Mas larga que la del modelo ocupado: las cuotas por minuto se reponen
+     * en ese orden de tiempo, y reintentar cada 25s solo gasta intentos.
+     */
+    private const RATE_LIMIT_SECONDS = 70;
+
     public function __construct(
         public readonly string $conversationId,
         public readonly int $requeues = 0,
@@ -310,6 +318,30 @@ class AiAutoReplyJob implements ShouldQueue
             // importa son las fallas SEGUIDAS, no las de hace tres días.
             $conversation->update(['ai_pending' => false, 'ai_pending_at' => null, 'ai_failure_count' => 0]);
             $this->broadcastPending($conversation, false);
+        } catch (\App\Services\Ai\RateLimitedException $e) {
+            // Cuota del proveedor agotada: no es un problema de ESTA
+            // conversación y no tiene arreglo más que esperar. Contarlo como
+            // falla apagaba la IA (dos seguidas) por algo ajeno, y tiraba una
+            // respuesta que iba a salir bien un minuto después.
+            AiReplyAttempt::registrar($conversation, 'limite_proveedor', $e->getMessage(), $inicio);
+
+            $conversation->update(['ai_pending' => false, 'ai_pending_at' => null]);
+            $this->broadcastPending($conversation, false);
+
+            if ($this->requeues < self::MAX_REQUEUES) {
+                self::dispatch($this->conversationId, $this->requeues + 1)
+                    ->delay(now()->addSeconds(self::RATE_LIMIT_SECONDS));
+            } else {
+                // Ya se esperó varios minutos: que lo tome un humano en vez de
+                // dejar al cliente esperando indefinidamente.
+                $this->notifyHumanNeeded(
+                    $conversation,
+                    'failed',
+                    'La IA no pudo responder: cuota del proveedor agotada',
+                    'Se alcanzó el límite del plan de IA con '.$this->contactLabel($conversation)
+                        .'. Al cliente no se le envió nada: contestale vos.',
+                );
+            }
         } catch (\Throwable $e) {
             Log::warning('Auto-respuesta IA falló', [
                 'conversation_id' => $conversation->id,

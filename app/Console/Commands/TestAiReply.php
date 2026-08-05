@@ -172,6 +172,9 @@ class TestAiReply extends Command
                 'Ollama no está escuchando. En el servidor: systemctl status ollama',
             str_contains($error, 'model') && str_contains($error, 'not found') =>
                 'Ese modelo no está descargado en Ollama. En el servidor: ollama list (y ollama pull <modelo> si falta).',
+            str_contains($error, 'límite de uso') =>
+                'Cuota del proveedor agotada (plan gratuito). No hay nada roto: se repone en unos minutos. '
+                .'En producción el bot reintenta solo cada 70s; acá volvé a probar en un rato.',
             str_contains($error, 'esam_datos') =>
                 'La base académica no responde. La IA puede contestar sin ella, pero revisá la conexión.',
             default => 'Error inesperado: pegá este mensaje en el chat para diagnosticarlo.',
