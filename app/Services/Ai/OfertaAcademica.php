@@ -3,6 +3,7 @@
 namespace App\Services\Ai;
 
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -155,6 +156,165 @@ class OfertaAcademica
         } catch (\Throwable) {
             return $cache = false;
         }
+    }
+
+    /**
+     * ¿Se puede leer la BD académica ahora mismo?
+     *
+     * Cacheado corto: se pregunta en cada mensaje entrante y una BD caída no
+     * puede costar una conexión fallida por consulta.
+     */
+    public function disponible(): bool
+    {
+        return Cache::remember('esam_datos:disponible', 60, function () {
+            try {
+                DB::connection('esam_datos')->select('SELECT 1');
+
+                return true;
+            } catch (\Throwable) {
+                return false;
+            }
+        });
+    }
+
+    /**
+     * La lista de programas, cacheada unos minutos.
+     *
+     * La consulta es barata (una decena de filas) pero se hace en CADA mensaje
+     * entrante; unos minutos de caché no envejecen nada —la oferta cambia
+     * cuando alguien mueve un programa de estado, no cada segundo— y evitan
+     * castigar a la BD académica en una ráfaga de mensajes.
+     *
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    public function programasCacheadas()
+    {
+        $segundos = (int) config('services.ai_context.oferta_cache_seconds', 300);
+
+        return Cache::remember('esam_datos:programas', $segundos, fn () => $this->programas());
+    }
+
+    /**
+     * El contexto que necesita ESTA pregunta, consultado a la BD en el momento.
+     *
+     * Es la vuelta al modelo anterior —consulta directa— pero con lo que se
+     * aprendió armando el catálogo: solo programas en inscripciones (antes se
+     * colaban los concluidos y los que estaban en desarrollo), redactado con
+     * área, módulos, docentes y horarios, y sobre todo **acotado a lo que se
+     * preguntó**.
+     *
+     * Fijar el catálogo entero en cada prompt costaba ~80 s de lectura por
+     * mensaje en este servidor. Consultar la BD cuesta milisegundos: lo caro
+     * nunca fue leer la base, era hacerle leer al modelo lo que no necesitaba.
+     *
+     * @return array{indice: string, detalle: string}
+     */
+    public function contextoPara(?string $query): array
+    {
+        $programas = $this->programasCacheadas();
+
+        $indice = $this->indice($programas);
+        $query = trim((string) $query);
+
+        if ($query === '' || $programas->isEmpty()) {
+            return ['indice' => $indice, 'detalle' => ''];
+        }
+
+        // ¿Nombró un programa? Entonces va su detalle completo: módulos,
+        // docentes y todas las sesiones.
+        $elegido = $this->buscarPrograma($programas, $query);
+
+        if ($elegido) {
+            return ['indice' => $indice, 'detalle' => $this->programa($elegido)];
+        }
+
+        // Pregunta genérica sobre la oferta (precios, fechas, duración): el
+        // resumen de todos, sin el detalle de horarios.
+        if ($this->preguntaPorDatosGenerales($query)) {
+            return ['indice' => $indice, 'detalle' => $this->resumen($programas)];
+        }
+
+        return ['indice' => $indice, 'detalle' => ''];
+    }
+
+    /**
+     * El programa del que habla el cliente, si lo nombró.
+     *
+     * Compara por palabras significativas y no por igualdad: nadie escribe
+     * «Diplomado en Auditoría Médica y Gestión de Calidad en Salud» completo,
+     * escribe «el de auditoría médica».
+     */
+    public function buscarPrograma($programas, string $query): ?object
+    {
+        $normalizar = fn (string $s) => mb_strtolower(preg_replace('/[^\p{L}\p{N}\s]/u', ' ', $s));
+        $consulta = $normalizar($query);
+
+        // Palabras que están en casi todos los títulos y no distinguen nada.
+        $vacias = ['maestria', 'maestría', 'diplomado', 'curso', 'programa', 'especialidad',
+            'para', 'con', 'del', 'las', 'los', 'una', 'este', 'sobre', 'quiero', 'informacion', 'información'];
+
+        $mejor = null;
+        $mejorPuntaje = 0;
+
+        foreach ($programas as $p) {
+            $palabras = collect(preg_split('/\s+/', $normalizar($p->nombre)))
+                ->filter(fn ($w) => mb_strlen($w) >= 4 && ! in_array($w, $vacias, true));
+
+            if ($palabras->isEmpty()) {
+                continue;
+            }
+
+            $aciertos = $palabras->filter(fn ($w) => str_contains($consulta, $w))->count();
+
+            // Al menos dos palabras propias (o todas, si el título es corto):
+            // «gestión» sola matchearía media oferta.
+            if ($aciertos >= min(2, $palabras->count()) && $aciertos > $mejorPuntaje) {
+                $mejor = $p;
+                $mejorPuntaje = $aciertos;
+            }
+        }
+
+        return $mejor;
+    }
+
+    /** Resumen de todos: lo que se necesita para hablar de precios y fechas. */
+    public function resumen($programas): string
+    {
+        $lineas = ['DATOS DE LOS PROGRAMAS CON INSCRIPCIONES ABIERTAS:'];
+
+        foreach ($programas as $p) {
+            $datos = array_filter([
+                trim($p->area_nombre ?? '') !== '' ? "área {$p->area_nombre}" : null,
+                $p->duracion_meses ? "{$p->duracion_meses} meses" : null,
+                $p->n_modulos > 0 ? "{$p->n_modulos} módulos" : null,
+                $p->fecha_inicio ? 'inicia '.$this->fecha($p->fecha_inicio) : null,
+                (float) $p->matricula > 0 ? 'matrícula Bs '.number_format((float) $p->matricula, 2) : null,
+                (float) $p->colegiatura > 0 ? 'colegiatura Bs '.number_format((float) $p->colegiatura, 2) : null,
+            ]);
+
+            $lineas[] = '- '.trim($p->nombre).': '.implode(', ', $datos).'.';
+        }
+
+        return implode("\n", $lineas);
+    }
+
+    /** ¿Pregunta por precios, fechas o duración de la oferta en general? */
+    private function preguntaPorDatosGenerales(string $query): bool
+    {
+        $texto = mb_strtolower($query);
+
+        foreach ([
+            'precio', 'costo', 'cuesta', 'cuestan', 'valor', 'invers', 'pago', 'cuota', 'financ',
+            'matricula', 'matrícula', 'colegiatura', 'beca', 'descuento',
+            'fecha', 'inicio', 'empieza', 'comienza', 'duracion', 'duración', 'dura', 'meses',
+            'modulo', 'módulo', 'area', 'área', 'requisito', 'certificad', 'ceub',
+        ] as $pista) {
+            if (str_contains($texto, $pista)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

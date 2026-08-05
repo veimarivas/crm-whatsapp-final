@@ -7,6 +7,7 @@ use App\Models\AiKnowledgeChunk;
 use App\Models\AiKnowledgeDocument;
 use App\Models\Conversation;
 use App\Models\Message;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Construye el contexto (historial + base de conocimiento) y pide la
@@ -43,6 +44,16 @@ class ReplyGenerator
     {
         return (int) config('services.ai_context.chunk_budget', 3000);
     }
+
+    /**
+     * Tamaño aproximado de las reglas fijas del prompt, para el presupuesto.
+     * No hace falta exactitud: es un margen, y quedarse corto solo significa
+     * recortar un poco de más.
+     */
+    private const REGLAS_APROX = 4000;
+
+    /** Índice de programas de esta consulta; lo llena `ofertaEnVivo()`. */
+    private string $ofertaIndice = '';
 
     public function __construct(private readonly Embeddings $embeddings)
     {
@@ -92,11 +103,35 @@ class ReplyGenerator
 
         $query = $lastCustomer ? ($lastCustomer->transcript ?? $lastCustomer->content_text) : null;
 
-        // El detalle del programa consultado se inserta ANTES del último
-        // mensaje del cliente, no dentro del prompt de sistema: así el prefijo
-        // (reglas + catálogo) queda idéntico entre consultas y llama.cpp lo
-        // reutiliza de su caché en vez de releer miles de tokens cada vez.
-        $detalle = $this->retrieveKnowledge($config, $query);
+        // Oferta académica: se consulta la BD en el momento y se trae SOLO lo
+        // que esta pregunta necesita.
+        //
+        // Es la vuelta a la consulta directa, que era mucho más rápida, pero
+        // conservando lo que se ganó con el catálogo: solo programas en
+        // inscripciones (antes se colaban los concluidos), con área, módulos,
+        // docentes y horarios bien redactados. Lo caro nunca fue leer la base
+        // —son milisegundos— sino hacerle leer al modelo, en cada mensaje, un
+        // catálogo entero que casi nunca hacía falta.
+        $oferta = $this->ofertaEnVivo($query);
+
+        $detalle = $oferta['detalle'];
+
+        // Sin BD académica se cae al conocimiento indexado, que la
+        // sincronización deja al día tres veces por día. Mejor una foto de
+        // hace unas horas que una IA muda.
+        if ($oferta['indice'] === '') {
+            $detalle = $this->retrieveKnowledge($config, $query);
+        }
+
+        // Y siempre, lo que el equipo cargó a mano (FAQs, políticas): eso no
+        // sale de la BD académica.
+        $manual = $this->retrieveManual($config, $query);
+
+        if ($manual !== '') {
+            $detalle = trim($detalle."\n\n".$manual);
+        }
+
+        $detalle = $this->capDetalle($detalle, $messages);
 
         if ($detalle !== '') {
             array_splice($messages, count($messages) - 1, 0, [[
@@ -125,6 +160,85 @@ class ReplyGenerator
         }
 
         return $reply;
+    }
+
+    /**
+     * Índice y detalle traídos de la BD académica para esta pregunta.
+     *
+     * Nunca lanza: si la BD no responde, se devuelve vacío y el que llama cae
+     * al conocimiento indexado.
+     *
+     * @return array{indice: string, detalle: string}
+     */
+    private function ofertaEnVivo(?string $query): array
+    {
+        if (! config('services.ai_context.live_oferta', true)) {
+            return ['indice' => '', 'detalle' => ''];
+        }
+
+        try {
+            $oferta = app(OfertaAcademica::class);
+
+            if (! $oferta->disponible()) {
+                return ['indice' => '', 'detalle' => ''];
+            }
+
+            $contexto = $oferta->contextoPara($query);
+            $this->ofertaIndice = $contexto['indice'];
+
+            return $contexto;
+        } catch (\Throwable $e) {
+            Log::warning('No se pudo leer la oferta académica en vivo; se usa el conocimiento indexado', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['indice' => '', 'detalle' => ''];
+        }
+    }
+
+    /**
+     * Recorta el detalle para que el prompt entre en un tamaño que el servidor
+     * pueda leer dentro del timeout.
+     *
+     * Sin este tope, una pregunta que nombra un programa con muchos módulos
+     * podía mandar decenas de miles de caracteres: a ~59 tokens/s de lectura
+     * eso son minutos, y el request moría en el timeout con 0 bytes — que es
+     * exactamente lo que pasó en producción.
+     *
+     * @param  array<int, array{role: string, content: string}>  $messages
+     */
+    private function capDetalle(string $detalle, array $messages): string
+    {
+        if ($detalle === '') {
+            return '';
+        }
+
+        $total = (int) config('services.ai_context.total_budget', 12000);
+        $usado = array_sum(array_map(fn ($m) => mb_strlen($m['content'] ?? ''), $messages))
+            + mb_strlen($this->ofertaIndice)
+            + self::REGLAS_APROX;
+
+        $disponible = $total - $usado;
+
+        if ($disponible < 500) {
+            // No entra nada útil: mejor sin detalle que con un pedazo cortado
+            // que confunda. El índice con los nombres sigue estando.
+            Log::info('Prompt sin margen para el detalle de la oferta', ['disponible' => $disponible]);
+
+            return '';
+        }
+
+        if (mb_strlen($detalle) <= $disponible) {
+            return $detalle;
+        }
+
+        Log::info('Detalle de la oferta recortado para entrar en el presupuesto', [
+            'original' => mb_strlen($detalle),
+            'recortado' => $disponible,
+        ]);
+
+        return mb_substr($detalle, 0, $disponible)
+            ."\n[…] Si el cliente pide algo que no esté acá, decile que le confirmás con un asesor.";
     }
 
     private function buildSystemPrompt(AiConfig $config, Conversation $conversation): string
@@ -166,11 +280,17 @@ class ReplyGenerator
             $parts[] = "El cliente se llama {$name}. Puedes dirigirte a él/ella por su nombre cuando sea natural.";
         }
 
-        // El catálogo va SIEMPRE y entero, sin pasar por la búsqueda. Si la
-        // lista de lo que existe dependiera del retrieval, el día que la
-        // búsqueda falla el modelo se queda sin referencia y se inventa el
-        // programa — que es exactamente lo que estaba pasando.
-        $pinned = $this->pinnedKnowledge($config);
+        // La lista de programas va SIEMPRE, entera y sin pasar por ninguna
+        // búsqueda: si dependiera del retrieval, el día que la búsqueda falla
+        // el modelo se queda sin referencia y se inventa el programa.
+        //
+        // Sale de la BD en vivo (`ofertaEnVivo`, que ya corrió) y solo son los
+        // nombres, así que es chica y —clave para la velocidad— idéntica entre
+        // consultas: llama.cpp reutiliza la caché de ese prefijo. Si la BD no
+        // respondió, se usa el documento fijo de la última sincronización.
+        $pinned = $this->ofertaIndice !== ''
+            ? $this->ofertaIndice
+            : $this->pinnedKnowledge($config);
 
         if ($pinned !== '') {
             $parts[] = "=== OFERTA ACADÉMICA VIGENTE (lista cerrada: lo que no está acá, no se ofrece) ===\n{$pinned}";
@@ -368,6 +488,43 @@ class ReplyGenerator
         return (string) AiKnowledgeDocument::forAccount($accountId)
             ->where('title', OfertaAcademica::DOC_CATALOGO)
             ->value('content');
+    }
+
+    /**
+     * Conocimiento cargado a mano: FAQs, políticas, formas de pago.
+     *
+     * Va aparte de la oferta académica porque tiene otra vida: la oferta sale
+     * de la BD y se regenera sola; esto lo escribe el equipo en Ajustes → IA y
+     * es lo único que se perdería si solo miráramos la base. Se excluyen los
+     * documentos `[OFERTA]` para no mandar dos veces lo mismo.
+     */
+    private function retrieveManual(AiConfig $config, ?string $query): string
+    {
+        $query = trim((string) $query);
+
+        if ($query === '') {
+            return '';
+        }
+
+        $terms = collect(preg_split('/\W+/u', $query))
+            ->filter(fn ($t) => mb_strlen($t) >= 4)
+            ->take(6);
+
+        if ($terms->isEmpty()) {
+            return '';
+        }
+
+        return AiKnowledgeChunk::forAccount($config->account_id)
+            ->whereHas('document', fn ($q) => $q->where('title', 'not like', OfertaAcademica::DOC_PREFIX.'%'))
+            ->where(function ($q) use ($terms) {
+                foreach ($terms as $term) {
+                    $q->orWhere('content', 'like', '%'.$term.'%');
+                }
+            })
+            ->limit(4)
+            ->pluck('content')
+            ->map(fn ($c) => '- '.mb_substr($c, 0, 1200))
+            ->join("\n");
     }
 
     /**

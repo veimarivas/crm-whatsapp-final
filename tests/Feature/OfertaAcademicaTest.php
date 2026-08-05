@@ -184,6 +184,58 @@ class OfertaAcademicaTest extends TestCase
         $this->assertStringContainsString('12/09/2026', $texto);
     }
 
+    public function test_reconoce_el_programa_por_como_lo_nombra_el_cliente(): void
+    {
+        $programas = collect([
+            $this->programa(['id' => 1, 'nombre' => 'Diplomado en Auditoría Médica y Gestión de Calidad en Salud']),
+            $this->programa(['id' => 2, 'nombre' => 'Diplomado en Banca Y Finanzas']),
+        ]);
+
+        // Nadie escribe el título completo: escribe "el de auditoría médica".
+        $elegido = $this->oferta()->buscarPrograma($programas, 'me pasás info del de auditoría médica?');
+
+        $this->assertSame(1, $elegido->id);
+    }
+
+    public function test_una_palabra_generica_no_elige_programa(): void
+    {
+        $programas = collect([
+            $this->programa(['id' => 1, 'nombre' => 'Diplomado en Gestión Pública']),
+            $this->programa(['id' => 2, 'nombre' => 'Diplomado en Gestión Ambiental']),
+        ]);
+
+        // "gestión" sola matchearía los dos: elegir uno sería inventar.
+        $this->assertNull($this->oferta()->buscarPrograma($programas, 'quiero algo de gestión'));
+    }
+
+    public function test_el_resumen_trae_precios_y_fechas_en_una_linea_por_programa(): void
+    {
+        $texto = $this->oferta()->resumen(collect([$this->programa()]));
+
+        $this->assertStringContainsString('Maestría en Gestión Pública:', $texto);
+        $this->assertStringContainsString('matrícula Bs 500.00', $texto);
+        $this->assertStringContainsString('inicia 10/09/2026', $texto);
+        // Compacto a propósito: es lo que se manda cuando preguntan precios.
+        $this->assertLessThan(400, mb_strlen($texto));
+    }
+
+    public function test_el_indice_es_chico_y_dice_que_la_lista_es_cerrada(): void
+    {
+        $programas = collect(range(1, 10))->map(fn ($i) => $this->programa([
+            'id' => $i,
+            'nombre' => "Diplomado de prueba número {$i}",
+        ]));
+
+        $indice = $this->oferta()->indice($programas);
+
+        $this->assertStringContainsString('Lista COMPLETA y ÚNICA', $indice);
+        $this->assertStringContainsString('Diplomado de prueba número 10', $indice);
+        // Es lo único que viaja en cada consulta: tiene que ser barato de leer.
+        $this->assertLessThan(1500, mb_strlen($indice));
+        // Y sin precios ni fechas: si están, el modelo los copia en la lista.
+        $this->assertStringNotContainsString('Bs', $indice);
+    }
+
     public function test_si_no_entra_se_recorta_el_detalle_y_no_la_lista_de_programas(): void
     {
         $oferta = $this->oferta(

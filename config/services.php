@@ -117,6 +117,18 @@ return [
         // CPU: 800 podían ser minutos de espera para un mensaje de WhatsApp
         // que nadie quiere leer tan largo.
         'max_tokens' => (int) env('AI_MAX_TOKENS', 350),
+
+        // Consultar la oferta a la BD académica en el momento, en vez de usar
+        // la foto indexada. Es lo que hace que el prompt lleve SOLO lo que la
+        // pregunta necesita: la consulta SQL son milisegundos, mientras que
+        // hacerle leer al modelo el catálogo entero son decenas de segundos.
+        'live_oferta' => (bool) env('AI_LIVE_OFERTA', true),
+        'oferta_cache_seconds' => (int) env('AI_OFERTA_CACHE', 300),
+
+        // Techo del prompt completo. Es el tope que evita que una pregunta
+        // sobre un programa con muchos módulos mande decenas de miles de
+        // caracteres y el request muera en el timeout.
+        'total_budget' => (int) env('AI_TOTAL_BUDGET', 12000),
     ],
 
 ];
