@@ -169,12 +169,44 @@ class DiagnoseAiReply extends Command
             sleep(1);
         }
 
+        // Antes de acusar al worker de muerto: puede estar VIVO y ocupado.
+        // Procesa un job a la vez, y una respuesta de la IA lo tiene tomado
+        // hasta dos minutos — el ping espera detrás. Confundir «ocupado» con
+        // «caído» manda a reiniciar un servicio que estaba trabajando bien.
+        $enCurso = DB::table('jobs')->whereNotNull('reserved_at')->count();
+
+        if ($enCurso > 0) {
+            $this->warn('  ⏳ El worker está VIVO pero ocupado: hay '.$enCurso.' job(s) en curso.');
+            $this->line('    Una respuesta de la IA lo toma hasta 2 minutos y el resto espera detrás.');
+            $this->line('    Si pasa seguido, conviene un worker aparte solo para la IA (ver abajo).');
+            $this->colaDedicada();
+
+            return 0;
+        }
+
         $this->error('  ✗ El worker NO procesó el job de prueba en 12s.');
         $this->line('    Sin worker, la IA no responde nunca: el job se encola y se queda ahí.');
         $this->line('    sudo systemctl status crm-whatsapp-queue.service');
         $this->line('    sudo systemctl restart crm-whatsapp-queue.service');
 
         return 1;
+    }
+
+    /** Cómo sacar la IA de la cola general, si está tapando al resto. */
+    private function colaDedicada(): void
+    {
+        if (config('services.ai_context.queue')) {
+            $this->line('    (Ya tenés cola dedicada: '.config('services.ai_context.queue').')');
+
+            return;
+        }
+
+        $this->line('');
+        $this->line('    Para que la IA no tape los webhooks ni los envíos:');
+        $this->line('      1) En el .env:  AI_QUEUE=ia');
+        $this->line('      2) Un servicio aparte que consuma esa cola:');
+        $this->line('         php artisan queue:work --queue=ia --sleep=1 --tries=1 --max-time=3600');
+        $this->line('      El worker actual sigue con lo demás y deja de esperar a la IA.');
     }
 
     private function resolveConversation(string $accountId): ?Conversation

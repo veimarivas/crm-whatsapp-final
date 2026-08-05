@@ -89,6 +89,17 @@ class AiAutoReplyJob implements ShouldQueue
         // 30 s de margen sobre el HTTP: alcanza para que el cliente corte por
         // su cuenta, se registre la falla y se apague la burbuja.
         $this->timeout = (int) config('services.ollama.timeout', 180) + 30;
+
+        // Cola propia, si está configurada.
+        //
+        // Una respuesta de la IA tiene tomado al worker hasta dos minutos, y
+        // detrás esperan los webhooks a Komo, los broadcasts y todo lo demás.
+        // Con `AI_QUEUE=ia` y un worker dedicado, lo lento deja de tapar lo
+        // rápido. Vacío por defecto: activarlo sin levantar ese worker dejaría
+        // a la IA sin nadie que la atienda.
+        if ($cola = config('services.ai_context.queue')) {
+            $this->onQueue($cola);
+        }
     }
 
     public function handle(ReplyGenerator $generator, Messenger $messenger): void

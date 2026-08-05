@@ -134,6 +134,12 @@ return [
         // sobre un programa con muchos módulos mande decenas de miles de
         // caracteres y el request muera en el timeout.
         'total_budget' => (int) env('AI_TOTAL_BUDGET', 12000),
+
+        // Cola dedicada para las respuestas de la IA. Una respuesta ocupa al
+        // worker hasta dos minutos y detras esperan los webhooks y los envios.
+        // Vacio = cola general. Si se pone un valor hay que levantar un worker
+        // que consuma esa cola, o la IA se queda sin quien la atienda.
+        'queue' => env('AI_QUEUE'),
     ],
 
 ];
