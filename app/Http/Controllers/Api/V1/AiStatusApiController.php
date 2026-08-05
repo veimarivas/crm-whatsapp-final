@@ -8,6 +8,7 @@ use App\Services\Ai\Client;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Estado de la IA de esta cuenta, para que el CRM externo (Komo) pueda
@@ -21,6 +22,26 @@ use Illuminate\Support\Facades\Cache;
 class AiStatusApiController extends Controller
 {
     public function show(Request $request): JsonResponse
+    {
+        // Este endpoint lo consulta Komo en CADA render de pantalla. Si tira
+        // un 500, allá se pinta «Sin conexión» —que manda a revisar la red—
+        // cuando en realidad el problema está acá adentro. Un fallo tiene que
+        // llegar descrito, no como error HTTP.
+        try {
+            return $this->build($request);
+        } catch (\Throwable $e) {
+            Log::error('ai/status falló', ['error' => $e->getMessage()]);
+
+            return response()->json([
+                'configured' => true,
+                'available' => false,
+                'reason' => 'status_error',
+                'detail' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function build(Request $request): JsonResponse
     {
         $accountId = $request->attributes->get('account_id');
 
