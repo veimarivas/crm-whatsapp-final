@@ -37,7 +37,19 @@ class AiAutoReplyJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 130; // 10s de margen sobre los 120s del Ollama Client
+    /**
+     * Tiene que ser SIEMPRE mayor que el timeout HTTP hacia el proveedor.
+     *
+     * Estaba fijo en 130 s contra los 120 s del cliente. Al subir el HTTP a
+     * 180 s quedó al revés: el worker mataba el job a los 130 s, en pleno
+     * request. Y un job MATADO no ejecuta su `catch`, así que no apagaba
+     * `ai_pending` ni contaba la falla: la burbuja «Pensando respuesta…»
+     * quedaba girando para siempre y no había ningún error registrado.
+     *
+     * Por eso se deriva de la config en vez de ser una constante: cambiar una
+     * sin la otra es un bug silencioso.
+     */
+    public int $timeout;
 
     /**
      * Horas de pausa al agotar el tope, si la cuenta no configuró otra cosa.
@@ -59,7 +71,12 @@ class AiAutoReplyJob implements ShouldQueue
      */
     private const MAX_FAILURES = 2;
 
-    public function __construct(public readonly string $conversationId) {}
+    public function __construct(public readonly string $conversationId)
+    {
+        // 30 s de margen sobre el HTTP: alcanza para que el cliente corte por
+        // su cuenta, se registre la falla y se apague la burbuja.
+        $this->timeout = (int) config('services.ollama.timeout', 180) + 30;
+    }
 
     public function handle(ReplyGenerator $generator, Messenger $messenger): void
     {
@@ -145,7 +162,11 @@ class AiAutoReplyJob implements ShouldQueue
 
         // Enciendo el flag efímero: la UI del Inbox pintará una burbuja
         // "IA pensando..." mientras dure este job.
-        $conversation->update(['ai_pending' => true]);
+        // Con la hora: si al job lo matan (timeout del worker, OOM, reinicio
+        // en un despliegue) el `catch` no corre y esta bandera queda encendida
+        // para siempre. `wacrm:ai-clear-stuck-pending` la barre, pero necesita
+        // saber desde cuándo está así.
+        $conversation->update(['ai_pending' => true, 'ai_pending_at' => now()]);
         $this->broadcastPending($conversation, true);
 
         // Typing indicator al cliente: le llega "escribiendo..." real de WA.
@@ -156,7 +177,7 @@ class AiAutoReplyJob implements ShouldQueue
             $reply = $generator->generate($config, $conversation);
 
             if ($reply === '') {
-                $conversation->update(['ai_pending' => false]);
+                $conversation->update(['ai_pending' => false, 'ai_pending_at' => null]);
                 $this->broadcastPending($conversation, false);
 
                 return;
@@ -166,7 +187,7 @@ class AiAutoReplyJob implements ShouldQueue
             $conversation->increment('ai_reply_count');
             // Una respuesta buena borra el historial de tropiezos: lo que
             // importa son las fallas SEGUIDAS, no las de hace tres días.
-            $conversation->update(['ai_pending' => false, 'ai_failure_count' => 0]);
+            $conversation->update(['ai_pending' => false, 'ai_pending_at' => null, 'ai_failure_count' => 0]);
             $this->broadcastPending($conversation, false);
         } catch (\Throwable $e) {
             Log::warning('Auto-respuesta IA falló', [
@@ -175,7 +196,7 @@ class AiAutoReplyJob implements ShouldQueue
                 'intento' => $conversation->ai_failure_count + 1,
             ]);
 
-            $conversation->update(['ai_pending' => false]);
+            $conversation->update(['ai_pending' => false, 'ai_pending_at' => null]);
             $this->broadcastPending($conversation, false);
             $this->deliverFallback($conversation, $e->getMessage());
         }

@@ -53,6 +53,11 @@ Schedule::command('flows:process-timeouts')->everyFiveMinutes();
 // a las 3 AM (poca carga). Se reabren automáticamente si el cliente escribe.
 Schedule::command('wacrm:auto-close-inactive --days=7')->dailyAt('03:00');
 
+// Apaga las burbujas "Pensando respuesta…" de jobs que murieron sin poder
+// limpiar (timeout del worker, OOM, reinicio en un despliegue). Ningún proceso
+// puede limpiar lo suyo después de que lo matan: la limpieza viene de afuera.
+Schedule::command('wacrm:ai-clear-stuck-pending')->everyFiveMinutes();
+
 // Mantiene el modelo cargado en memoria. Ollama lo descarga tras unos minutos
 // sin uso y recargarlo tarda decenas de segundos: sin esto, el cliente que
 // escribe después de un rato de calma es el que se come el timeout — y la IA

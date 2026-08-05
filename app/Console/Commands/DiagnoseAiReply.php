@@ -283,6 +283,24 @@ class DiagnoseAiReply extends Command
                 .'/'.$config->auto_reply_max_per_conversation);
         }
 
+        // Burbuja «Pensando respuesta…» encendida hace rato: el job murió sin
+        // poder limpiar (timeout del worker, OOM, reinicio). Desde la pantalla
+        // se ve como una IA que está por contestar y nunca contesta.
+        if ($conversation->ai_pending) {
+            $desde = $conversation->ai_pending_at;
+            $minutos = $desde ? (int) $desde->diffInMinutes(now()) : null;
+
+            if ($minutos === null || $minutos >= 5) {
+                $this->error('  ✗ La burbuja "Pensando respuesta…" está encendida'
+                    .($minutos !== null ? " hace {$minutos} min" : ' (sin marca de tiempo)').'.');
+                $this->line('    El job se murió sin apagarla. Se barre sola cada 5 min, o a mano:');
+                $this->line('    php artisan wacrm:ai-clear-stuck-pending');
+                $problemas++;
+            } else {
+                $this->line('  · La IA está generando una respuesta ahora mismo ('.$minutos.' min).');
+            }
+        }
+
         if (FlowRun::where('conversation_id', $conversation->id)->where('status', FlowRun::STATUS_ACTIVE)->exists()) {
             $this->error('  ✗ Hay un FLOW activo: el chatbot estructurado tiene prioridad y la IA se abstiene.');
             $problemas++;
