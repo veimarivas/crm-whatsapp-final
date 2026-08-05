@@ -86,7 +86,7 @@ return [
     'ollama' => [
         // Antes 120 s fijos. La primera consulta con el modelo frío se pasaba
         // de ahí y la conversación se quedaba sin respuesta.
-        'timeout' => (int) env('OLLAMA_TIMEOUT', 180),
+        'timeout' => (int) env('OLLAMA_TIMEOUT', 120),
 
         // Cuánto deja Ollama el modelo en memoria después de responder. Por
         // defecto son 5 minutos: cualquier pausa mayor entre clientes obliga a

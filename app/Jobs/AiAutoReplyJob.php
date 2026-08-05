@@ -15,6 +15,7 @@ use App\Services\WhatsApp\Messenger;
 use App\Services\WhatsApp\MetaApi;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -71,8 +72,20 @@ class AiAutoReplyJob implements ShouldQueue
      */
     private const MAX_FAILURES = 2;
 
-    public function __construct(public readonly string $conversationId)
-    {
+    /**
+     * Cuántas veces se pospuso este job porque el modelo estaba ocupado.
+     *
+     * Se corta a las 5 (unos 2 minutos de espera): si en ese rato no se
+     * liberó, algo más grave pasa y seguir reencolando solo tapa el problema.
+     */
+    private const MAX_REQUEUES = 5;
+
+    private const REQUEUE_SECONDS = 25;
+
+    public function __construct(
+        public readonly string $conversationId,
+        public readonly int $requeues = 0,
+    ) {
         // 30 s de margen sobre el HTTP: alcanza para que el cliente corte por
         // su cuenta, se registre la falla y se apague la burbuja.
         $this->timeout = (int) config('services.ollama.timeout', 180) + 30;
@@ -173,6 +186,33 @@ class AiAutoReplyJob implements ShouldQueue
         // Dura ~25s. Best-effort: si falla no bloquea al bot.
         $this->sendTypingToCustomer($conversation);
 
+        // Un modelo, una consulta a la vez.
+        //
+        // Ollama atiende de a una por modelo: si mandamos la segunda mientras
+        // la primera sigue calculando, la segunda se queda esperando EN Ollama
+        // sin recibir un solo byte hasta que la otra termine — y se come su
+        // propio timeout ahí parada. Eso es exactamente el «0 bytes received»
+        // que aparecía: no era Ollama caído, era Ollama ocupado.
+        //
+        // Con el candado, el que llega y encuentra ocupado se vuelve a encolar
+        // para dentro de un rato en vez de irse a morir a la cola del modelo.
+        $lock = Cache::lock('ai:generando:'.$config->account_id, $this->timeout + 30);
+
+        if (! $lock->get()) {
+            if ($this->requeues >= self::MAX_REQUEUES) {
+                Log::warning('La IA sigue ocupada tras varios intentos; se abandona esta respuesta', [
+                    'conversation_id' => $conversation->id,
+                ]);
+
+                return;
+            }
+
+            self::dispatch($this->conversationId, $this->requeues + 1)
+                ->delay(now()->addSeconds(self::REQUEUE_SECONDS));
+
+            return;
+        }
+
         // Con qué mensaje del cliente arranca esta respuesta. Generar tarda
         // decenas de segundos y en ese rato el cliente puede escribir otra
         // vez; si contestamos igual, le llegan DOS mensajes —uno por cada
@@ -219,6 +259,10 @@ class AiAutoReplyJob implements ShouldQueue
             $conversation->update(['ai_pending' => false, 'ai_pending_at' => null]);
             $this->broadcastPending($conversation, false);
             $this->deliverFallback($conversation, $e->getMessage());
+        } finally {
+            // Sin esto, un fallo dejaría el candado puesto hasta que expire y
+            // la IA muda para toda la cuenta mientras tanto.
+            $lock->release();
         }
     }
 
