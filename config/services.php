@@ -106,7 +106,9 @@ return [
     | precio es que la IA ve menos catálogo y menos historial.
     */
     'ai_context' => [
-        'pinned_budget' => (int) env('AI_PINNED_BUDGET', 14000),
+        // Solo tiene que entrar el ÍNDICE (nombres). Fijar el catálogo entero
+        // costaba ~80 s de lectura por consulta en un servidor sin GPU.
+        'pinned_budget' => (int) env('AI_PINNED_BUDGET', 4000),
         'chunk_budget' => (int) env('AI_CHUNK_BUDGET', 3000),
         'history_messages' => (int) env('AI_HISTORY_MESSAGES', 12),
         'history_chars' => (int) env('AI_HISTORY_CHARS', 800),

@@ -257,6 +257,11 @@ class ReplyGenerator
         $docs = AiKnowledgeDocument::forAccount($config->account_id)
             ->where('is_pinned', false)
             ->where('title', 'like', OfertaAcademica::DOC_PREFIX.'%')
+            // El catálogo general no es "un programa": tiene su propio camino
+            // (el respaldo de retrieveKnowledge). Si entrara acá, una pregunta
+            // con las palabras "programas vigentes" arrastraría el documento
+            // entero como si fuera el detalle de uno.
+            ->where('title', '!=', OfertaAcademica::DOC_CATALOGO)
             ->get(['title', 'content']);
 
         return $docs
@@ -341,9 +346,58 @@ class ReplyGenerator
                 ->pluck('content');
         }
 
-        return $chunks
-            ->map(fn ($c) => '- '.mb_substr($c, 0, $this->chunkBudget()))
-            ->join("\n");
+        if ($chunks->isNotEmpty()) {
+            return $chunks
+                ->map(fn ($c) => '- '.mb_substr($c, 0, $this->chunkBudget()))
+                ->join("\n");
+        }
+
+        // Última red: el catálogo con precios y fechas.
+        //
+        // El índice fijo solo lleva nombres, así que una pregunta genérica
+        // ("¿cuánto cuestan?", "¿cuándo empiezan?") se quedaba sin datos y la
+        // IA tenía que decir que no sabía, teniéndolos a un documento de
+        // distancia. Va acá y no fijo: solo cuando hace falta.
+        //
+        // Y solo si la pregunta lo pide: un "hola buenas tardes" no puede
+        // costar los segundos de lectura del catálogo entero.
+        if (! $this->preguntaPorLaOferta($query)) {
+            return '';
+        }
+
+        return (string) AiKnowledgeDocument::forAccount($accountId)
+            ->where('title', OfertaAcademica::DOC_CATALOGO)
+            ->value('content');
+    }
+
+    /**
+     * ¿La pregunta va sobre la oferta, o es un saludo?
+     *
+     * Existe para no pagar la lectura del catálogo en cada "hola". Es una
+     * lista de palabras y no un modelo: tiene que ser instantánea y
+     * predecible, y equivocarse hacia el lado barato (si no matchea, la IA
+     * igual tiene el índice con los nombres).
+     */
+    private function preguntaPorLaOferta(string $query): bool
+    {
+        $texto = mb_strtolower($query);
+
+        $pistas = [
+            'precio', 'costo', 'cuesta', 'cuestan', 'valor', 'invers', 'pago', 'cuota', 'financ',
+            'matricula', 'matrícula', 'colegiatura', 'beca', 'descuento',
+            'programa', 'curso', 'diplomado', 'maestria', 'maestría', 'especialidad', 'oferta',
+            'inscripc', 'fecha', 'inicio', 'empieza', 'comienza', 'duracion', 'duración', 'dura',
+            'horario', 'modulo', 'módulo', 'materia', 'docente', 'requisito', 'certificad',
+            'titulo', 'título', 'ceub', 'area', 'área', 'estudiar', 'ofrecen', 'tienen',
+        ];
+
+        foreach ($pistas as $pista) {
+            if (str_contains($texto, $pista)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function retrieveSemantic(AiConfig $config, string $query): string

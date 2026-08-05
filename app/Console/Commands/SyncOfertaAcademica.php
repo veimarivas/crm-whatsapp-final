@@ -88,20 +88,31 @@ class SyncOfertaAcademica extends Command
                 ->delete();
             $this->line("  Documentos anteriores eliminados: {$borrados}");
 
-            // 1. Catálogo fijo.
+            // 1. Índice FIJO: solo los nombres. Es lo único que viaja en todas
+            // las consultas, porque es lo único que tiene que estar siempre —
+            // que no invente programas. Fijar el catálogo completo costaba ~80s
+            // de lectura por pregunta en un servidor sin GPU.
+            $indice = AiKnowledgeDocument::create([
+                'account_id' => $accountId,
+                'title' => OfertaAcademica::DOC_INDICE,
+                'content' => $oferta->indice($programas),
+                'is_pinned' => true,
+            ]);
+            $chunker->reindex($indice);
+            $this->line('  Índice fijo regenerado ('.mb_strlen($indice->content).' caracteres).');
+
+            // 2. Catálogo con precios y fechas: NO fijo. Se recupera cuando la
+            // pregunta lo pide (costos, duración, inicio) en vez de ir siempre.
             $catalogo = AiKnowledgeDocument::create([
                 'account_id' => $accountId,
                 'title' => OfertaAcademica::DOC_CATALOGO,
-                // Ajustado: con muchos programas el catálogo con horarios no
-                // entra en el contexto del modelo, y se recorta por detalle
-                // antes que perder programas enteros.
                 'content' => $oferta->catalogoAjustado($programas),
-                'is_pinned' => true,
+                'is_pinned' => false,
             ]);
             $chunker->reindex($catalogo);
-            $this->line('  Catálogo fijo regenerado.');
+            $this->line('  Catálogo con precios y fechas regenerado.');
 
-            // 2. Un documento de detalle por programa.
+            // 3. Un documento de detalle por programa.
             $bar = $this->output->createProgressBar($programas->count());
             $bar->start();
 

@@ -34,6 +34,70 @@ class OfertaAcademica
 
     public const DOC_CATALOGO = '[OFERTA] Catálogo de programas vigentes';
 
+    public const DOC_INDICE = '[OFERTA] Índice de programas vigentes';
+
+    /**
+     * Lo ÚNICO que viaja en todas las consultas: los nombres.
+     *
+     * Es la corrección de un error de diseño propio. Yo fijaba el catálogo
+     * entero —fichas, módulos, docentes, resúmenes de horarios— en cada
+     * pregunta: unos 14.000 caracteres, ~4.700 tokens, que en un servidor sin
+     * GPU son ~80 segundos de lectura ANTES de empezar a pensar. Y encima el
+     * modelo, viendo esas fichas, contestaba copiándolas.
+     *
+     * Para lo que el catálogo fijo tiene que garantizar —que no invente
+     * programas y que sepa listarlos— alcanza con los nombres. Todo lo demás
+     * (precios, fechas, módulos, horarios) se trae solo cuando preguntan por
+     * un programa concreto.
+     *
+     * @param  \Illuminate\Support\Collection<int, object>  $programas
+     */
+    public function indice($programas): string
+    {
+        $ahora = Carbon::now(config('app.timezone', 'America/La_Paz'));
+        $total = $programas->count();
+
+        if ($total === 0) {
+            return implode("\n", [
+                'OFERTA ACADÉMICA VIGENTE (actualizado '.$ahora->format('d/m/Y H:i').')',
+                '',
+                'En este momento NO hay ningún programa con inscripciones abiertas.',
+                'Si preguntan por programas, decí que por ahora no hay inscripciones abiertas y ofrecé pasar con un asesor.',
+            ]);
+        }
+
+        $lineas = [
+            'OFERTA ACADÉMICA VIGENTE (actualizado '.$ahora->format('d/m/Y H:i').')',
+            '',
+            "Lista COMPLETA y ÚNICA de programas con inscripciones abiertas ({$total}).",
+            'Lo que no está en esta lista NO se ofrece.',
+            '',
+        ];
+
+        $porArea = $programas->groupBy(fn ($p) => trim($p->area_nombre ?? '') ?: 'Sin área asignada');
+        $agrupar = $porArea->count() > 1 || ! $porArea->has('Sin área asignada');
+
+        if ($agrupar) {
+            $n = 0;
+            foreach ($porArea->sortKeys() as $area => $delArea) {
+                $lineas[] = "ÁREA: {$area}";
+                foreach ($delArea as $p) {
+                    $lineas[] = (++$n).'. '.trim($p->nombre);
+                }
+                $lineas[] = '';
+            }
+        } else {
+            foreach ($programas->values() as $i => $p) {
+                $lineas[] = ($i + 1).'. '.trim($p->nombre);
+            }
+            $lineas[] = '';
+        }
+
+        $lineas[] = 'Precios, fechas de inicio, módulos, docentes y horarios de cada programa NO están en esta lista: te los paso aparte cuando el cliente pregunte por un programa concreto. Si te preguntan un dato que no tenés a la vista, pedile al cliente que te diga de qué programa habla.';
+
+        return implode("\n", $lineas);
+    }
+
     /**
      * De dónde sale el área del programa.
      *
