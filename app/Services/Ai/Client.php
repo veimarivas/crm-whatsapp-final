@@ -43,10 +43,10 @@ class Client
             // gratuito puede estar limitado o la clave revocada, y eso no se
             // ve mirando si el campo está lleno. `/models` no consume cuota de
             // inferencia.
-            if ($this->config->provider === 'groq') {
+            if (in_array($this->config->provider, ['groq', 'gemini'], true)) {
                 return Http::withToken($this->config->api_key)
                     ->timeout(5)
-                    ->get(self::GROQ_URL.'/models')
+                    ->get($this->baseUrlDelProveedor().'/models')
                     ->successful();
             }
 
@@ -54,6 +54,15 @@ class Client
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    /** Host del proveedor en la nube que esté configurado. */
+    private function baseUrlDelProveedor(): string
+    {
+        return match ($this->config->provider) {
+            'gemini' => self::GEMINI_URL,
+            default => self::GROQ_URL,
+        };
     }
 
     /**
@@ -68,6 +77,7 @@ class Client
     {
         $base = match ($this->config->provider) {
             'groq' => self::GROQ_URL,
+            'gemini' => self::GEMINI_URL,
             'openai' => 'https://api.openai.com/v1',
             'ollama' => null,
             default => null,
@@ -101,12 +111,19 @@ class Client
             'anthropic' => $this->anthropic($messages, $system, $maxTokens),
             'ollama' => $this->ollama($messages, $system, $maxTokens),
             'groq' => $this->openaiCompatible($messages, $system, $maxTokens, self::GROQ_URL, 'Groq', $sinRazonamiento),
+            'gemini' => $this->openaiCompatible($messages, $system, $maxTokens, self::GEMINI_URL, 'Gemini'),
             default => $this->openai($messages, $system, $maxTokens),
         };
     }
 
     /** Groq habla el mismo protocolo que OpenAI; solo cambia el host. */
     public const GROQ_URL = 'https://api.groq.com/openai/v1';
+
+    /**
+     * Google expone una capa compatible con OpenAI para Gemini, asi que entra
+     * por el mismo camino en vez de necesitar su propio cliente.
+     */
+    public const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
 
     /**
      * Ollama local (o cualquier endpoint compatible con /api/chat).
@@ -202,12 +219,16 @@ class Client
         //  es el reintento: el modelo gasto todo el
         // presupuesto deliberando y devolvio contenido vacio. Sin razonar,
         // contesta directo.
-        $razonamiento = $sinRazonamiento
+        // Solo Groq acepta estos parametros; mandarselos a otro proveedor es
+        // pedirle un 400 por algo que no necesita.
+        $razonamiento = $this->config->provider !== 'groq'
+            ? []
+            : ($sinRazonamiento
             ? ['reasoning_effort' => 'none']
             : array_filter([
                 'reasoning_format' => config('services.ai_context.reasoning_format', 'hidden'),
                 'reasoning_effort' => config('services.ai_context.reasoning_effort'),
-            ]);
+            ]));
 
         $response = $this->postChat($baseUrl, $payload + $razonamiento);
 
