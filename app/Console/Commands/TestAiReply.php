@@ -27,6 +27,7 @@ class TestAiReply extends Command
     protected $signature = 'wacrm:ai-test
         {--conversation= : UUID de la conversación}
         {--phone= : Teléfono del contacto}
+        {--ask= : Probar una pregunta concreta sin escribirla en la conversación}
         {--send : Enviar de verdad la respuesta al cliente}';
 
     protected $description = 'Genera una respuesta de la IA en primer plano y muestra el resultado o el error exacto';
@@ -88,9 +89,26 @@ class TestAiReply extends Command
 
         $inicio = microtime(true);
 
+        // `--ask` prueba una pregunta sin ensuciar la conversación real: el
+        // mensaje se crea, se genera la respuesta y se borra. Sirve para
+        // afinar el prompt sin tener que escribir desde el teléfono cada vez.
+        $temporal = null;
+
+        if ($pregunta = $this->option('ask')) {
+            $temporal = Message::create([
+                'account_id' => $conversation->account_id,
+                'conversation_id' => $conversation->id,
+                'sender_type' => Message::SENDER_CUSTOMER,
+                'content_type' => 'text',
+                'content_text' => $pregunta,
+            ]);
+            $this->line('Pregunta de prueba: "'.$pregunta.'"');
+        }
+
         try {
             $reply = $generator->generate($config, $conversation);
         } catch (\Throwable $e) {
+            $temporal?->delete();
             $segundos = round(microtime(true) - $inicio, 1);
 
             $this->newLine();
@@ -101,6 +119,8 @@ class TestAiReply extends Command
 
             return self::FAILURE;
         }
+
+        $temporal?->delete();
 
         $segundos = round(microtime(true) - $inicio, 1);
 
