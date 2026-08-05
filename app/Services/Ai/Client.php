@@ -43,7 +43,7 @@ class Client
             // gratuito puede estar limitado o la clave revocada, y eso no se
             // ve mirando si el campo está lleno. `/models` no consume cuota de
             // inferencia.
-            if (in_array($this->config->provider, ['groq', 'gemini'], true)) {
+            if (in_array($this->config->provider, ['groq', 'gemini', 'openrouter'], true)) {
                 return Http::withToken($this->config->api_key)
                     ->timeout(5)
                     ->get($this->baseUrlDelProveedor().'/models')
@@ -92,6 +92,7 @@ class Client
     {
         return match ($this->config->provider) {
             'gemini' => self::GEMINI_URL,
+            'openrouter' => self::OPENROUTER_URL,
             default => self::GROQ_URL,
         };
     }
@@ -109,6 +110,7 @@ class Client
         $base = match ($this->config->provider) {
             'groq' => self::GROQ_URL,
             'gemini' => self::GEMINI_URL,
+            'openrouter' => self::OPENROUTER_URL,
             'openai' => 'https://api.openai.com/v1',
             'ollama' => null,
             default => null,
@@ -143,6 +145,7 @@ class Client
             'ollama' => $this->ollama($messages, $system, $maxTokens),
             'groq' => $this->openaiCompatible($messages, $system, $maxTokens, self::GROQ_URL, 'Groq', $sinRazonamiento),
             'gemini' => $this->openaiCompatible($messages, $system, $maxTokens, self::GEMINI_URL, 'Gemini'),
+            'openrouter' => $this->openaiCompatible($messages, $system, $maxTokens, self::OPENROUTER_URL, 'OpenRouter'),
             default => $this->openai($messages, $system, $maxTokens),
         };
     }
@@ -155,6 +158,12 @@ class Client
      * por el mismo camino en vez de necesitar su propio cliente.
      */
     public const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
+
+    /**
+     * OpenRouter enruta a decenas de proveedores detrás de la misma API de
+     * OpenAI. Útil para los modelos gratuitos: los que terminan en «:free».
+     */
+    public const OPENROUTER_URL = 'https://openrouter.ai/api/v1';
 
     /**
      * Ollama local (o cualquier endpoint compatible con /api/chat).

@@ -92,7 +92,7 @@ class AiController extends Controller
     public function update(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'provider' => ['required', Rule::in(['openai', 'anthropic', 'ollama', 'groq', 'gemini'])],
+            'provider' => ['required', Rule::in(['openai', 'anthropic', 'ollama', 'groq', 'gemini', 'openrouter'])],
             'model' => 'required|string|max:100',
             'base_url' => 'nullable|string|max:255|url',
             'api_key' => 'nullable|string',

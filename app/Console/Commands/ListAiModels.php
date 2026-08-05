@@ -20,8 +20,9 @@ class ListAiModels extends Command
 {
     protected $signature = 'wacrm:ai-models
         {--account= : UUID de la cuenta}
-        {--provider= : Probar otro proveedor sin guardarlo (groq, openai, ollama)}
-        {--key= : API key a usar con --provider}';
+        {--provider= : Probar otro proveedor sin guardarlo (groq, gemini, openrouter, openai, ollama)}
+        {--key= : API key a usar con --provider}
+        {--filter= : Mostrar solo los que contengan este texto (ej: free)}';
 
     protected $description = 'Lista los modelos disponibles del proveedor de IA';
 
@@ -64,10 +65,37 @@ class ListAiModels extends Command
             return self::FAILURE;
         }
 
+        $total = count($modelos);
+
+        // OpenRouter devuelve cientos: sin filtro la lista es ilegible y no
+        // sirve para lo que existe este comando, que es elegir uno.
+        if ($filtro = $this->option('filter')) {
+            $modelos = array_values(array_filter(
+                $modelos,
+                fn ($m) => str_contains(mb_strtolower($m), mb_strtolower($filtro)),
+            ));
+
+            if (empty($modelos)) {
+                $this->warn("Ninguno de los {$total} modelos contiene «{$filtro}».");
+
+                return self::FAILURE;
+            }
+        }
+
         $this->newLine();
         foreach ($modelos as $modelo) {
             $actual = $modelo === $config->model ? '  <fg=green>(en uso)</>' : '';
             $this->line('  · '.$modelo.$actual);
+        }
+
+        if (count($modelos) < $total) {
+            $this->newLine();
+            $this->line('  ('.count($modelos)." de {$total}; sin --filter se listan todos)");
+        }
+
+        if ($config->provider === 'openrouter' && ! $filtro) {
+            $this->newLine();
+            $this->line('  Para ver solo los gratuitos: --filter=free');
         }
 
         $this->newLine();

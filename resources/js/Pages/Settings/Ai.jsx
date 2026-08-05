@@ -9,6 +9,7 @@ const DEFAULT_MODELS = {
     // El nombre exacto se elige con: php artisan wacrm:ai-models
     groq: 'llama-3.3-70b-versatile',
     gemini: 'gemini-2.0-flash',
+    openrouter: 'nvidia/nemotron-nano-9b-v2:free',
 };
 
 const PROVIDER_META = {
@@ -17,6 +18,7 @@ const PROVIDER_META = {
     ollama: { name: 'Ollama', gradient: 'from-sky-500 to-indigo-600' },
     groq: { name: 'Groq', gradient: 'from-rose-500 to-orange-600' },
     gemini: { name: 'Gemini', gradient: 'from-blue-500 to-cyan-600' },
+    openrouter: { name: 'OpenRouter', gradient: 'from-violet-500 to-fuchsia-600' },
 };
 
 const inputClass = 'w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 focus:bg-white transition-all';
@@ -187,8 +189,9 @@ export default function Ai({ config, documents, catalog = null, syncHours = ['08
                                                     <option value="ollama">Ollama (local)</option>
                                                     <option value="groq">Groq (nube, plan gratuito)</option>
                                                     <option value="gemini">Google Gemini (nube, plan gratuito)</option>
+                                                    <option value="openrouter">OpenRouter (nube, modelos :free)</option>
                                                 </select>
-                                                {['groq', 'gemini'].includes(form.data.provider) && (
+                                                {['groq', 'gemini', 'openrouter'].includes(form.data.provider) && (
                                                     <p className="mt-1.5 text-[11px] text-gray-500 leading-relaxed">
                                                         Responde en segundos en vez de minutos, pero los mensajes salen del servidor:
                                                         el nombre y el texto del cliente viajan a {provider?.name}. Los planes gratuitos
