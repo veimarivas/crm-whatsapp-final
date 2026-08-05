@@ -75,4 +75,41 @@ return [
         'language' => env('WHISPER_LANGUAGE', 'es'),
     ],
 
+    /*
+    | Ollama: cuánto se espera y cuánto contexto se le manda.
+    |
+    | Estos números dependen del hardware, no del código: el mismo prompt que
+    | en una máquina con GPU tarda 3 s, en un VPS por CPU puede tardar minutos.
+    | Por eso son variables de entorno y no constantes — se ajustan con lo que
+    | mida `wacrm:ai-benchmark`, sin desplegar nada.
+    */
+    'ollama' => [
+        // Antes 120 s fijos. La primera consulta con el modelo frío se pasaba
+        // de ahí y la conversación se quedaba sin respuesta.
+        'timeout' => (int) env('OLLAMA_TIMEOUT', 180),
+
+        // Cuánto deja Ollama el modelo en memoria después de responder. Por
+        // defecto son 5 minutos: cualquier pausa mayor entre clientes obliga a
+        // recargarlo, y esa recarga es la que se comía el timeout.
+        'keep_alive' => env('OLLAMA_KEEP_ALIVE', '30m'),
+
+        // Techo del contexto. Se pide el escalón que haga falta según el
+        // tamaño real del prompt: un `num_ctx` grande reserva memoria y hace
+        // más lenta cada consulta, aunque el prompt sea corto.
+        'max_ctx' => (int) env('OLLAMA_MAX_CTX', 16384),
+    ],
+
+    /*
+    | Cuánto contexto se arma para la IA.
+    |
+    | Bajarlos hace las respuestas más rápidas y más baratas de calcular; el
+    | precio es que la IA ve menos catálogo y menos historial.
+    */
+    'ai_context' => [
+        'pinned_budget' => (int) env('AI_PINNED_BUDGET', 14000),
+        'chunk_budget' => (int) env('AI_CHUNK_BUDGET', 3000),
+        'history_messages' => (int) env('AI_HISTORY_MESSAGES', 12),
+        'history_chars' => (int) env('AI_HISTORY_CHARS', 800),
+    ],
+
 ];

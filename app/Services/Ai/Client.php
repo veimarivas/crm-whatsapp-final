@@ -61,28 +61,60 @@ class Client
      * Ollama local (o cualquier endpoint compatible con /api/chat).
      * No requiere API key; se conecta al base_url configurado en la cuenta.
      */
+    /**
+     * El escalón de contexto que hace falta, ni más ni menos.
+     *
+     * Estaba fijo en 16384 para todos los casos, y eso se paga en cada
+     * consulta: `num_ctx` reserva la caché de atención y hace más lenta
+     * incluso una pregunta de cinco palabras. La mayoría de los prompts entran
+     * holgados en 4096.
+     *
+     * Quedarse corto es peor que pasarse: Ollama trunca en silencio por el
+     * principio, que es donde están las reglas y el catálogo. Por eso se
+     * estima con margen (3 caracteres por token, conservador para el español)
+     * y se redondea hacia arriba.
+     */
+    private function contextSize(array $chat, int $maxTokens): int
+    {
+        $caracteres = array_sum(array_map(fn ($m) => mb_strlen($m['content'] ?? ''), $chat));
+        $necesario = (int) ($caracteres / 3) + $maxTokens + 256; // margen
+
+        $techo = (int) config('services.ollama.max_ctx', 16384);
+
+        foreach ([4096, 8192, 16384, 32768] as $escalon) {
+            if ($necesario <= $escalon) {
+                return min($escalon, $techo);
+            }
+        }
+
+        return $techo;
+    }
+
     private function ollama(array $messages, ?string $system, int $maxTokens): string
     {
         $baseUrl = rtrim($this->config->base_url ?: 'http://127.0.0.1:11434', '/');
 
+        $chat = [
+            ...($system ? [['role' => 'system', 'content' => $system]] : []),
+            ...$messages,
+        ];
+
         $payload = [
             'model' => $this->config->model,
             'stream' => false,
+            // Sin esto Ollama descarga el modelo a los 5 minutos de inactividad
+            // y el siguiente cliente paga la recarga entera — que es
+            // justamente lo que se comía el timeout.
+            'keep_alive' => config('services.ollama.keep_alive', '30m'),
             'options' => [
                 'num_predict' => $maxTokens,
-                // Qwen2.5 soporta hasta 32k. Ollama por defecto usa solo 4096
-                // que se queda corto con nuestro RAG (15 chunks × 3000 chars).
-                // 16k da margen para system prompt + historial + knowledge + respuesta.
-                'num_ctx' => 16384,
+                'num_ctx' => $this->contextSize($chat, $maxTokens),
                 'temperature' => 0.2, // más determinístico: menos alucinación de datos
             ],
-            'messages' => [
-                ...($system ? [['role' => 'system', 'content' => $system]] : []),
-                ...$messages,
-            ],
+            'messages' => $chat,
         ];
 
-        $response = Http::timeout(120)
+        $response = Http::timeout((int) config('services.ollama.timeout', 180))
             ->post($baseUrl.'/api/chat', $payload);
 
         if ($response->failed()) {

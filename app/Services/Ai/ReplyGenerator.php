@@ -18,12 +18,18 @@ class ReplyGenerator
     /**
      * Tope del catálogo fijo dentro del prompt.
      *
-     * El contexto del modelo (`num_ctx` 16384 ≈ 50.000 caracteres) tiene que
-     * alcanzar además para el historial, el detalle recuperado y la respuesta.
-     * Pasarse no da error: Ollama trunca en silencio por el final, que es donde
-     * está el detalle de los últimos programas.
+     * El contexto del modelo tiene que alcanzar además para el historial, el
+     * detalle recuperado y la respuesta. Pasarse no da error: Ollama trunca en
+     * silencio, y lo que se pierde es justo el detalle de los últimos
+     * programas.
+     *
+     * Configurable porque el costo depende del hardware: cada mil caracteres
+     * de más son segundos de espera en un servidor sin GPU.
      */
-    private const PINNED_BUDGET = 14000;
+    private function pinnedBudget(): int
+    {
+        return (int) config('services.ai_context.pinned_budget', 14000);
+    }
 
     /**
      * Tope por fragmento recuperado.
@@ -33,7 +39,10 @@ class ReplyGenerator
      * horarios de los últimos módulos y la IA contestaba con la lista a
      * medias. De ahí venía buena parte de la "información incompleta".
      */
-    private const CHUNK_BUDGET = 3000;
+    private function chunkBudget(): int
+    {
+        return (int) config('services.ai_context.chunk_budget', 3000);
+    }
 
     public function __construct(private readonly Embeddings $embeddings)
     {
@@ -41,17 +50,21 @@ class ReplyGenerator
 
     public function generate(AiConfig $config, Conversation $conversation): string
     {
-        // Historial ampliado a 20 mensajes para que la IA vea el contexto
-        // completo del hilo (temas cambiantes, preguntas anteriores, etc.).
         // Los audios no traen content_text: su contenido vive en `transcript`
         // (lo escribe TranscribeAudioJob). Se incluyen para que la IA pueda
         // responder a un mensaje de voz usando su transcripción.
+        //
+        // 12 × 800 y no 20 × 2000: el historial completo podía sumar 40.000
+        // caracteres —más que todo el catálogo— y en un servidor sin GPU cada
+        // mil tokens de prompt son segundos de espera. Doce mensajes cubren el
+        // hilo de una consulta; lo de más atrás casi nunca cambia la respuesta.
+        // Configurable: en una máquina holgada se puede subir sin desplegar.
         $history = $conversation->messages()
             ->where(function ($q) {
                 $q->whereNotNull('content_text')->orWhereNotNull('transcript');
             })
             ->orderByDesc('created_at')
-            ->limit(20)
+            ->limit((int) config('services.ai_context.history_messages', 12))
             ->get()
             ->reverse()
             ->values();
@@ -64,7 +77,7 @@ class ReplyGenerator
         $messages = $history
             ->map(fn (Message $m) => [
                 'role' => $m->sender_type === Message::SENDER_CUSTOMER ? 'user' : 'assistant',
-                'content' => mb_substr($m->transcript ?? $m->content_text, 0, 2000),
+                'content' => mb_substr($m->transcript ?? $m->content_text, 0, (int) config('services.ai_context.history_chars', 800)),
             ])
             ->all();
 
@@ -162,7 +175,7 @@ class ReplyGenerator
             ->where('is_pinned', true)
             ->orderBy('created_at')
             ->pluck('content')
-            ->map(fn (string $c) => mb_substr($c, 0, self::PINNED_BUDGET))
+            ->map(fn (string $c) => mb_substr($c, 0, $this->pinnedBudget()))
             ->join("\n\n");
     }
 
@@ -271,7 +284,7 @@ class ReplyGenerator
         }
 
         return $chunks
-            ->map(fn ($c) => '- '.mb_substr($c, 0, self::CHUNK_BUDGET))
+            ->map(fn ($c) => '- '.mb_substr($c, 0, $this->chunkBudget()))
             ->join("\n");
     }
 
@@ -300,7 +313,7 @@ class ReplyGenerator
             ->sortByDesc('score')
             ->take(15)
             ->filter(fn ($item) => $item['score'] > 0.2)
-            ->map(fn ($item) => '- '.mb_substr($item['content'], 0, self::CHUNK_BUDGET))
+            ->map(fn ($item) => '- '.mb_substr($item['content'], 0, $this->chunkBudget()))
             ->join("\n");
     }
 }
