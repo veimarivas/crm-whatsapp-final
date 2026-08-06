@@ -1003,6 +1003,7 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
                                                 <span className={`truncate ${conv.unread_count > 0 ? 'font-bold text-gray-900' : 'font-semibold text-gray-700'}`}>{name}</span>
                                                 <span className="shrink-0 text-[11px] text-gray-400 font-medium">{timeAgo(conv.last_message_at)}</span>
                                             </div>
+                                            <p className="text-[11px] text-gray-400 font-mono truncate">{conv.contact?.phone}</p>
                                             <div className="mt-0.5 flex items-center justify-between gap-2">
                                                 {typing ? (
                                                     <span className="truncate text-sm text-emerald-600 font-medium flex items-center gap-1.5">
