@@ -1,5 +1,3 @@
-import { Link } from '@inertiajs/react';
-
 export default function GuestLayout({ children }) {
     return (
         <div className="relative min-h-screen bg-gradient-to-br from-[#042048] via-[#1c486c] to-[#045474] overflow-hidden">
@@ -24,16 +22,6 @@ export default function GuestLayout({ children }) {
             </svg>
 
             <div className="relative flex flex-col min-h-screen">
-                <div className="flex justify-center pt-8 sm:pt-12">
-                    <Link href="/">
-                        <img
-                            src="/conecta.png"
-                            alt="Logo"
-                            className="h-14 w-auto"
-                        />
-                    </Link>
-                </div>
-
                 <div className="flex-1 flex items-center justify-center px-4 py-8 sm:py-12">
                     {children}
                 </div>

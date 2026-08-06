@@ -28,7 +28,7 @@ export default function Login({ status, canResetPassword }) {
                             <img
                                 src="/conecta.png"
                                 alt="Conecta"
-                                className="h-24 w-auto mx-auto mb-4"
+                                className="h-28 w-auto mx-auto mb-4"
                             />
                             <h4 className="text-2xl font-bold text-[#042048]">
                                 ¡Bienvenido al CRM WhatsApp!
