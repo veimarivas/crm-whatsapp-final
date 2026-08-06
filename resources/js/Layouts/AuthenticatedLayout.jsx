@@ -181,7 +181,7 @@ export default function AuthenticatedLayout({ header, children }) {
                     }`}
                 >
                     <div className="flex flex-col h-full">
-                        <div className={`flex items-center h-16 px-4 border-b border-white/10 ${sidebarCollapsed ? 'justify-center' : ''}`}>
+                        <div className="flex items-center justify-center h-16 px-4 border-b border-white/10">
                             <Link href={route('dashboard')} className="flex items-center gap-2.5 min-w-0">
                                 <img
                                     src="/conecta.png"
