@@ -89,6 +89,7 @@ function DealCard({ deal, currency, selected, onToggleSelect, anySelected, onDra
                     </div>
                     <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold text-gray-800 truncate">{contactName}</p>
+                        {deal.contact?.phone && <p className="text-[10px] text-gray-400 font-mono truncate">{deal.contact.phone}</p>}
                     </div>
                     {STATUS_META[deal.status] && (
                         <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${STATUS_META[deal.status].style}`}>
@@ -167,6 +168,7 @@ function DealRow({ deal, currency, selected, onToggleSelect, anySelected }) {
                             </span>
                         )}
                     </div>
+                    <p className="text-[11px] text-gray-400 font-mono truncate">{deal.contact?.phone}</p>
                     <p className="text-xs text-gray-600 truncate">{deal.title}</p>
                 </div>
                 {Number(deal.value) > 0 && (
