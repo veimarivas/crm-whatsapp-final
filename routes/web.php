@@ -32,6 +32,10 @@ Route::get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'ind
 Route::get('/supervision', [\App\Http\Controllers\SupervisionController::class, 'index'])
     ->middleware(['auth', 'verified'])->name('supervision.index');
 
+// Ficha de un agente (drill-down individual).
+Route::get('/supervision/agents/{user}', [\App\Http\Controllers\SupervisionController::class, 'show'])
+    ->middleware(['auth', 'verified'])->name('supervision.agent');
+
 // Aceptación pública de invitaciones (el link se comparte fuera de la app).
 Route::get('/invite/{token}', [\App\Http\Controllers\TeamController::class, 'acceptForm'])->name('invitations.accept');
 Route::post('/invite/{token}', [\App\Http\Controllers\TeamController::class, 'redeem'])->name('invitations.redeem');

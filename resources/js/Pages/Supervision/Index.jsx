@@ -140,7 +140,13 @@ function AgentRow({ agent, slaMinutes, currency, expanded, onToggle }) {
                     <button onClick={onToggle} className="flex items-center gap-2 text-left group">
                         <svg className={`w-4 h-4 text-gray-400 transition-transform ${expanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
                         <span>
-                            <span className="font-semibold text-gray-900 group-hover:text-emerald-700">{agent.name}</span>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); router.get(route('supervision.agent', agent.id)); }}
+                                className="text-left font-semibold text-gray-900 group-hover:text-emerald-700 hover:text-emerald-600"
+                                title="Ver ficha del agente"
+                            >
+                                {agent.name}
+                            </button>
                             {agent.role && <span className="block text-[11px] text-gray-400">{ROLE_LABEL[agent.role] ?? agent.role}</span>}
                         </span>
                     </button>

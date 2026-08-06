@@ -51,4 +51,39 @@ class SupervisionController extends Controller
             'currency' => $user->account->default_currency,
         ]);
     }
+
+    /**
+     * Ficha de un agente: KPIs, histograma de tiempos, embudo de sus negocios
+     * y los pendientes operativos de su bandeja. El drill-down individual del
+     * que la nota de alcance decía que solo vivía en el Komo.
+     */
+    public function show(Request $request, User $user): Response
+    {
+        $viewer = $request->user();
+
+        abort_unless($viewer->hasRoleAtLeast(User::ROLE_ADMIN), 403,
+            'Solo un administrador puede ver la ficha de un agente.');
+
+        abort_unless($user->account_id === $viewer->account_id, 403,
+            'El agente no pertenece a tu cuenta.');
+
+        $days = (int) $request->query('days', 30);
+
+        if (! in_array($days, self::RANGES, true)) {
+            $days = 30;
+        }
+
+        $data = (new ResponseMetrics(
+            $viewer->account_id,
+            now()->subDays($days)->startOfDay(),
+        ))->forAgent($user->id);
+
+        return Inertia::render('Supervision/Agent', [
+            ...$data,
+            'days' => $days,
+            'ranges' => self::RANGES,
+            'currency' => $viewer->account->default_currency,
+            'sla_minutes' => ResponseMetrics::SLA_MINUTES,
+        ]);
+    }
 }

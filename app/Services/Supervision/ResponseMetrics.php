@@ -81,6 +81,125 @@ class ResponseMetrics
     }
 
     /**
+     * Drill-down de UN agente (la «ficha» que la nota de alcance dejaba fuera):
+     * KPIs, histograma de tiempos, embudo de sus negocios y los pendientes
+     * operativos (esperando respuesta / ventana cerrada) de sus contactos.
+     *
+     * Reusa los mismos recorridos que `build()` para que un número signifique
+     * lo mismo a nivel equipo que a nivel agente.
+     *
+     * @return array{agent: array<string, mixed>, kpis: array<string, mixed>, histogram: array<int, array<string, mixed>>, daily: array<int, array<string, mixed>>, conversations: array<int, array<string, mixed>>}
+     */
+    public function forAgent(string $userId): array
+    {
+        $agent = User::where('account_id', $this->accountId)->findOrFail($userId);
+
+        $conversations = Conversation::forAccount($this->accountId)
+            ->where('assigned_agent_id', $agent->id)
+            ->with(['contact:id,name,phone', 'assignedAgent:id,name,account_role'])
+            ->get(['id', 'contact_id', 'assigned_agent_id', 'status', 'created_at']);
+
+        $perConversation = $this->measure($conversations->pluck('id')->all());
+
+        $this->windows = app(ServiceWindow::class)->forMany(
+            $conversations->pluck('id')->all()
+        );
+
+        $rows = $conversations
+            ->filter(fn (Conversation $c) => isset($perConversation[$c->id]))
+            ->map(fn (Conversation $c) => $this->row($c, $perConversation[$c->id]))
+            ->sortByDesc(fn ($row) => $row['awaiting_minutes'] ?? -1)
+            ->values();
+
+        // Los KPIs salen del mismo agregador que el listado del equipo: tomamos
+        // el bucket de este agente (los demás quedan vacíos con estas filas).
+        $kpis = collect($this->aggregateByAgent($rows, $conversations))
+            ->firstWhere('id', $agent->id);
+
+        return [
+            'agent' => [
+                'id' => $agent->id,
+                'name' => $agent->name,
+                'role' => $agent->account_role,
+                'email' => $agent->email,
+            ],
+            'kpis' => $kpis ?? [
+                'name' => $agent->name,
+                'role' => $agent->account_role,
+                'assigned_contacts' => 0,
+                'assigned_conversations' => 0,
+                'open_conversations' => 0,
+                'pending_conversations' => 0,
+                'closed_conversations' => 0,
+                'conversations' => 0,
+                'answered' => 0,
+                'never_answered' => 0,
+                'waiting_now' => 0,
+                'breached_sla' => 0,
+                'window_closing' => 0,
+                'window_closed' => 0,
+                'avg_first_response_seconds' => null,
+                'avg_response_seconds' => null,
+                'slowest_response_seconds' => null,
+                'ia_first' => 0,
+                'assigned_first' => 0,
+                'other_agent_first' => 0,
+                'unknown_first' => 0,
+                'messages_sent' => 0,
+                'messages_received' => 0,
+                'last_activity_at' => null,
+                'deals_open' => 0,
+                'deals_value' => 0.0,
+                'by_stage' => [],
+            ],
+            'histogram' => $this->histogram($rows),
+            'daily' => $this->dailySeries(),
+            'conversations' => $rows->all(),
+        ];
+    }
+
+    /**
+     * Distribución de los tiempos de primera respuesta en baldes. Con la tercia
+     * de valores que importa al leer un agente: ¿responde al instante, en
+     * minutos, o deja pasar la media hora del SLA?
+     *
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return array<int, array{label: string, count: int}>
+     */
+    private function histogram(Collection $rows): array
+    {
+        $buckets = [
+            ['label' => 'Menos de 1 m', 'min' => null, 'max' => 60],
+            ['label' => '1 a 5 m', 'min' => 60, 'max' => 300],
+            ['label' => '5 a 15 m', 'min' => 300, 'max' => 900],
+            ['label' => '15 a 30 m', 'min' => 900, 'max' => 1800],
+            ['label' => '30 m a 1 h', 'min' => 1800, 'max' => 3600],
+            ['label' => 'Más de 1 h', 'min' => 3600, 'max' => null],
+        ];
+
+        $counts = array_fill(0, count($buckets), 0);
+
+        foreach ($rows as $row) {
+            $seconds = $row['first_response_seconds'];
+            if ($seconds === null) {
+                continue;
+            }
+            foreach ($buckets as $i => $bucket) {
+                if (($bucket['min'] === null || $seconds >= $bucket['min'])
+                    && ($bucket['max'] === null || $seconds < $bucket['max'])) {
+                    $counts[$i]++;
+                    break;
+                }
+            }
+        }
+
+        return collect($buckets)
+            ->map(fn (array $b, int $i) => ['label' => $b['label'], 'count' => $counts[$i]])
+            ->values()
+            ->all();
+    }
+
+    /**
      * Recorre los mensajes de cada conversación en orden y saca sus tiempos.
      *
      * @param  array<int, string>  $conversationIds
