@@ -27,7 +27,7 @@ export default function GuestLayout({ children }) {
                 <div className="flex justify-center pt-8 sm:pt-12">
                     <Link href="/">
                         <img
-                            src="/logo_esam.png"
+                            src="/conecta.png"
                             alt="Logo"
                             className="h-14 w-auto"
                         />

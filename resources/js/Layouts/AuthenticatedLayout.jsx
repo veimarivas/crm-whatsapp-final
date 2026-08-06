@@ -184,7 +184,7 @@ export default function AuthenticatedLayout({ header, children }) {
                         <div className={`flex items-center h-16 px-4 border-b border-white/10 ${sidebarCollapsed ? 'justify-center' : ''}`}>
                             <Link href={route('dashboard')} className="flex items-center gap-2.5 min-w-0">
                                 <img
-                                    src="/esam_pequenio.png"
+                                    src="/conecta.png"
                                     alt="Logo"
                                     className="h-10 w-auto shrink-0"
                                 />
