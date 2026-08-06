@@ -186,7 +186,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                 <img
                                     src="/conecta.png"
                                     alt="Logo"
-                                    className="h-10 w-auto shrink-0"
+                                    className="h-12 w-auto shrink-0"
                                 />
                                 {!sidebarCollapsed && (
                                     <span className="text-white font-bold text-sm tracking-tight truncate">CRM Whatsapp</span>

@@ -25,11 +25,11 @@ export default function Login({ status, canResetPassword }) {
                 <div className="bg-white rounded-2xl shadow-2xl shadow-black/25 overflow-hidden">
                     <div className="p-8 sm:p-10">
                         <div className="text-center mb-8">
-                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[#e6dd5e]/10 mb-4">
-                                <svg className="w-8 h-8 text-[#e6dd5e]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-                                </svg>
-                            </div>
+                            <img
+                                src="/conecta.png"
+                                alt="Conecta"
+                                className="h-24 w-auto mx-auto mb-4"
+                            />
                             <h4 className="text-2xl font-bold text-[#042048]">
                                 ¡Bienvenido al CRM WhatsApp!
                             </h4>
