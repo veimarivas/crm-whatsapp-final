@@ -6,6 +6,14 @@ Port completo de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, e
 
 Suite de tests: **82 tests / 418 aserciones en verde** (`php artisan test`).
 
+Ronda 17 — Rebranding ESAM CONECTA y teléfonos visibles (2026-08-06):
+- **Logo `conecta.png`** (`public/conecta.png`, trackeado en git): reemplaza a `logo_esam.png`/`esam_pequenio.png` en el Login (`GuestLayout.jsx`) y en el sidebar (`AuthenticatedLayout.jsx`).
+- **Login**: la tarjeta ahora muestra el logo `conecta.png` a `h-28` ANTES del título, título nuevo **"Bienvenido a ESAM CONECTA"** (antes "¡Bienvenido al CRM WhatsApp!"), y se quitó el subtexto "Inicia sesión para continuar". Se eliminó el logo del banner fuera del formulario en `GuestLayout` (y su `import { Link }` quedó fuera de uso y se limpió).
+- **Sidebar**: logo `conecta.png` a `h-12`, **centrado** (el header del sidebar usa `justify-center` fijo en vez del condicional por `sidebarCollapsed`), y el texto al lado ahora dice **"ESAM CONECTA"** (antes "CRM Whatsapp").
+- **Inbox `/inbox` — número debajo del nombre** en la lista de conversaciones (`Inbox/Index.jsx`): nueva línea `<p className="text-[11px] text-gray-400 font-mono truncate">{conv.contact?.phone}</p>` entre el nombre y el último mensaje. `conv.contact.phone` ya venía con el eager load (`contact:id,name,phone,avatar_url`).
+- **Pipelines `/pipelines` — número en cada deal** (`Pipelines/Index.jsx`): se agregó el teléfono debajo del nombre/contacto en la tarjeta (`DealCard`) y en la vista de fila (`DealRow`): `<p className="text-[10px] text-gray-400 font-mono truncate">{deal.contact?.phone}</p>`.
+- Ninguna migración, solo JS/CSS. El build de producción va en el servidor (`/public/build` está en `.gitignore`).
+
 Ronda 16 — Feedback "IA pensando" también en Komo (2026-07-24/25):
 - **Nuevo evento `ai.pending_changed`** (`Services/Webhooks/Dispatcher::EVENTS`): dispatch desde `AiAutoReplyJob@broadcastPending()` cada vez que se enciende/apaga `ai_pending`. Payload minimal: `{conversation_id, pending: bool}`. Consumido por Komo para pintar la misma burbuja violeta "Pensando respuesta…" en el chat del lead. Requiere activar el evento en el webhook saliente del wacrm hacia Komo (chip nuevo en Ajustes → Equipo → Webhooks, o vía tinker actualizando el array `events` del `WebhookEndpoint`).
 - Best-effort en el dispatch: si el webhook falla, el bot igual sigue (Log::warning y continúa).
