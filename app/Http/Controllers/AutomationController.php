@@ -6,6 +6,7 @@ use App\Models\Automation;
 use App\Models\AutomationStep;
 use App\Models\Contact;
 use App\Models\Tag;
+use App\Services\Academico\Plantillas;
 use App\Services\Automations\Engine;
 use App\Services\Automations\Recipes;
 use App\Services\Automations\Simulator;
@@ -43,6 +44,7 @@ class AutomationController extends Controller
                     ->all(),
             ]),
             'recipes' => Recipes::gallery(),
+            'oferta' => app(Plantillas::class)->resumen(),
         ]);
     }
 

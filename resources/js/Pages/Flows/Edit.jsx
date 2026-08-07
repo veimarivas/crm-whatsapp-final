@@ -209,7 +209,7 @@ function TargetPicker({ value, onChange, onCreate, nodeKeys, label, tone }) {
     );
 }
 
-function OptionsEditor({ options, onChange, label, max, hint }) {
+function OptionsEditor({ options, onChange, label, max, hint, withDescription = false }) {
     const update = (i, patch) => onChange(options.map((o, idx) => (idx === i ? { ...o, ...patch } : o)));
 
     return (
@@ -236,6 +236,14 @@ function OptionsEditor({ options, onChange, label, max, hint }) {
                             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                         </svg>
                     </button>
+                    {withDescription && (
+                        <input
+                            placeholder="Subtítulo (opcional) — se ve debajo del título en WhatsApp"
+                            value={opt.description ?? ''}
+                            onChange={(e) => update(i, { description: e.target.value })}
+                            className={`w-full ml-6 ${smallInput} text-gray-500`}
+                        />
+                    )}
                 </div>
             ))}
             {options.length < max && (
@@ -333,7 +341,7 @@ function NodeCard({ node, index, onChange, onRemove, onCreateNext, nodeKeys, tag
                 {node.node_type === 'send_list' && (
                     <>
                         <input placeholder="Texto del botón que abre la lista (ej. Ver opciones)" value={config.button_label ?? ''} onChange={(e) => setConfig({ button_label: e.target.value })} className={`w-full ${smallInput}`} />
-                        <OptionsEditor options={config.rows ?? []} onChange={(rows) => setConfig({ rows })} max={10} label="Opciones de la lista" hint="máx. 10" />
+                        <OptionsEditor options={config.rows ?? []} onChange={(rows) => setConfig({ rows })} max={10} label="Opciones de la lista" hint="máx. 10 · título 24 car." withDescription />
                     </>
                 )}
 

@@ -2,6 +2,8 @@
 
 namespace App\Services\Automations;
 
+use App\Services\Academico\Plantillas;
+
 /**
  * Recetas: automatizaciones ya armadas que el usuario elige de una
  * galería y ajusta, en vez de partir de un lienzo vacío.
@@ -144,10 +146,20 @@ class Recipes
         ];
     }
 
+    /**
+     * Las genéricas más las generadas con la oferta académica real de
+     * `esam_datos` (la misma fuente que la base de conocimiento de la IA).
+     * Si esa BD no responde, las dinámicas simplemente no aparecen.
+     */
+    public static function todas(): array
+    {
+        return [...self::all(), ...app(Plantillas::class)->automatizaciones()];
+    }
+
     /** Devuelve la receta (o null) lista para precargar el formulario. */
     public static function find(string $slug): ?array
     {
-        foreach (self::all() as $recipe) {
+        foreach (self::todas() as $recipe) {
             if ($recipe['slug'] === $slug) {
                 return $recipe;
             }
@@ -166,8 +178,10 @@ class Recipes
             'why' => $r['why'],
             'icon' => $r['icon'],
             'needs_tag' => $r['needs_tag'] ?? false,
+            // 'oferta' = generada desde la BD académica; la UI las agrupa aparte.
+            'source' => $r['source'] ?? 'base',
             'trigger_type' => $r['automation']['trigger_type'],
             'steps_count' => count($r['automation']['steps']),
-        ], self::all());
+        ], self::todas());
     }
 }

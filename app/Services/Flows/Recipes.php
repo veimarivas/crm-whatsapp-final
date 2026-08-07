@@ -2,6 +2,8 @@
 
 namespace App\Services\Flows;
 
+use App\Services\Academico\Plantillas;
+
 /**
  * Chatbots ya armados que se eligen al crear un flow, en vez de
  * empezar siempre con el mismo menú.
@@ -148,9 +150,19 @@ class Recipes
         ];
     }
 
+    /**
+     * Las genéricas más las generadas con la oferta académica real de
+     * `esam_datos` (la misma fuente que la base de conocimiento de la IA).
+     * Si esa BD no responde, las dinámicas simplemente no aparecen.
+     */
+    public static function todas(): array
+    {
+        return [...self::all(), ...app(Plantillas::class)->flows()];
+    }
+
     public static function find(string $slug): ?array
     {
-        foreach (self::all() as $recipe) {
+        foreach (self::todas() as $recipe) {
             if ($recipe['slug'] === $slug) {
                 return $recipe;
             }
@@ -169,7 +181,9 @@ class Recipes
             'why' => $r['why'],
             'icon' => $r['icon'],
             'needs_tag' => $r['needs_tag'] ?? false,
+            // 'oferta' = generada desde la BD académica; la UI las agrupa aparte.
+            'source' => $r['source'] ?? 'base',
             'nodes_count' => count($r['nodes']),
-        ], self::all());
+        ], self::todas());
     }
 }

@@ -24,6 +24,7 @@ const RECIPE_ICONS = {
     tag: 'M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z',
     agent: 'M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z',
     branch: 'M6 3v12m0 0a3 3 0 103 3M6 15a3 3 0 113-3m0 0h6a3 3 0 003-3V3',
+    academic: 'M4.26 10.147a60.438 60.438 0 00-.491 6.347A48.62 48.62 0 0112 20.904a48.62 48.62 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.636 50.636 0 00-2.658-.813A59.906 59.906 0 0112 3.493a59.903 59.903 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5',
 };
 
 function humanMinutes(minutes) {
@@ -204,9 +205,12 @@ function AutomationCard({ automation }) {
     );
 }
 
-export default function Index({ automations, recipes }) {
+export default function Index({ automations, recipes, oferta }) {
     const { flash, errors } = usePage().props;
     const [showRecipes, setShowRecipes] = useState(automations.length === 0);
+
+    const genericas = recipes.filter((r) => r.source !== 'oferta');
+    const deOferta = recipes.filter((r) => r.source === 'oferta');
 
     const activeCount = automations.filter((a) => a.is_active).length;
     const totalRuns = automations.reduce((sum, a) => sum + a.execution_count, 0);
@@ -258,15 +262,49 @@ export default function Index({ automations, recipes }) {
                 )}
 
                 {showRecipes && (
-                    <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-5 sm:p-6">
-                        <div className="mb-4">
-                            <h3 className="text-base font-bold text-gray-900">Empieza con una plantilla</h3>
-                            <p className="text-xs text-gray-500 mt-0.5">
-                                Se abre el editor con todo armado. Cambias los textos, la pruebas y recién ahí la activas — nada se envía hasta que la actives.
-                            </p>
-                        </div>
-                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                            {recipes.map((r) => <RecipeCard key={r.slug} recipe={r} />)}
+                    <div className="space-y-5">
+                        {/* Generadas con la oferta académica real: van primero porque
+                            son las que llegan con los datos ya puestos. */}
+                        {deOferta.length > 0 && (
+                            <div className="rounded-2xl border border-sky-200 bg-sky-50/40 p-5 sm:p-6">
+                                <div className="mb-4">
+                                    <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                                        Con tu oferta académica
+                                        <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px] font-bold ring-1 ring-sky-200">
+                                            {oferta?.programas} programas · {oferta?.areas} áreas
+                                        </span>
+                                    </h3>
+                                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                                        Generadas con los programas, precios, fechas, módulos y docentes que hay ahora mismo en la base ESAM
+                                        — la misma que alimenta la base de conocimiento de la IA.
+                                        <strong className="text-gray-700"> Al aplicarlas, los textos quedan fijos:</strong> si la oferta cambia,
+                                        vuelve a aplicar la plantilla o edita el mensaje a mano.
+                                    </p>
+                                </div>
+                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                    {deOferta.map((r) => <RecipeCard key={r.slug} recipe={r} />)}
+                                </div>
+                            </div>
+                        )}
+
+                        {oferta && !oferta.disponible && (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                                <strong>No se pudo leer la oferta académica.</strong> No hay plantillas con tus programas
+                                — o la base ESAM no responde, o no hay ningún programa con inscripciones abiertas.
+                                Las plantillas genéricas de abajo funcionan igual.
+                            </div>
+                        )}
+
+                        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-5 sm:p-6">
+                            <div className="mb-4">
+                                <h3 className="text-base font-bold text-gray-900">Plantillas genéricas</h3>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                    Se abre el editor con todo armado. Cambias los textos, la pruebas y recién ahí la activas — nada se envía hasta que la actives.
+                                </p>
+                            </div>
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                {genericas.map((r) => <RecipeCard key={r.slug} recipe={r} />)}
+                            </div>
                         </div>
                     </div>
                 )}

@@ -6,6 +6,7 @@ use App\Models\Contact;
 use App\Models\Flow;
 use App\Models\FlowNode;
 use App\Models\Tag;
+use App\Services\Academico\Plantillas;
 use App\Services\Flows\Recipes;
 use App\Services\Flows\Runner;
 use App\Services\Flows\Simulator;
@@ -38,6 +39,7 @@ class FlowController extends Controller
                 'entry_missing' => ! $flow->nodes->contains('node_key', $flow->entry_node_id),
             ]),
             'recipes' => Recipes::gallery(),
+            'oferta' => app(Plantillas::class)->resumen(),
         ]);
     }
 
@@ -45,7 +47,7 @@ class FlowController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:120',
-            'recipe' => ['nullable', 'string', Rule::in(array_column(Recipes::all(), 'slug'))],
+            'recipe' => ['nullable', 'string', Rule::in(array_column(Recipes::todas(), 'slug'))],
         ]);
 
         $recipe = Recipes::find($validated['recipe'] ?? Recipes::DEFAULT) ?? Recipes::find(Recipes::DEFAULT);

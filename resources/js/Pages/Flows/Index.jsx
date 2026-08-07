@@ -16,6 +16,47 @@ const RECIPE_ICONS = {
     faq: 'M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z',
 };
 
+/** Agrupa las plantillas: primero las generadas con la oferta real. */
+function RecipeGroup({ label, hint, recipes, selected, onPick, tone }) {
+    if (recipes.length === 0) return null;
+
+    return (
+        <div>
+            <div className="flex items-baseline gap-2 mb-2">
+                <p className={`text-[11px] font-bold uppercase tracking-wider ${tone}`}>{label}</p>
+                {hint && <p className="text-[11px] text-gray-400">{hint}</p>}
+            </div>
+            <div className="grid gap-2.5 sm:grid-cols-2">
+                {recipes.map((r) => (
+                    <button
+                        key={r.slug}
+                        type="button"
+                        onClick={() => onPick(r)}
+                        className={`text-left rounded-xl border p-3.5 transition-all ${
+                            selected === r.slug ? 'border-emerald-500 bg-emerald-50/60 ring-2 ring-emerald-500/20' : 'border-gray-200 bg-white hover:border-gray-300'
+                        }`}
+                    >
+                        <div className="flex items-start gap-2.5">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                                selected === r.slug ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white' : 'bg-gray-100 text-gray-500'
+                            }`}>
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d={RECIPE_ICONS[r.icon] ?? RECIPE_ICONS.menu} />
+                                </svg>
+                            </div>
+                            <div className="min-w-0">
+                                <p className="text-xs font-bold text-gray-900">{r.title}</p>
+                                <p className="text-[11px] text-gray-500 leading-snug mt-0.5">{r.summary}</p>
+                                <p className="text-[10px] text-gray-400 italic mt-1">{r.why}</p>
+                            </div>
+                        </div>
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 function relativeDate(iso) {
     if (!iso) return 'nunca';
     const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
@@ -114,10 +155,13 @@ function FlowCard({ flow }) {
     );
 }
 
-export default function Index({ flows, recipes }) {
+export default function Index({ flows, recipes, oferta }) {
     const { flash, errors } = usePage().props;
     const [showNew, setShowNew] = useState(false);
     const form = useForm({ name: '', recipe: recipes[0]?.slug ?? '' });
+
+    const genericas = recipes.filter((r) => r.source !== 'oferta');
+    const deOferta = recipes.filter((r) => r.source === 'oferta');
 
     const create = (e) => {
         e.preventDefault();
@@ -150,7 +194,13 @@ export default function Index({ flows, recipes }) {
                         </p>
                     </div>
                     <button
-                        onClick={() => { form.setData({ name: recipes[0]?.title ?? '', recipe: recipes[0]?.slug ?? '' }); setShowNew(true); }}
+                        onClick={() => {
+                            // Si hay plantillas con la oferta real, esas van preseleccionadas:
+                            // llegan con los datos puestos y son el mejor punto de partida.
+                            const inicial = deOferta[0] ?? recipes[0];
+                            form.setData({ name: inicial?.title ?? '', recipe: inicial?.slug ?? '' });
+                            setShowNew(true);
+                        }}
                         className="px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl hover:from-emerald-500 hover:to-teal-500 transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-1.5 w-fit"
                     >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -215,34 +265,38 @@ export default function Index({ flows, recipes }) {
                     </div>
 
                     <div className="px-6 py-5 space-y-4 max-h-[60vh] overflow-y-auto">
-                        <div className="grid gap-2.5 sm:grid-cols-2">
-                            {recipes.map((r) => {
-                                const selected = form.data.recipe === r.slug;
-                                return (
-                                    <button
-                                        key={r.slug}
-                                        type="button"
-                                        onClick={() => pick(r)}
-                                        className={`text-left rounded-xl border p-3.5 transition-all ${
-                                            selected ? 'border-emerald-500 bg-emerald-50/60 ring-2 ring-emerald-500/20' : 'border-gray-200 bg-white hover:border-gray-300'
-                                        }`}
-                                    >
-                                        <div className="flex items-start gap-2.5">
-                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${selected ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
-                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d={RECIPE_ICONS[r.icon] ?? RECIPE_ICONS.menu} />
-                                                </svg>
-                                            </div>
-                                            <div className="min-w-0">
-                                                <p className="text-xs font-bold text-gray-900">{r.title}</p>
-                                                <p className="text-[11px] text-gray-500 leading-snug mt-0.5">{r.summary}</p>
-                                                <p className="text-[10px] text-gray-400 italic mt-1">{r.why}</p>
-                                            </div>
-                                        </div>
-                                    </button>
-                                );
-                            })}
-                        </div>
+                        <RecipeGroup
+                            label="Con tu oferta académica"
+                            hint={oferta?.disponible ? `${oferta.programas} programas · ${oferta.areas} áreas` : null}
+                            tone="text-sky-700"
+                            recipes={deOferta}
+                            selected={form.data.recipe}
+                            onPick={pick}
+                        />
+
+                        {deOferta.length > 0 && (
+                            <p className="text-[11px] text-gray-500 leading-relaxed bg-sky-50/60 rounded-xl p-3">
+                                Se arman con los programas, precios, módulos, docentes y horarios que hay ahora en la base ESAM
+                                — la misma que alimenta la base de conocimiento de la IA.
+                                <strong className="text-gray-700"> Los textos quedan fijos al crear el chatbot:</strong> si la
+                                oferta cambia, creá el chatbot de nuevo o editá los mensajes.
+                            </p>
+                        )}
+
+                        {oferta && !oferta.disponible && (
+                            <p className="text-[11px] text-amber-800 bg-amber-50 rounded-xl p-3">
+                                No se pudo leer la oferta académica: o la base ESAM no responde, o no hay programas con
+                                inscripciones abiertas. Las plantillas genéricas funcionan igual.
+                            </p>
+                        )}
+
+                        <RecipeGroup
+                            label="Genéricas"
+                            tone="text-gray-500"
+                            recipes={genericas}
+                            selected={form.data.recipe}
+                            onPick={pick}
+                        />
 
                         <div>
                             <label htmlFor="flow-name" className="block text-sm font-semibold text-gray-700 mb-1.5">Nombre</label>

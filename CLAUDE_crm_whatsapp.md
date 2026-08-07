@@ -30,6 +30,23 @@ Mismo tratamiento a **`/flows`** (chatbots), donde el problema era peor porque u
 - El simulador replica las reglas del Runner (match de botón por id **o** por título exacto, interpolación de variables + contacto, reprompts y `on_exhaust`, tope de saltos). Es duplicación consciente y anotada: el Runner trabaja sobre modelos persistidos y el simulador sobre arrays sueltos. **Si cambia una regla del Runner hay que tocar el simulador** — los tests de `FlowBuilderTest` fijan los casos que importan.
 - Sin migraciones. Tests nuevos en `FlowBuilderTest` (14); suite total **351/351 (1234)**.
 
+Ronda 19 — Plantillas generadas con la oferta académica (2026-08-07):
+
+**`Services\Academico\Plantillas.php`** genera recetas de automatizaciones y de chatbots **con los datos reales de `esam_datos`** — la misma fuente que alimenta la base de conocimiento de la IA (`OfertaAcademica`, ver `/settings/ai`). Reutiliza ese servicio entero: `programasCacheadas()`, `modulos()`, `horarios()`.
+
+Por qué generadas y no escritas a mano: programas, precios, fechas, módulos y docentes cambian cada gestión, y una plantilla con eso escrito a mano nace desactualizada sin que nadie se entere hasta que un cliente recibe un precio viejo.
+
+- **Automatizaciones**: catálogo agrupado por área, inversión (matrícula + colegiatura reales), fechas de inicio y duración, "preguntan por horarios o docentes" (pide precisar el programa, porque listar cientos de sesiones es ilegible), y **una receta por área** (tope 6) que responde solo con los programas de esa área.
+- **Chatbots**: `oferta-areas` (lista de áreas → programas de cada una), `oferta-programas` (lista → ficha con duración/inicio/inversión → captura de correo → asesor) y `oferta-modulos` (lista → plan de estudios con docentes y sesiones confirmadas).
+- **Límites de WhatsApp respetados en la generación**: títulos de fila a 24 caracteres con elipsis, descripción a 72, 10 filas, 3 botones de 20 caracteres. `MetaApi` ya truncaba, pero truncar allá significa que el cliente ve el nombre del programa cortado — se corta acá, con criterio. Hay test que lo fija.
+- **Claves de nodo sin acentos** (`Str::slug($x, '_')`): el validador de `FlowController` exige `^[a-z0-9_]+$` y «Auditoría Médica» reventaba.
+- **Degradación**: si `esam_datos` no responde o no hay programas en inscripciones, `disponible()` es false, **no se ofrece ninguna** plantilla de oferta y la pantalla lo dice. Las genéricas siguen ahí. (En local la BD no existe: ese es justamente el camino que se ve.)
+- **`Recipes::todas()`** en ambos servicios = genéricas + generadas; `find()` y `gallery()` pasan por ahí, y `gallery()` agrega `source` (`base` | `oferta`) para que la UI las agrupe. `Recipes::all()` sigue siendo solo las estáticas.
+- **`Plantillas::flows()` va cacheado** (TTL `services.ai_context.oferta_cache_seconds`, 300 s): la galería de `/flows` lo pide en cada carga y `flowModulos()` consulta módulos + horarios por programa — con 10 programas de 8 módulos son ~80 consultas por pantalla. La clave lleva la huella de la oferta, así un cambio la invalida sola.
+- **Advertencia que va en la propia pantalla**: al aplicar la plantilla los textos quedan **congelados** en la automatización. La IA sí relee el conocimiento en cada mensaje; una automatización no. Si cambia la oferta, hay que reaplicar o editar.
+- El editor de flows ahora deja editar el `description` de las filas de lista (las plantillas lo usan y antes era un dato invisible e ineditable).
+- Sin migraciones. Tests en `PlantillasOfertaTest` (10, con un doble de `OfertaAcademica` — la BD académica no está en el entorno de tests); suite total **361/361 (1474)**.
+
 Ronda 17 — Rebranding ESAM CONECTA y teléfonos visibles (2026-08-06):
 
 - **Logo `conecta.png`** (`public/conecta.png`, trackeado en git): reemplaza a `logo_esam.png`/`esam_pequenio.png` en el Login (`GuestLayout.jsx`) y en el sidebar (`AuthenticatedLayout.jsx`).
