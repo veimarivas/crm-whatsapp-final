@@ -6,6 +6,7 @@ use App\Services\Ai\OfertaAcademica;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -37,6 +38,9 @@ class Plantillas
 
     private ?Collection $programas = null;
 
+    /** Motivo del último fallo al leer la oferta, para mostrarlo en pantalla. */
+    private ?string $fallo = null;
+
     public function __construct(private readonly OfertaAcademica $oferta)
     {
     }
@@ -44,31 +48,60 @@ class Plantillas
     /** ¿Hay oferta que ofrecer? BD accesible Y al menos un programa abierto. */
     public function disponible(): bool
     {
-        return $this->oferta->disponible() && $this->programas()->isNotEmpty();
+        return $this->programas()->isNotEmpty();
     }
 
     /** Para el aviso de la UI: cuántos programas y áreas hay detrás. */
     public function resumen(): array
     {
-        if (! $this->oferta->disponible()) {
-            return ['disponible' => false, 'programas' => 0, 'areas' => 0];
-        }
-
         $programas = $this->programas();
 
         return [
             'disponible' => $programas->isNotEmpty(),
             'programas' => $programas->count(),
-            'areas' => $this->porArea()->count(),
+            'areas' => $programas->isEmpty() ? 0 : $this->porArea()->count(),
+            'error' => $this->fallo,
             'actualizado' => Carbon::now(config('app.timezone', 'America/La_Paz'))->format('d/m/Y H:i'),
         ];
     }
 
     /* ------------------------------------------------------------ datos */
 
+    /**
+     * La oferta, o una colección vacía si no se pudo leer.
+     *
+     * `esam_datos` es una BD externa que este proyecto no controla ni
+     * migra: una columna que cambió de nombre allá no puede tumbar
+     * `/automations` y `/flows` acá. Mismo criterio que
+     * `SyncOfertaAcademica`, que ante un fallo conserva lo anterior en
+     * vez de dejar a la IA muda.
+     *
+     * `OfertaAcademica::disponible()` no alcanza como guarda: hace un
+     * `SELECT 1` que pasa aunque la consulta real reviente.
+     */
     private function programas(): Collection
     {
-        return $this->programas ??= collect($this->oferta->programasCacheadas());
+        if ($this->programas !== null) {
+            return $this->programas;
+        }
+
+        try {
+            // Guarda barata primero: `disponible()` cachea 60 s, así una BD
+            // caída no cuesta una conexión fallida por cada carga.
+            if (! $this->oferta->disponible()) {
+                return $this->programas = collect();
+            }
+
+            return $this->programas = collect($this->oferta->programasCacheadas());
+        } catch (\Throwable $e) {
+            $this->fallo = $e->getMessage();
+
+            Log::warning('No se pudieron generar plantillas con la oferta académica', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->programas = collect();
+        }
     }
 
     /** @return Collection<string, Collection> área => programas */
@@ -233,23 +266,48 @@ class Plantillas
             return [];
         }
 
-        $programas = $this->programas();
-        $porArea = $this->porArea();
+        return $this->aSalvo('automatizaciones', function () {
+            $programas = $this->programas();
+            $porArea = $this->porArea();
 
-        $recetas = [
-            $this->recetaCatalogo($porArea),
-            $this->recetaPrecios($programas),
-            $this->recetaFechas($programas),
-            $this->recetaHorariosDocentes(),
-        ];
+            $recetas = [
+                $this->recetaCatalogo($porArea),
+                $this->recetaPrecios($programas),
+                $this->recetaFechas($programas),
+                $this->recetaHorariosDocentes(),
+            ];
 
-        // Una receta por área: "¿qué tienen en salud?" es de las preguntas
-        // más comunes y merece una respuesta directa, no el catálogo entero.
-        foreach ($porArea->take(self::MAX_AREAS_RECETA) as $area => $delArea) {
-            $recetas[] = $this->recetaArea($area, $delArea);
+            // Una receta por área: "¿qué tienen en salud?" es de las preguntas
+            // más comunes y merece una respuesta directa, no el catálogo entero.
+            foreach ($porArea->take(self::MAX_AREAS_RECETA) as $area => $delArea) {
+                $recetas[] = $this->recetaArea((string) $area, $delArea);
+            }
+
+            return $recetas;
+        });
+    }
+
+    /**
+     * Corre un generador y, si algo revienta, devuelve una lista vacía.
+     *
+     * Las plantillas son una comodidad; las pantallas de automatizaciones
+     * y chatbots tienen que abrir igual. Un dato inesperado de la BD
+     * académica no puede costar un 500 en dos secciones del CRM.
+     */
+    private function aSalvo(string $que, callable $generar): array
+    {
+        try {
+            return $generar();
+        } catch (\Throwable $e) {
+            $this->fallo = $e->getMessage();
+
+            Log::warning("Fallo generando plantillas de {$que} con la oferta académica", [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile().':'.$e->getLine(),
+            ]);
+
+            return [];
         }
-
-        return $recetas;
     }
 
     private function recetaCatalogo(Collection $porArea): array
@@ -428,13 +486,15 @@ class Plantillas
             return [];
         }
 
-        $segundos = (int) config('services.ai_context.oferta_cache_seconds', 300);
+        return $this->aSalvo('chatbots', function () {
+            $segundos = (int) config('services.ai_context.oferta_cache_seconds', 300);
 
-        return Cache::remember($this->claveCache('flows'), $segundos, fn () => array_values(array_filter([
-            $this->flowAreas(),
-            $this->flowProgramas(),
-            $this->flowModulos(),
-        ])));
+            return Cache::remember($this->claveCache('flows'), $segundos, fn () => array_values(array_filter([
+                $this->flowAreas(),
+                $this->flowProgramas(),
+                $this->flowModulos(),
+            ])));
+        });
     }
 
     private function claveCache(string $tipo): string

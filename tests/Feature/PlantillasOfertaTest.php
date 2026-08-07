@@ -93,6 +93,43 @@ class PlantillasOfertaTest extends TestCase
             ->assertInertia(fn ($page) => $page->where('oferta.disponible', false));
     }
 
+    /**
+     * El caso que rompió producción: `disponible()` hace un `SELECT 1` que
+     * pasa, y la consulta real de programas revienta después. Las dos
+     * pantallas tienen que abrir igual.
+     */
+    public function test_si_la_consulta_academica_revienta_las_pantallas_siguen_abriendo(): void
+    {
+        $this->app->instance(OfertaAcademica::class, new OfertaRota);
+
+        $this->actingAs($this->user)->get(route('automations.index'))->assertOk();
+        $this->actingAs($this->user)->get(route('flows.index'))->assertOk();
+
+        $this->assertSame([], app(Plantillas::class)->automatizaciones());
+        $this->assertSame([], app(Plantillas::class)->flows());
+
+        // El motivo llega a la pantalla en vez de quedar solo en el log.
+        $this->actingAs($this->user)
+            ->get(route('automations.index'))
+            ->assertInertia(fn ($page) => $page
+                ->where('oferta.disponible', false)
+                ->where('oferta.error', 'Unknown column p.area_id'));
+    }
+
+    public function test_un_fallo_al_generar_no_tumba_la_galeria(): void
+    {
+        // Programas válidos, pero el detalle de módulos falla al generar los
+        // chatbots: las automatizaciones y la pantalla siguen funcionando.
+        $this->app->instance(OfertaAcademica::class, new OfertaConModulosRotos(
+            collect(self::programasDeMuestra()),
+        ));
+
+        $this->assertNotEmpty(app(Plantillas::class)->automatizaciones());
+        $this->assertSame([], app(Plantillas::class)->flows());
+
+        $this->actingAs($this->user)->get(route('flows.index'))->assertOk();
+    }
+
     public function test_con_bd_academica_pero_sin_programas_abiertos_tampoco(): void
     {
         $this->conOferta(programas: []);
@@ -257,6 +294,47 @@ class PlantillasOfertaTest extends TestCase
 
         $this->assertNotContains('oferta-areas', $slugs);
         $this->assertContains('oferta-programas', $slugs);
+    }
+}
+
+/** La BD responde al ping, pero la consulta de programas revienta. */
+class OfertaRota extends OfertaAcademica
+{
+    public function __construct()
+    {
+    }
+
+    public function disponible(): bool
+    {
+        return true;
+    }
+
+    public function programasCacheadas()
+    {
+        throw new \RuntimeException('Unknown column p.area_id');
+    }
+}
+
+/** Los programas se leen bien, pero el detalle de módulos falla. */
+class OfertaConModulosRotos extends OfertaAcademica
+{
+    public function __construct(private readonly \Illuminate\Support\Collection $lista)
+    {
+    }
+
+    public function disponible(): bool
+    {
+        return true;
+    }
+
+    public function programasCacheadas()
+    {
+        return $this->lista;
+    }
+
+    public function modulos(int|string $programaId)
+    {
+        throw new \RuntimeException('Table esam_datos.modulos does not exist');
     }
 }
 

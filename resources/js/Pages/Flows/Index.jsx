@@ -284,10 +284,17 @@ export default function Index({ flows, recipes, oferta }) {
                         )}
 
                         {oferta && !oferta.disponible && (
-                            <p className="text-[11px] text-amber-800 bg-amber-50 rounded-xl p-3">
-                                No se pudo leer la oferta académica: o la base ESAM no responde, o no hay programas con
-                                inscripciones abiertas. Las plantillas genéricas funcionan igual.
-                            </p>
+                            <div className="text-[11px] text-amber-800 bg-amber-50 rounded-xl p-3">
+                                {oferta.error
+                                    ? 'La base ESAM devolvió un error al consultarla, así que no hay plantillas con tus programas.'
+                                    : 'No se pudo leer la oferta académica: o la base ESAM no responde, o no hay programas con inscripciones abiertas.'}
+                                {' '}Las plantillas genéricas funcionan igual.
+                                {oferta.error && (
+                                    <code className="block mt-2 font-mono bg-amber-100 rounded-lg px-2 py-1 break-words">
+                                        {oferta.error}
+                                    </code>
+                                )}
+                            </div>
                         )}
 
                         <RecipeGroup

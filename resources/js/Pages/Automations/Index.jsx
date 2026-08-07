@@ -289,9 +289,16 @@ export default function Index({ automations, recipes, oferta }) {
 
                         {oferta && !oferta.disponible && (
                             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                                <strong>No se pudo leer la oferta académica.</strong> No hay plantillas con tus programas
-                                — o la base ESAM no responde, o no hay ningún programa con inscripciones abiertas.
-                                Las plantillas genéricas de abajo funcionan igual.
+                                <strong>No hay plantillas con tu oferta académica.</strong>{' '}
+                                {oferta.error
+                                    ? 'La base ESAM devolvió un error al consultarla.'
+                                    : 'O la base ESAM no responde, o no hay ningún programa con inscripciones abiertas.'}
+                                {' '}Las plantillas genéricas de abajo funcionan igual.
+                                {oferta.error && (
+                                    <code className="block mt-2 text-[11px] font-mono bg-amber-100 rounded-lg px-2.5 py-1.5 break-words">
+                                        {oferta.error}
+                                    </code>
+                                )}
                             </div>
                         )}
 

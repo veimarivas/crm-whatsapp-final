@@ -45,7 +45,8 @@ Por qué generadas y no escritas a mano: programas, precios, fechas, módulos y 
 - **`Plantillas::flows()` va cacheado** (TTL `services.ai_context.oferta_cache_seconds`, 300 s): la galería de `/flows` lo pide en cada carga y `flowModulos()` consulta módulos + horarios por programa — con 10 programas de 8 módulos son ~80 consultas por pantalla. La clave lleva la huella de la oferta, así un cambio la invalida sola.
 - **Advertencia que va en la propia pantalla**: al aplicar la plantilla los textos quedan **congelados** en la automatización. La IA sí relee el conocimiento en cada mensaje; una automatización no. Si cambia la oferta, hay que reaplicar o editar.
 - El editor de flows ahora deja editar el `description` de las filas de lista (las plantillas lo usan y antes era un dato invisible e ineditable).
-- Sin migraciones. Tests en `PlantillasOfertaTest` (10, con un doble de `OfertaAcademica` — la BD académica no está en el entorno de tests); suite total **361/361 (1474)**.
+- **500 en producción, arreglado el mismo día**: `/automations` y `/flows` reventaban en el servidor (en local no, porque ahí `esam_datos` ni existe). `OfertaAcademica::disponible()` **no alcanza como guarda**: hace un `SELECT 1` que pasa aunque la consulta real de programas reviente después — y `esam_datos` es una BD externa que este proyecto no controla ni migra. Ahora `Plantillas` atrapa cualquier `Throwable` en la lectura Y en la generación (`aSalvo()`), devuelve lista vacía, loguea, y **manda el mensaje de error a la pantalla** (`oferta.error`) para no tener que entrar por SSH a diagnosticarlo. Regla: una BD externa no puede tumbar dos secciones del CRM.
+- Sin migraciones. Tests en `PlantillasOfertaTest` (12, con dobles de `OfertaAcademica` — la BD académica no está en el entorno de tests), incluidos los dos de regresión del 500; suite total **363/363 (1493)**.
 
 Ronda 17 — Rebranding ESAM CONECTA y teléfonos visibles (2026-08-06):
 
