@@ -162,6 +162,7 @@ Route::middleware('auth')->group(function () {
     // Flows (chatbot)
     Route::get('/flows', [\App\Http\Controllers\FlowController::class, 'index'])->name('flows.index');
     Route::post('/flows', [\App\Http\Controllers\FlowController::class, 'store'])->name('flows.store');
+    Route::post('/flows/simulate', [\App\Http\Controllers\FlowController::class, 'simulate'])->name('flows.simulate');
     Route::get('/flows/{flow}/edit', [\App\Http\Controllers\FlowController::class, 'edit'])->name('flows.edit');
     Route::patch('/flows/{flow}', [\App\Http\Controllers\FlowController::class, 'update'])->name('flows.update');
     Route::post('/flows/{flow}/toggle', [\App\Http\Controllers\FlowController::class, 'toggle'])->name('flows.toggle');

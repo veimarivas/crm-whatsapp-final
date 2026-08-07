@@ -16,8 +16,19 @@ Ronda 18 — Automatizaciones con lienzo de workflow, plantillas y simulador (20
 - **Simulador — `POST /automations/simulate`** (`Services\Automations\Simulator.php`): recorre el árbol **que está en pantalla** (no lo guardado, así se prueba antes de guardar y antes de activar) y devuelve qué pasaría paso a paso. **No envía WhatsApp, no etiqueta, no llama webhooks, no escribe logs.** Interpola el texto con un contacto real elegido del desplegable, marca la rama no tomada como `skipped`, corta en el `wait` marcando lo posterior como `later`, y señala los pasos que fallarían por config incompleta.
 - **`Conditions::evaluate()` extraído del Engine** y `Engine::matchesTrigger()` hecho público/estático: el simulador usa EXACTAMENTE el mismo código que la ejecución real. Si esto se duplicara, la prueba diría una cosa y producción haría otra — que es justo lo que hace inútil a un simulador.
 - **Trampa**: `/automations/simulate` vive en el grupo `web`, donde `shouldRenderJsonWhen` (bootstrap/app.php) solo cubre `api/*` — un `$request->validate()` fallido devuelve **302, no 422**, y axios sigue el redirect y recibe HTML. Por eso el controller valida con `Validator::make` y arma el 422 a mano.
-- Sin migraciones. Tests nuevos en `AutomationBuilderTest` (9); suite total **337/337 (1173)**.
+- Sin migraciones. Tests nuevos en `AutomationBuilderTest` (9).
 - **Dev**: `.claude/launch.json` + `.claude/serve-router.php` (router de `php -S` con la ruta pública fija en vez de `getcwd()`, para levantar este proyecto desde el cwd del Komo).
+
+Mismo tratamiento a **`/flows`** (chatbots), donde el problema era peor porque un flow es un **grafo**, no una lista:
+
+- **4 plantillas de chatbot** (`Services\Flows\Recipes.php`): menú principal, calificar al interesado, capturar datos (demo de variables) y preguntas frecuentes. `FlowController::TEMPLATE_NODES` (la única plantilla hardcodeada que había) se movió acá como `Recipes::DEFAULT`; el modal de creación ahora es un selector de plantillas y `POST /flows` acepta `recipe`.
+- **Los nodos se ordenan por recorrido, no por `created_at`**: `orderGraph()` en el front hace un BFS desde `entry_node_id`, así el editor se lee como la conversación. Lo que el BFS no alcanza se agrupa en **«pasos sueltos»** con aviso — el bug clásico de un flow (un nodo que existe pero al que no llega ningún camino) antes era invisible.
+- **«+ nuevo» en cada conexión**: crea el nodo destino y lo enchufa en un solo gesto. Antes había que crear el nodo, bajar a buscarlo y recién ahí elegirlo en el `<select>` del nodo origen.
+- **Renombrar un nodo reapunta las conexiones que lo señalaban** (`rewireTo()`) — antes cambiarle el nombre a un nodo rompía el flow en silencio y solo se veía al guardar.
+- **Cada nodo dice qué le falta** (`nodeProblems`): sin texto, sin variable, opción sin título, conexión a un nodo inexistente. Y el `id` de botones/filas se deriva del título en vez de pedirlo aparte (era un campo que no significaba nada para el usuario).
+- **Chat de prueba — `POST /flows/simulate`** (`Services\Flows\Simulator.php`): se **conversa** con el bot en un chat de verdad, con burbujas y botones clicables, sobre el grafo **que está en pantalla**. Es **sin estado**: el front manda el array de respuestas del cliente y el backend reproduce la conversación entera desde la entrada, así no se crean `flow_runs` ni hace falta guardar. Muestra las variables capturadas, los reintentos, los ciclos y las conexiones rotas. `set_tag` y `http_fetch` se anotan como simulados: **no etiqueta ni llama a la URL de verdad**.
+- El simulador replica las reglas del Runner (match de botón por id **o** por título exacto, interpolación de variables + contacto, reprompts y `on_exhaust`, tope de saltos). Es duplicación consciente y anotada: el Runner trabaja sobre modelos persistidos y el simulador sobre arrays sueltos. **Si cambia una regla del Runner hay que tocar el simulador** — los tests de `FlowBuilderTest` fijan los casos que importan.
+- Sin migraciones. Tests nuevos en `FlowBuilderTest` (14); suite total **351/351 (1234)**.
 
 Ronda 17 — Rebranding ESAM CONECTA y teléfonos visibles (2026-08-06):
 

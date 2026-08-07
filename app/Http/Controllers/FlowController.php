@@ -2,13 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Contact;
 use App\Models\Flow;
 use App\Models\FlowNode;
 use App\Models\Tag;
+use App\Services\Flows\Recipes;
 use App\Services\Flows\Runner;
+use App\Services\Flows\Simulator;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -16,53 +21,47 @@ use Inertia\Response;
 
 class FlowController extends Controller
 {
-    /** Plantilla sembrada al crear un flow nuevo: menú simple funcional. */
-    private const TEMPLATE_NODES = [
-        ['node_key' => 'menu', 'node_type' => 'send_buttons', 'config' => [
-            'text' => '¡Hola {name}! ¿En qué podemos ayudarte?',
-            'buttons' => [
-                ['id' => 'info', 'title' => 'Información', 'next' => 'info'],
-                ['id' => 'agente', 'title' => 'Hablar con agente', 'next' => 'pasar_agente'],
-            ],
-        ]],
-        ['node_key' => 'info', 'node_type' => 'send_message', 'config' => [
-            'text' => 'Somos tu empresa. Horario: lunes a viernes de 9 a 18.',
-            'next' => 'despedida',
-        ]],
-        ['node_key' => 'pasar_agente', 'node_type' => 'handoff', 'config' => [
-            'message' => 'Perfecto, un agente te atenderá en breve.',
-        ]],
-        ['node_key' => 'despedida', 'node_type' => 'end', 'config' => [
-            'message' => '¡Gracias por escribirnos!',
-        ]],
-    ];
-
     public function index(Request $request): Response
     {
+        $flows = Flow::forAccount($request->user()->account_id)
+            ->with('nodes:id,flow_id,node_key,node_type,config')
+            ->withCount(['nodes', 'runs'])
+            ->orderByDesc('updated_at')
+            ->get();
+
         return Inertia::render('Flows/Index', [
-            'flows' => Flow::forAccount($request->user()->account_id)
-                ->withCount(['nodes', 'runs'])
-                ->orderByDesc('updated_at')
-                ->get(),
+            // `entry_text` es el primer mensaje que vería el cliente: deja
+            // entender de qué va el chatbot sin abrirlo.
+            'flows' => $flows->map(fn (Flow $flow) => [
+                ...$flow->only(['id', 'name', 'status', 'trigger_type', 'trigger_config', 'entry_node_id', 'nodes_count', 'runs_count', 'last_executed_at']),
+                'entry_text' => $this->entryText($flow),
+                'entry_missing' => ! $flow->nodes->contains('node_key', $flow->entry_node_id),
+            ]),
+            'recipes' => Recipes::gallery(),
         ]);
     }
 
     public function store(Request $request): RedirectResponse
     {
-        $validated = $request->validate(['name' => 'required|string|max:120']);
+        $validated = $request->validate([
+            'name' => 'required|string|max:120',
+            'recipe' => ['nullable', 'string', Rule::in(array_column(Recipes::all(), 'slug'))],
+        ]);
 
-        $flow = DB::transaction(function () use ($request, $validated) {
+        $recipe = Recipes::find($validated['recipe'] ?? Recipes::DEFAULT) ?? Recipes::find(Recipes::DEFAULT);
+
+        $flow = DB::transaction(function () use ($request, $validated, $recipe) {
             $flow = Flow::create([
                 'account_id' => $request->user()->account_id,
                 'name' => $validated['name'],
                 'status' => 'draft',
-                'trigger_type' => 'keyword',
-                'trigger_config' => ['keywords' => ['hola']],
-                'entry_node_id' => 'menu',
+                'trigger_type' => $recipe['trigger_type'],
+                'trigger_config' => $recipe['trigger_config'],
+                'entry_node_id' => $recipe['entry_node_id'],
                 'fallback_policy' => Flow::DEFAULT_FALLBACK_POLICY,
             ]);
 
-            foreach (self::TEMPLATE_NODES as $node) {
+            foreach ($recipe['nodes'] as $node) {
                 FlowNode::create(['flow_id' => $flow->id, ...$node]);
             }
 
@@ -70,7 +69,63 @@ class FlowController extends Controller
         });
 
         return redirect()->route('flows.edit', $flow)
-            ->with('success', 'Flow creado con una plantilla de menú. Edítalo y actívalo.');
+            ->with('success', "Flow creado con la plantilla «{$recipe['title']}». Pruébalo en el chat de la derecha y actívalo cuando esté listo.");
+    }
+
+    /**
+     * Conversa con el grafo que está en pantalla sin enviar nada.
+     *
+     * Sin estado: el front manda todas las respuestas del "cliente" y acá
+     * se reproduce la conversación entera. Así se prueba antes de guardar
+     * y sin crear `flow_runs`.
+     */
+    public function simulate(Request $request, Simulator $simulator): JsonResponse
+    {
+        // Igual que en automatizaciones: esta ruta vive en el grupo web,
+        // donde un validate() fallido devuelve 302 y axios recibiría HTML.
+        $validator = Validator::make($request->all(), [
+            'entry_node_id' => 'required|string|max:60',
+            'fallback_policy' => 'nullable|array',
+            'nodes' => 'required|array|min:1|max:50',
+            'nodes.*.node_key' => 'required|string|max:60',
+            'nodes.*.node_type' => ['required', Rule::in(Runner::NODE_TYPES)],
+            'nodes.*.config' => 'nullable|array',
+            'replies' => 'nullable|array|max:40',
+            'replies.*' => 'nullable|string|max:500',
+            'contact_id' => 'nullable|uuid',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['message' => $validator->errors()->first()], 422);
+        }
+
+        $validated = $validator->validated();
+
+        $contact = ! empty($validated['contact_id'])
+            ? Contact::forAccount($request->user()->account_id)->find($validated['contact_id'])
+            : null;
+
+        return response()->json($simulator->run(
+            [
+                'entry_node_id' => $validated['entry_node_id'],
+                'fallback_policy' => $validated['fallback_policy'] ?? [],
+            ],
+            $validated['nodes'],
+            $validated['replies'] ?? [],
+            $contact,
+        ));
+    }
+
+    /** Texto del nodo de entrada, sea del tipo que sea. */
+    private function entryText(Flow $flow): ?string
+    {
+        $entry = $flow->nodes->firstWhere('node_key', $flow->entry_node_id);
+
+        if (! $entry) {
+            return null;
+        }
+
+        return $entry->config['text'] ?? $entry->config['message'] ?? null;
     }
 
     public function edit(Request $request, Flow $flow): Response
@@ -82,6 +137,10 @@ class FlowController extends Controller
             'nodes' => $flow->nodes()->orderBy('created_at')->get()
                 ->map(fn ($n) => ['node_key' => $n->node_key, 'node_type' => $n->node_type, 'config' => $n->config]),
             'tags' => Tag::forAccount($request->user()->account_id)->orderBy('name')->get(['id', 'name']),
+            'sampleContacts' => Contact::forAccount($request->user()->account_id)
+                ->orderByDesc('updated_at')
+                ->limit(30)
+                ->get(['id', 'name', 'phone']),
         ]);
     }
 
