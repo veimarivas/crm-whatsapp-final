@@ -84,29 +84,41 @@ class DiagnosticarPlantillasOferta extends Command
             return self::FAILURE;
         }
 
-        // 4. El resumen que se manda a la pantalla
+        // 4. Lo que ve el generador. Si esto no coincide con el paso 3, el
+        // problema está entre el caché y este servicio, no en la BD.
         $this->newLine();
-        $this->line('<options=bold>4. Lo que recibe la pantalla</>');
-        $resumen = $plantillas->resumen();
+        $this->line('<options=bold>4. Lo que ve el generador de plantillas</>');
+        $debug = $plantillas->debug();
 
-        foreach ($resumen as $clave => $valor) {
-            $this->line("   {$clave}: ".var_export($valor, true));
+        $this->line("   Clase de la colección: {$debug['clase']}");
+        $this->line("   Total: {$debug['total']}".($debug['total'] !== $cacheado->count()
+            ? ' ← NO COINCIDE con el paso 3'
+            : ''));
+        $this->line('   Claves: '.implode(', ', array_map('strval', $debug['claves'])));
+        $this->line('   Áreas distintas: '.implode(' | ', array_map(fn ($a) => (string) $a, $debug['areas'])));
+        $this->line('   Campos del primer programa: '.implode(', ', $debug['campos_del_primero']));
+        $this->newLine();
+        $this->line('   Programas que ve:');
+        foreach ($debug['nombres'] as $nombre) {
+            $this->line("     · {$nombre}");
         }
 
-        if (! empty($resumen['error'])) {
-            $this->newLine();
-            $this->error('   La generación falló: '.$resumen['error']);
-            $this->line('   → Ese mismo texto sale en el banner ámbar de /automations.');
-
-            return self::FAILURE;
-        }
-
-        // 5. Recetas generadas
+        // 5. Recetas generadas. Se genera ANTES de leer el resumen: el
+        // motivo del fallo se registra durante la generación, y pedirlo
+        // antes era justamente lo que lo dejaba en NULL.
         $this->newLine();
         $this->line('<options=bold>5. Plantillas generadas</>');
 
         $automatizaciones = $plantillas->automatizaciones();
         $flows = $plantillas->flows();
+
+        $resumen = $plantillas->resumen();
+
+        if (! empty($resumen['error'])) {
+            $this->error('   La generación falló: '.$resumen['error']);
+            $this->line('   → El detalle con archivo y línea está en storage/logs/laravel.log.');
+            $this->newLine();
+        }
 
         $this->line('   Automatizaciones: '.count($automatizaciones));
         foreach ($automatizaciones as $r) {
@@ -121,6 +133,7 @@ class DiagnosticarPlantillasOferta extends Command
         // 6. Lo que ve la galería, que es lo que se pinta
         $this->newLine();
         $this->line('<options=bold>6. Galería (lo que se pinta en pantalla)</>');
+        $this->line('   Resumen que viaja a la vista: '.json_encode($resumen, JSON_UNESCAPED_UNICODE));
 
         $galeriaAuto = collect(AutomationRecipes::gallery());
         $galeriaFlow = collect(FlowRecipes::gallery());

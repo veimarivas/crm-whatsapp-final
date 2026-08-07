@@ -65,6 +65,29 @@ class Plantillas
         ];
     }
 
+    /**
+     * Radiografía de lo que este servicio está viendo de verdad.
+     *
+     * Existe porque el diagnóstico mostró un desajuste imposible a
+     * simple vista: la consulta cacheada devolvía 11 programas y este
+     * servicio contaba 3. Comparar recuentos no alcanzaba; hace falta
+     * ver la colección concreta que llega acá.
+     */
+    public function debug(): array
+    {
+        $programas = $this->programas();
+
+        return [
+            'clase' => $programas::class,
+            'total' => $programas->count(),
+            'claves' => $programas->keys()->take(15)->all(),
+            'nombres' => $programas->map(fn ($p) => trim($p->nombre ?? '(sin nombre)'))->take(15)->all(),
+            'areas' => $programas->map(fn ($p) => $p->area_nombre ?? '(sin propiedad area_nombre)')->unique()->values()->all(),
+            'campos_del_primero' => $programas->isEmpty() ? [] : array_keys((array) $programas->first()),
+            'fallo' => $this->fallo,
+        ];
+    }
+
     /* ------------------------------------------------------------ datos */
 
     /**
