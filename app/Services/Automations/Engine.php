@@ -50,7 +50,7 @@ class Engine
             ->where('is_active', true)
             ->where('trigger_type', $event)
             ->get()
-            ->filter(fn (Automation $a) => $this->matchesTrigger($a, $messageText));
+            ->filter(fn (Automation $a) => self::matchesTrigger($a->trigger_type, $a->trigger_config ?? [], $messageText));
 
         foreach ($automations as $automation) {
             try {
@@ -64,16 +64,20 @@ class Engine
         }
     }
 
-    private function matchesTrigger(Automation $automation, ?string $messageText): bool
+    /**
+     * ¿El disparador de esta automatización aplica al mensaje dado?
+     * Público y estático porque el simulador tiene que responder lo
+     * mismo que la ejecución real.
+     */
+    public static function matchesTrigger(string $triggerType, array $triggerConfig, ?string $messageText): bool
     {
-        if ($automation->trigger_type !== 'keyword') {
+        if ($triggerType !== 'keyword') {
             return true;
         }
 
-        $keywords = $automation->trigger_config['keywords'] ?? [];
         $haystack = mb_strtolower($messageText ?? '');
 
-        foreach ($keywords as $keyword) {
+        foreach ($triggerConfig['keywords'] ?? [] as $keyword) {
             if ($keyword !== '' && str_contains($haystack, mb_strtolower($keyword))) {
                 return true;
             }
@@ -281,31 +285,11 @@ class Engine
 
     private function evaluateCondition(array $config, array $context): bool
     {
-        $contact = Contact::find($context['contact_id']);
-        $field = $config['field'] ?? 'message_text';
-        $operator = $config['operator'] ?? 'contains';
-        $expected = mb_strtolower((string) ($config['value'] ?? ''));
-
-        if ($field === 'has_tag') {
-            return $contact?->tags()->where('tags.id', $config['tag_id'] ?? '')->exists() ?? false;
-        }
-
-        $actual = mb_strtolower((string) match ($field) {
-            'message_text' => $context['message_text'] ?? '',
-            'contact_name' => $contact?->name ?? '',
-            'contact_email' => $contact?->email ?? '',
-            'contact_company' => $contact?->company ?? '',
-            default => '',
-        });
-
-        return match ($operator) {
-            'contains' => $expected !== '' && str_contains($actual, $expected),
-            'equals' => $actual === $expected,
-            'not_equals' => $actual !== $expected,
-            'empty' => $actual === '',
-            'not_empty' => $actual !== '',
-            default => false,
-        };
+        return Conditions::evaluate(
+            $config,
+            Contact::find($context['contact_id']),
+            $context['message_text'] ?? null,
+        );
     }
 
     private function appendLog(AutomationLog $log, AutomationStep $step, string $result): void

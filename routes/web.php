@@ -152,6 +152,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/automations', [\App\Http\Controllers\AutomationController::class, 'index'])->name('automations.index');
     Route::get('/automations/new', [\App\Http\Controllers\AutomationController::class, 'edit'])->name('automations.create');
     Route::post('/automations', [\App\Http\Controllers\AutomationController::class, 'store'])->name('automations.store');
+    Route::post('/automations/simulate', [\App\Http\Controllers\AutomationController::class, 'simulate'])->name('automations.simulate');
     Route::get('/automations/{automation}/edit', [\App\Http\Controllers\AutomationController::class, 'edit'])->name('automations.edit');
     Route::patch('/automations/{automation}', [\App\Http\Controllers\AutomationController::class, 'update'])->name('automations.update');
     Route::post('/automations/{automation}/toggle', [\App\Http\Controllers\AutomationController::class, 'toggle'])->name('automations.toggle');

@@ -6,6 +6,19 @@ Port completo de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, e
 
 Suite de tests: **82 tests / 418 aserciones en verde** (`php artisan test`).
 
+Ronda 18 — Automatizaciones con lienzo de workflow, plantillas y simulador (2026-08-07):
+
+**El problema no era el motor sino la puerta de entrada.** El builder era una lista de tarjetas con botones de "añadir" al final: para entender qué hacía una automatización había que abrirla, y no había forma de probarla sin activarla y mandarle un WhatsApp real a alguien.
+
+- **Galería de recetas** (`Services\Automations\Recipes.php`): 6 automatizaciones ya armadas (bienvenida, precios, seguimiento 24 h, etiquetar interesados, derivar a asesor, ruta por interés). `GET /automations/new?recipe=<slug>` **precarga el formulario sin guardar nada** — sigue siendo un borrador hasta que el usuario da "Crear". Ninguna receta referencia etiquetas por id (el id es por cuenta y quedaría colgado); los pasos de etiqueta se dejan sin elegir y el nodo se marca incompleto.
+- **`/automations` — resumen en lenguaje natural**: el index dejó de ser tabla y pasó a tarjetas con la línea `CUANDO <disparador> → ENTONCES <paso> → <paso>`. Para eso el controller ahora manda `root_steps` (tipo + config de los pasos raíz) además de `steps_count`.
+- **Editor como lienzo de workflow vertical** (`Automations/Edit.jsx` reescrito): nodo disparador arriba con chips CUANDO/ENTONCES/FIN, pasos encadenados por conectores con un **`+` entre cada par** que inserta en esa posición exacta (antes solo se podía añadir al final y reordenar con flechas), condiciones abiertas en dos carriles Sí/No, panel lateral pegajoso con nombre/descripción/guardar y un contador de "pasos sin completar". Cada nodo dice qué le falta (`stepProblem`) en vez de fallar en silencio en producción.
+- **Simulador — `POST /automations/simulate`** (`Services\Automations\Simulator.php`): recorre el árbol **que está en pantalla** (no lo guardado, así se prueba antes de guardar y antes de activar) y devuelve qué pasaría paso a paso. **No envía WhatsApp, no etiqueta, no llama webhooks, no escribe logs.** Interpola el texto con un contacto real elegido del desplegable, marca la rama no tomada como `skipped`, corta en el `wait` marcando lo posterior como `later`, y señala los pasos que fallarían por config incompleta.
+- **`Conditions::evaluate()` extraído del Engine** y `Engine::matchesTrigger()` hecho público/estático: el simulador usa EXACTAMENTE el mismo código que la ejecución real. Si esto se duplicara, la prueba diría una cosa y producción haría otra — que es justo lo que hace inútil a un simulador.
+- **Trampa**: `/automations/simulate` vive en el grupo `web`, donde `shouldRenderJsonWhen` (bootstrap/app.php) solo cubre `api/*` — un `$request->validate()` fallido devuelve **302, no 422**, y axios sigue el redirect y recibe HTML. Por eso el controller valida con `Validator::make` y arma el 422 a mano.
+- Sin migraciones. Tests nuevos en `AutomationBuilderTest` (9); suite total **337/337 (1173)**.
+- **Dev**: `.claude/launch.json` + `.claude/serve-router.php` (router de `php -S` con la ruta pública fija en vez de `getcwd()`, para levantar este proyecto desde el cwd del Komo).
+
 Ronda 17 — Rebranding ESAM CONECTA y teléfonos visibles (2026-08-06):
 
 - **Logo `conecta.png`** (`public/conecta.png`, trackeado en git): reemplaza a `logo_esam.png`/`esam_pequenio.png` en el Login (`GuestLayout.jsx`) y en el sidebar (`AuthenticatedLayout.jsx`).
