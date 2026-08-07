@@ -130,6 +130,33 @@ class PlantillasOfertaTest extends TestCase
         $this->actingAs($this->user)->get(route('flows.index'))->assertOk();
     }
 
+    /**
+     * El fallo real de producción: según el backend de caché, al leer de
+     * vuelta la Collection guardada PHP devolvía un `__PHP_Incomplete_Class`.
+     * `collect()` lo convertía en array y contaba sus campos internos como
+     * si fueran programas — de ahí "3 programas" con 11 reales.
+     */
+    public function test_una_oferta_corrupta_no_llega_a_los_generadores(): void
+    {
+        // Un objeto cuya clase no se puede reconstruir: exactamente lo que
+        // devolvía el caché en el servidor.
+        $incompleto = unserialize('O:20:"ClaseQueNoSeResuelve":2:{s:5:"items";a:0:{}s:4:"algo";s:3:"xyz";}');
+
+        $this->app->instance(OfertaAcademica::class, new OfertaFalsa(true, collect((array) $incompleto)));
+
+        $plantillas = app(Plantillas::class);
+
+        $this->assertFalse($plantillas->disponible());
+        $this->assertSame([], $plantillas->automatizaciones());
+        $this->assertSame([], $plantillas->flows());
+
+        // Y el aviso dice qué hacer, en vez de un error de PHP sin contexto.
+        $this->assertStringContainsString('cache:clear', $plantillas->resumen()['error']);
+
+        $this->actingAs($this->user)->get(route('automations.index'))->assertOk();
+        $this->actingAs($this->user)->get(route('flows.index'))->assertOk();
+    }
+
     public function test_con_bd_academica_pero_sin_programas_abiertos_tampoco(): void
     {
         $this->conOferta(programas: []);

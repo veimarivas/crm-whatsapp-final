@@ -202,7 +202,29 @@ class OfertaAcademica
     {
         $segundos = (int) config('services.ai_context.oferta_cache_seconds', 300);
 
-        return Cache::remember('esam_datos:programas', $segundos, fn () => $this->programas());
+        // Se cachean ARRAYS, no la Collection ni los stdClass.
+        //
+        // Guardar objetos acá costó caro en producción: según el backend de
+        // caché, al leer de vuelta PHP devolvía un `__PHP_Incomplete_Class`
+        // en lugar de la Collection. Escribir funcionaba, leer no — así que
+        // el fallo aparecía recién en el segundo request y se veía como
+        // "3 programas" (los campos internos del objeto contados como
+        // items) en vez de los 11 reales. Un array de escalares se
+        // reconstruye igual en cualquier backend.
+        $filas = Cache::remember(
+            'esam_datos:programas_v2',
+            $segundos,
+            fn () => $this->programas()->map(fn ($p) => (array) $p)->values()->all(),
+        );
+
+        // Red de seguridad: si aun así vuelve algo que no son filas, se
+        // consulta directo. Es preferible una consulta de más que dejar a
+        // la IA sin catálogo — que es como se manifiesta este fallo.
+        if (! is_array($filas)) {
+            return $this->programas();
+        }
+
+        return collect($filas)->map(fn ($fila) => (object) $fila);
     }
 
     /**

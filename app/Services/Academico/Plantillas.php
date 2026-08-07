@@ -115,7 +115,20 @@ class Plantillas
                 return $this->programas = collect();
             }
 
-            return $this->programas = collect($this->oferta->programasCacheadas());
+            $crudo = collect($this->oferta->programasCacheadas());
+
+            // Solo filas que se pueden usar. Sin este filtro, un valor
+            // corrupto en el caché llegaba a los generadores y reventaba
+            // con "Attempt to read property id on string" — un error que no
+            // dice nada sobre la causa real.
+            $usables = $crudo->filter(fn ($p) => is_object($p) && isset($p->id, $p->nombre))->values();
+
+            if ($usables->isEmpty() && $crudo->isNotEmpty()) {
+                $this->fallo = 'La oferta llegó en un formato inesperado ('.$crudo->count().' elementos no utilizables). Ejecuta: php artisan cache:clear';
+                Log::warning('Oferta académica en formato inesperado', ['elementos' => $crudo->count()]);
+            }
+
+            return $this->programas = $usables;
         } catch (\Throwable $e) {
             $this->fallo = $e->getMessage();
 
