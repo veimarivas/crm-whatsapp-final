@@ -2,6 +2,44 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## Ronda de analítica — reportes legibles y analizables (2026-08-07)
+
+Ejecución de `mejoras.md` (raíz del repo), T1-T6. Objetivo: convertir los números que ya existían en gráficos que se puedan *leer y analizar* — series temporales, comparativas entre agentes, embudos con % y contexto (periodo anterior, SLA). **Ronda gemela**: el Komo hizo la suya en paralelo con su propio `mejoras.md` (ver `CLAUDE_komo.md`, sección equivalente). Sin migraciones: todo es lectura/agregación sobre `messages`, `conversations` y `broadcasts`.
+
+**Paso 0 — capa de gráficos** (`resources/js/Components/Charts/`, recharts): `chartTheme.js`, `format.js`, `ChartCard` + `EmptyChart`, `TrendArea`, `CompareBars` (con `ReferenceLine`), `FunnelSteps`, `HeatmapGrid`, `WindowPicker`. La misma capa existe en el Komo; si se corrige un bug de la capa, mirar si aplica allá.
+
+### T1 · `/settings/response-time` — centro de analítica de respuesta (`AiController`)
+- Acepta `?days=` (7/15/30/90). Devuelve histograma de espera por baldes, serie diaria de mediana, comparativa de mediana por agente y **deltas contra la ventana anterior**.
+- **⚠️ Fix de fondo**: la versión original usaba `JOIN … LATERAL`, que **MariaDB no soporta** (solo corría en MySQL 8). Se reescribió con un `NOT EXISTS` que descarta cualquier saliente intermedio — misma definición ("el primer saliente posterior"), pero sobre el SGBD que realmente se usa.
+- Serie diaria de mediana con los días sin respuestas en **`null`, no `0`** (un hueco es un hueco).
+- **⚠️ Definición divergente y deliberada**: acá la respuesta de la **IA sí cuenta** como respuesta (la página mide "tiempo hasta *alguna* respuesta"); en `/supervision` la IA **no** cierra la espera (mide atención humana). La página lo dice en pantalla para que nadie compare peras con manzanas.
+
+### T2 · `/broadcasts-metrics` — embudo por campaña (`BroadcastController`)
+- Embudo horizontal `enviados → entregados → leídos → respondidos` con % entre pasos por cada campaña del top 10 (el dato ya estaba en los counters de `broadcasts`).
+- Tasa de respuesta **diaria** global, apilado de volumen y selector `?days=`.
+
+### T3 · `/settings/ai/stats` — salud de la IA en el tiempo
+- `ComposedChart`: barras diarias de respuestas IA (purple) + línea de fallbacks + **tasa de éxito %** en eje derecho. KPI cards con delta vs periodo anterior. Aislado por cuenta.
+
+### T4 · Dashboard — de números a historia
+- El gráfico de mensajes pasa a **área apilada por `sender_type`**: entrante del cliente / saliente de agente / saliente de IA. Ese solo gráfico cuenta **cuánto está asumiendo la IA**.
+
+### T5 · `/supervision` — comparativas de equipo (`Services\Supervision\BacklogCharts`)
+**Clase nueva a propósito**, fuera de `ResponseMetrics`: ese servicio es el **GEMELO** exacto del Komo (mismas definiciones, mismos tests) y tocar una definición suya obliga a replicar el cambio allá. `BacklogCharts` solo *lee* mensajes con las mismas reglas (un saliente humano cierra la espera; uno de IA no).
+- Comparativa de **mediana** de 1ª respuesta por agente contra el SLA — la tabla obliga a leer fila por fila; el gráfico muestra al que falla en 2 segundos.
+- Tendencia diaria de cumplimiento SLA (%).
+- Heatmap hora × día de entrantes (`sender_type=customer`).
+- Antigüedad del backlog en baldes ‹1 h / 1-4 / 4-8 / 8-24 / ›24 h.
+- `Supervision/Agent.jsx`: línea del **promedio del equipo** superpuesta a las series del agente.
+
+### T6 · Transversales
+- **CSV** en `/settings/response-time/export`, `/broadcasts-metrics/export` y `/supervision/export` (stream, BOM UTF-8, separador `;`, patrón de `ContactController@exportCsv`). El corte admin-only va **en el controlador**, no en la ruta — acá no hay middleware `admin.only`.
+- Drill-down: clic en fila/barra de agente → `/supervision/agents/{user}`.
+- **Sidebar**: grupo propio **«Reportes»** (`analytics: true` en los items de `AuthenticatedLayout.jsx`) con *Tiempo de respuesta*, *Métricas de broadcasts* y *Estadísticas IA*, entre la navegación de trabajo y la de configuración. Eran tres pantallas que existían **sin enlace**: había que saberse la URL.
+- **⚠️ Bug que dejó dos páginas en blanco** (`6c77922`): el formateador hacía `Math.round(v).replace('.', ',')` — `Math.round()` devuelve un **número**, que no tiene `.replace()`. Reventaba el render de `/supervision` y `/broadcasts-metrics` sin más pista que una pantalla vacía. Si se copia un `valueFormatter` entre proyectos, revisar que el tipo sea string antes de encadenar métodos de string.
+
+**Tests nuevos:** `ResponseTimeTest`, `BroadcastMetricsTest`, `AiStatsTest`, `DashboardTest`, `SupervisionTest`.
+
 Ronda de UI — pantallas a ancho completo y modales (2026-08-07):
 
 Ronda de mejoras de layout y UX en `resources/js`, solo frontend. Sin migraciones ni cambios de lógica; el build de producción va en el servidor.
