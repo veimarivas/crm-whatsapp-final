@@ -2,6 +2,8 @@ import { Head, Link } from '@inertiajs/react';
 import ServiceWindowBadge from '@/Components/ServiceWindowBadge';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { usePage } from '@inertiajs/react';
+import { ChartCard, TrendArea, TONE } from '@/Components/Charts';
+import { fmtInteger } from '@/Components/Charts/format';
 
 function money(value, currency) {
     return new Intl.NumberFormat('es', {
@@ -140,114 +142,56 @@ const activities = [
 ];
 
 function Chart({ data }) {
-    const max = Math.max(1, ...data.map((d) => d.inbound + d.outbound));
     const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-    const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-    const totalInbound = data.reduce((s, d) => s + d.inbound, 0);
-    const totalOutbound = data.reduce((s, d) => s + d.outbound, 0);
-    const weekLabel = data.length > 0
-        ? `${new Date(data[0].day + 'T00:00:00').getDate()} ${months[new Date(data[0].day + 'T00:00:00').getMonth()]} – ${new Date(data[data.length - 1].day + 'T00:00:00').getDate()} ${months[new Date(data[data.length - 1].day + 'T00:00:00').getMonth()]}`
-        : '';
-    const gridLines = [25, 50, 75];
+
+    const rows = data.map((d) => {
+        const dt = new Date(d.day + 'T00:00:00');
+        const isToday = dt.toDateString() === new Date().toDateString();
+        return { ...d, label: isToday ? 'Hoy' : days[dt.getDay()] };
+    });
+
+    const totals = rows.reduce(
+        (acc, d) => ({
+            inbound: acc.inbound + d.inbound,
+            agent: acc.agent + d.agent_out,
+            bot: acc.bot + d.bot_out,
+        }),
+        { inbound: 0, agent: 0, bot: 0 }
+    );
+
+    const series = [
+        { key: 'inbound', name: 'Entrantes', color: TONE.brand },
+        { key: 'agent_out', name: 'Agente', color: TONE.blue },
+        { key: 'bot_out', name: 'IA', color: TONE.ai },
+    ];
 
     return (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-sm shrink-0">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
-                        </svg>
-                    </div>
-                    <div>
-                        <h4 className="text-sm font-bold text-gray-900">Mensajes — últimos 7 días</h4>
-                        <p className="text-xs text-gray-400 mt-0.5">{weekLabel || 'Entrantes vs salientes'}</p>
-                    </div>
-                </div>
-                <div className="flex flex-wrap gap-3 text-xs font-medium text-gray-500">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200/50">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-200" />
-                        {totalInbound} Entrantes
-                    </span>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200/50">
-                        <span className="w-2 h-2 rounded-full bg-amber-500 ring-2 ring-amber-200" />
-                        {totalOutbound} Salientes
-                    </span>
-                </div>
+        <ChartCard title="Mensajes — últimos 7 días" subtitle="Entrantes del cliente, salientes del agente y de la IA, apilados" empty={rows.length === 0} emptyMessage="Sin datos esta semana.">
+            <div className="flex flex-wrap gap-3 text-xs font-medium text-gray-500 mb-4">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 text-slate-700 border border-slate-200/50">
+                    <span className="w-2 h-2 rounded-full bg-[#0d9488]" />
+                    {fmtInteger(totals.inbound)} Entrantes
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200/50">
+                    <span className="w-2 h-2 rounded-full bg-[#3b82f6]" />
+                    {fmtInteger(totals.agent)} Agente
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-50 text-violet-700 border border-violet-200/50">
+                    <span className="w-2 h-2 rounded-full bg-[#8b5cf6]" />
+                    {fmtInteger(totals.bot)} IA
+                </span>
             </div>
-            {data.length === 0 ? (
-                <div className="h-64 flex flex-col items-center justify-center gap-3 text-sm text-gray-400">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
-                        <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
-                        </svg>
-                    </div>
-                    <div className="text-center">
-                        <p className="text-sm font-semibold text-gray-900">Sin datos esta semana</p>
-                        <p className="text-xs text-gray-500 mt-0.5">Los mensajes aparecerán aquí cuando tengas actividad</p>
-                    </div>
-                </div>
-            ) : (
-                <div className="relative h-64">
-                    <svg className="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none">
-                        {gridLines.map((pct) => (
-                            <line key={pct} x1="0" y1={`${(1 - pct / 100) * 100}%`} x2="100%" y2={`${(1 - pct / 100) * 100}%`} stroke="#f1f5f9" strokeWidth="1" />
-                        ))}
-                    </svg>
-                    <div className="absolute inset-0 flex items-end gap-3 sm:gap-4 px-2">
-                        {data.map((d) => {
-                            const inboundPct = max > 0 ? (d.inbound / max) * 100 : 0;
-                            const outboundPct = max > 0 ? (d.outbound / max) * 100 : 0;
-                            const hasData = d.inbound > 0 || d.outbound > 0;
-                            const isToday = new Date(d.day + 'T00:00:00').toDateString() === new Date().toDateString();
-                            return (
-                                <div key={d.day} className="flex-1 flex flex-col items-center justify-end h-full group relative">
-                                    <div className="w-full flex items-end justify-center gap-1.5 relative h-full">
-                                        {d.inbound > 0 && (
-                                            <div className="relative w-full max-w-[32px] group/bar h-full flex flex-col justify-end">
-                                                <div
-                                                    className="w-full rounded-t-md transition-all duration-500 ease-out group-hover/bar:brightness-110"
-                                                    style={{
-                                                        height: `${inboundPct}%`,
-                                                        minHeight: d.inbound > 0 ? '6px' : '0',
-                                                        background: 'linear-gradient(180deg, #34d399 0%, #059669 100%)',
-                                                    }}
-                                                />
-                                            </div>
-                                        )}
-                                        {d.outbound > 0 && (
-                                            <div className="relative w-full max-w-[32px] group/bar h-full flex flex-col justify-end">
-                                                <div
-                                                    className="w-full rounded-t-md transition-all duration-500 ease-out group-hover/bar:brightness-110"
-                                                    style={{
-                                                        height: `${outboundPct}%`,
-                                                        minHeight: d.outbound > 0 ? '6px' : '0',
-                                                        background: 'linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%)',
-                                                    }}
-                                                />
-                                            </div>
-                                        )}
-                                        {!hasData && <div className="w-full max-w-[32px] h-full rounded-t-md bg-gray-100" />}
-                                    </div>
-                                    <span className={`text-[11px] font-semibold mt-3 w-full text-center ${isToday ? 'text-emerald-600' : 'text-gray-400'}`}>
-                                        {isToday ? 'Hoy' : days[new Date(d.day + 'T00:00:00').getDay()]}
-                                    </span>
-                                    {hasData && (
-                                        <div className="absolute -top-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none z-10">
-                                            <div className="bg-gray-900 text-white text-[10px] font-bold rounded-lg px-2.5 py-1.5 shadow-xl whitespace-nowrap flex gap-3">
-                                                <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />{d.inbound}</span>
-                                                <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" />{d.outbound}</span>
-                                            </div>
-                                            <div className="w-2 h-2 bg-gray-900 rotate-45 mx-auto -mt-1" />
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
-        </div>
+            <TrendArea
+                data={rows}
+                xKey="label"
+                series={series}
+                stackId="mensajes"
+                valueFormatter={fmtInteger}
+                height={220}
+                showLegend={false}
+                emptyMessage="Sin datos esta semana."
+            />
+        </ChartCard>
     );
 }
 

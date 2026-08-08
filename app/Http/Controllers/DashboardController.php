@@ -21,12 +21,14 @@ class DashboardController extends Controller
     {
         $accountId = $request->user()->account_id;
 
-        // Mensajes por día (últimos 7 días), entrantes vs salientes.
+        // Mensajes por día (últimos 7 días): entrantes de clientes y salientes
+        // partidos en humano e IA, para el área apilada del gráfico.
         $daily = Message::whereHas('conversation', fn ($q) => $q->where('account_id', $accountId))
             ->where('messages.created_at', '>=', now()->subDays(6)->startOfDay())
             ->selectRaw("DATE(messages.created_at) as day,
                 SUM(sender_type = 'customer') as inbound,
-                SUM(sender_type != 'customer') as outbound")
+                SUM(sender_type = 'agent') as agent_out,
+                SUM(sender_type = 'bot') as bot_out")
             ->groupBy('day')
             ->orderBy('day')
             ->get()
@@ -38,7 +40,8 @@ class DashboardController extends Controller
             return [
                 'day' => $day,
                 'inbound' => (int) ($daily[$day]->inbound ?? 0),
-                'outbound' => (int) ($daily[$day]->outbound ?? 0),
+                'agent_out' => (int) ($daily[$day]->agent_out ?? 0),
+                'bot_out' => (int) ($daily[$day]->bot_out ?? 0),
             ];
         });
 

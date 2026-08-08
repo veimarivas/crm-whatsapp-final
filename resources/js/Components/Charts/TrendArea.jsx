@@ -59,7 +59,7 @@ export default function TrendArea({
                                 className={`inline-flex items-center gap-1.5 text-[11px] font-semibold transition-opacity ${isHidden ? 'opacity-40 line-through' : 'opacity-100'}`}
                                 style={{ color: isHidden ? '#64748b' : s.color }}
                             >
-                                <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: isActive ? s.color : '#cbd5e1' }} />
+                                <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: isHidden ? '#cbd5e1' : s.color }} />
                                 {s.name}
                             </button>
                         );
