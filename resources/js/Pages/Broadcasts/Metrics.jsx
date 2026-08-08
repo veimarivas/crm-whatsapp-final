@@ -140,7 +140,7 @@ export default function Metrics({ totals, rates, topByReply, funnels, chart, day
                         data={chart.filter((d) => d.reply_rate !== null)}
                         xKey="label"
                         series={[{ key: 'reply_rate', name: 'Tasa de respuesta', color: TONE.danger }]}
-                        valueFormatter={(v) => `${Math.round(v).replace('.', ',')}%`}
+                        valueFormatter={(v) => `${Math.round(v)}%`}
                         emptyMessage="Sin respuestas medidas en este periodo."
                     />
                 </ChartCard>

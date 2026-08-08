@@ -379,7 +379,7 @@ export default function SupervisionIndex({ agents, conversations, totals, daily,
                             data={compliance.map((c) => ({ label: c.label, pct: c.pct, within: c.within, total: c.total }))}
                             xKey="label"
                             series={[{ key: 'pct', name: 'Dentro del SLA', color: ChartTONE.positive }]}
-                            valueFormatter={(v) => `${Math.round(v).replace('.', ',')}%`}
+                            valueFormatter={(v) => `${Math.round(v)}%`}
                             emptyMessage="Sin respuestas medidas en este periodo."
                         />
                     </ChartCard>
