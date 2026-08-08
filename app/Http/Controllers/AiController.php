@@ -13,6 +13,8 @@ use App\Services\Ai\ReplyGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -192,48 +194,43 @@ class AiController extends Controller
     }
 
     /**
-     * Analytics de tiempo de respuesta: para cada mensaje de cliente en los
-     * últimos 30 días busca el siguiente mensaje del agente/bot en la misma
-     * conversación y calcula la diferencia. Agrupa por agente (sender_id) y
-     * saca el promedio en segundos.
+     * Analytics de tiempo de respuesta: cada mensaje de cliente seguido del
+     * primer mensaje saliente (agente o IA) de la misma conversación.
+     *
+     * Centro de analítica del panel: acepta `?days=` (7/15/30/90), y devuelve
+     * histograma de espera, mediana diaria y comparativa por agente, además de
+     * deltas contra la ventana anterior para que los KPIs tengan contexto.
+     *
+     * Definición de una «respuesta» aquí: el primer saliente posterior cuenta,
+     * sea agente o IA. Es el mismo criterio de antes de esta ronda (la IA
+     * cuenta como respuesta); en /supervision NO se cuenta porque ese panel
+     * mide la espera humana.
      */
     public function responseTime(Request $request): Response
     {
         $accountId = $request->user()->account_id;
 
-        // Subquery correlacionada: para cada msg de cliente, obtener el próximo
-        // msg agente/bot en la misma conv. Solo mensajes de los últimos 30 días.
-        $rows = DB::select("
-            SELECT
-                reply.sender_id,
-                reply.sender_type,
-                u.name as agent_name,
-                TIMESTAMPDIFF(SECOND, cust.created_at, reply.created_at) as diff_seconds
-            FROM messages cust
-            JOIN conversations c ON c.id = cust.conversation_id
-            JOIN LATERAL (
-                SELECT m2.sender_id, m2.sender_type, m2.created_at
-                FROM messages m2
-                WHERE m2.conversation_id = cust.conversation_id
-                  AND m2.created_at > cust.created_at
-                  AND m2.sender_type IN ('agent', 'bot')
-                ORDER BY m2.created_at ASC
-                LIMIT 1
-            ) reply ON true
-            LEFT JOIN users u ON u.id = reply.sender_id
-            WHERE cust.sender_type = 'customer'
-              AND cust.created_at >= ?
-              AND c.account_id = ?
-        ", [now()->subDays(30), $accountId]);
+        $days = (int) $request->query('days', 30);
+        if (! in_array($days, [7, 15, 30, 90], true)) {
+            $days = 30;
+        }
 
-        // Agrupar en PHP por agente
-        $byAgent = collect($rows)
+        $current = $this->responseRows($accountId, now()->subDays($days));
+        $previous = $this->responseRows(
+            $accountId,
+            now()->subDays($days * 2),
+            now()->subDays($days),
+        );
+
+        // Comparativo por agente/bot: la mediana es el número que no distorsiona
+        // el promedio (una demora larga pesa igual que diez).
+        $byAgent = $current
             ->groupBy(fn ($r) => $r->sender_id ?? 'bot')
             ->map(function ($group) {
                 $first = $group->first();
-                $diffs = $group->pluck('diff_seconds')->sort()->values();
-                $avg = round($diffs->avg());
-                $median = $diffs->count() > 0 ? (int) $diffs[intval($diffs->count() / 2)] : 0;
+                $diffs = $this->sortedDiffs($group);
+                $avg = $diffs->count() > 0 ? (int) round($diffs->avg()) : 0;
+                $median = $diffs->count() > 0 ? (int) $diffs[(int) floor($diffs->count() / 2)] : 0;
 
                 return [
                     'name' => $first->sender_type === 'bot' ? '✨ IA' : ($first->agent_name ?? 'Agente eliminado'),
@@ -245,17 +242,179 @@ class AiController extends Controller
                     'median_label' => $this->formatDuration($median),
                 ];
             })
-            ->sortBy('avg_seconds')
+            ->sortBy('median_seconds')
             ->values();
 
-        $overall = collect($rows)->avg('diff_seconds');
-        $overallLabel = $this->formatDuration((int) round($overall ?? 0));
+        [$histogram, $daily] = $this->analytics($current, $days);
 
         return Inertia::render('Settings/ResponseTime', [
             'byAgent' => $byAgent,
-            'overallLabel' => $overallLabel,
-            'totalReplies' => count($rows),
+            'histogram' => $histogram,
+            'daily' => $daily,
+            'kpis' => $this->kpis($current),
+            'deltas' => $this->deltas($current, $previous),
+            'days' => $days,
+            'ranges' => [7, 15, 30, 90],
         ]);
+    }
+
+    /**
+     * Diferencias entre cada mensaje de cliente y el primer saliente posterior
+     * en la misma conversación — agente o IA. $to corta la ventana anterior
+     * cuando se compara contra el período previo.
+     *
+     * MariaDB no soporta JOIN ... LATERAL (la versión origin de esta página
+     * sí lo usaba y por eso solo corría en MySQL 8): se resuelve igual con
+     * un NOT EXISTS que descarta cualquier saliente intermedio, que es la
+     * misma definición (el primer saliente posterior) sobre el mismo SGBD.
+     *
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function responseRows(string $accountId, Carbon $from, ?Carbon $to = null): Collection
+    {
+        $rows = DB::select("
+            SELECT
+                rep.sender_id,
+                rep.sender_type,
+                DATE_FORMAT(rep.created_at, '%Y-%m-%d') as replied_date,
+                u.name as agent_name,
+                TIMESTAMPDIFF(SECOND, cust.created_at, rep.created_at) as diff_seconds
+            FROM messages cust
+            JOIN conversations c ON c.id = cust.conversation_id
+            JOIN messages rep ON rep.conversation_id = cust.conversation_id
+                AND rep.sender_type IN ('agent', 'bot')
+                AND rep.created_at > cust.created_at
+            LEFT JOIN users u ON u.id = rep.sender_id
+            WHERE cust.sender_type = 'customer'
+              AND cust.created_at >= ?
+              AND cust.created_at < ?
+              AND c.account_id = ?
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM messages m3
+                  WHERE m3.conversation_id = cust.conversation_id
+                    AND m3.sender_type IN ('agent', 'bot')
+                    AND m3.created_at > cust.created_at
+                    AND m3.created_at < rep.created_at
+              )
+        ", [$from, $to ?? now(), $accountId]);
+
+        return collect($rows);
+    }
+
+    /** @return \Illuminate\Support\Collection<int, int> */
+    private function sortedDiffs(Collection $rows): Collection
+    {
+        return $rows->pluck('diff_seconds')
+            ->map(fn ($d) => (int) $d)
+            ->sort()
+            ->values();
+    }
+
+    /**
+     * Histograma de espera y mediana por día para la ventana actual. Dígitos
+     * de los mismos baldes que el panel de Seguimiento, para que «menos de 5 m»
+     * signifique lo mismo en los dos paneles.
+     *
+     * @return array{array<int, array{label: string, count: int}>, array<int, array<string, mixed>>}
+     */
+    private function analytics(Collection $rows, int $days): array
+    {
+        $buckets = [
+            ['label' => 'Menos de 1 m', 'min' => null, 'max' => 60],
+            ['label' => '1 a 5 m', 'min' => 60, 'max' => 300],
+            ['label' => '5 a 15 m', 'min' => 300, 'max' => 900],
+            ['label' => '15 a 30 m', 'min' => 900, 'max' => 1800],
+            ['label' => '30 m a 1 h', 'min' => 1800, 'max' => 3600],
+            ['label' => 'Más de 1 h', 'min' => 3600, 'max' => null],
+        ];
+
+        $counts = array_fill(0, count($buckets), 0);
+        foreach ($rows as $r) {
+            $s = (int) $r->diff_seconds;
+            foreach ($buckets as $i => $b) {
+                if (($b['min'] === null || $s >= $b['min']) && ($b['max'] === null || $s < $b['max'])) {
+                    $counts[$i]++;
+                    break;
+                }
+            }
+        }
+
+        $histogram = collect($buckets)
+            ->map(fn (array $b, int $i) => ['label' => $b['label'], 'count' => $counts[$i]])
+            ->values()
+            ->all();
+
+        // Serie diaria de la mediana, rellenando los días sin respuestas con
+        // null (un hueco es un hueco, no un 0 que mienta). Empieza el día
+        // «previo al de hoy» para que el eje tenga exactamente `days` puntos.
+        $byDay = $rows->groupBy(fn ($r) => $r->replied_date ?? 'sin-fecha');
+
+        $daily = [];
+        $cursor = now()->subDays($days - 1)->startOfDay();
+        while ($cursor <= now()->startOfDay()) {
+            $key = $cursor->format('Y-m-d');
+            $diffs = $this->sortedDiffs(collect($byDay->get($key, [])));
+            $daily[] = [
+                'date' => $key,
+                'label' => $cursor->translatedFormat('j M'),
+                'median_seconds' => $diffs->count() > 0 ? (int) $diffs[(int) floor($diffs->count() / 2)] : null,
+                'avg_seconds' => $diffs->count() > 0 ? (int) round($diffs->avg()) : null,
+                'count' => $diffs->count(),
+            ];
+            $cursor = $cursor->addDay();
+        }
+
+        return [$histogram, $daily];
+    }
+
+    /** @return array{avg_seconds: int, avg_label: string, median_seconds: int, median_label: string, total_replies: int} */
+    private function kpis(Collection $rows): array
+    {
+        $diffs = $this->sortedDiffs($rows);
+        $avg = $diffs->count() > 0 ? (int) round($diffs->avg()) : 0;
+        $median = $diffs->count() > 0 ? (int) $diffs[(int) floor($diffs->count() / 2)] : 0;
+
+        return [
+            'avg_seconds' => $avg,
+            'avg_label' => $this->formatDuration($avg),
+            'median_seconds' => $median,
+            'median_label' => $this->formatDuration($median),
+            'total_replies' => $diffs->count(),
+        ];
+    }
+
+    /**
+     * % de cambio contra la ventana anterior (misma longitud). Null cuando no
+     * hay con qué comparar. Negativo en tiempo = más rápido (bien); en total
+     * de respuestas un negativo es menos actividad (mal) — el color lo pone la
+     * vista.
+     *
+     * @return array{median_pct: ?float, avg_pct: ?float, total_pct: ?float, prev_total: int}
+     */
+    private function deltas(Collection $current, Collection $previous): array
+    {
+        $now = $this->sortedDiffs($current);
+        $then = $this->sortedDiffs($previous);
+
+        $measures = fn (Collection $c) => [
+            'avg' => $c->count() > 0 ? (int) round($c->avg()) : null,
+            'median' => $c->count() > 0 ? (int) $c[(int) floor($c->count() / 2)] : null,
+        ];
+
+        $pctChange = fn (?int $now, ?int $then) => ($now !== null && $then !== null && $then > 0)
+            ? (($now - $then) / $then) * 100 : null;
+
+        $cv = $measures($now);
+        $pv = $measures($then);
+
+        return [
+            'median_pct' => $pctChange($cv['median'], $pv['median']),
+            'avg_pct' => $pctChange($cv['avg'], $pv['avg']),
+            'total_pct' => $previous->count() > 0
+                ? (($current->count() - $previous->count()) / $previous->count()) * 100 : null,
+            'prev_total' => $previous->count(),
+        ];
     }
 
     private function formatDuration(int $seconds): string
