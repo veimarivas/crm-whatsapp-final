@@ -58,6 +58,39 @@ const navigation = [
         ),
     },
     {
+        name: 'Tiempo de respuesta',
+        pattern: 'settings.response-time.*',
+        routeName: 'settings.response-time',
+        analytics: true,
+        icon: (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        ),
+    },
+    {
+        name: 'Métricas de broadcasts',
+        pattern: 'broadcasts.metrics',
+        routeName: 'broadcasts.metrics',
+        analytics: true,
+        icon: (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+            </svg>
+        ),
+    },
+    {
+        name: 'Estadísticas IA',
+        pattern: 'settings.ai.stats',
+        routeName: 'settings.ai.stats',
+        analytics: true,
+        icon: (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+            </svg>
+        ),
+    },
+    {
         name: 'Plantillas',
         pattern: 'templates.*',
         routeName: 'templates.index',
@@ -168,9 +201,12 @@ export default function AuthenticatedLayout({ header, children }) {
     const isAdmin = user?.account_role === 'owner' || user?.account_role === 'admin';
     const visibleNav = navigation.filter((item) => ! item.adminOnly || isAdmin);
 
-    // Los 5 primeros son la navegación de trabajo; el resto, configuración.
-    const mainNav = visibleNav.slice(0, isAdmin ? 5 : 4);
-    const configNav = visibleNav.slice(isAdmin ? 5 : 4);
+    // Los reportes de analítica (T1-T3) forman su propio grupo entre la
+    // navegación de trabajo y la configuración.
+    const workNav = visibleNav.filter((item) => ! item.analytics);
+    const analyticsNav = visibleNav.filter((item) => item.analytics);
+    const mainNav = workNav.slice(0, isAdmin ? 5 : 4);
+    const configNav = workNav.slice(isAdmin ? 5 : 4);
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -236,6 +272,45 @@ export default function AuthenticatedLayout({ header, children }) {
                                     );
                                 })}
                             </div>
+
+                            {!sidebarCollapsed && analyticsNav.length > 0 && (
+                                <div className="mt-6 pt-4 border-t border-white/10">
+                                    <div className="px-3 mb-1.5">
+                                        <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                                            Reportes
+                                        </span>
+                                    </div>
+                                    <div className="space-y-0.5">
+                                        {analyticsNav.map((item) => {
+                                            const active = isActive(item.pattern);
+                                            return (
+                                                <Link
+                                                    key={item.name}
+                                                    href={route(item.routeName)}
+                                                    onClick={() => setSidebarOpen(false)}
+                                                    className={`group relative flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 ${
+                                                        active
+                                                            ? 'bg-[#045474]/20 text-white/90 shadow-sm'
+                                                            : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
+                                                    }`}
+                                                >
+                                                    {active && (
+                                                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-4 rounded-r-full bg-[#e6dd5e]/80" />
+                                                    )}
+                                                    <span
+                                                        className={`flex-shrink-0 ${
+                                                            active ? 'text-[#e6dd5e]/80' : 'text-gray-500 group-hover:text-gray-300'
+                                                        }`}
+                                                    >
+                                                        {item.icon}
+                                                    </span>
+                                                    <span className="truncate">{item.name}</span>
+                                                </Link>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
 
                             {!sidebarCollapsed && configNav.length > 0 && (
                                 <div className="mt-6 pt-4 border-t border-white/10">
