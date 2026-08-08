@@ -9,6 +9,7 @@ use App\Models\Message;
 use App\Models\User;
 use App\Services\Supervision\ResponseMetrics;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 /**
@@ -40,6 +41,14 @@ class SupervisionTest extends TestCase
 
         $this->agente = $this->makeAgent('daniel@test.com', 'Daniel');
         $this->otro = $this->makeAgent('silvia@test.com', 'Silvia');
+
+        Carbon::setTestNow('2026-08-07 12:00:00');
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
     }
 
     private function makeAgent(string $email, string $name): User
@@ -206,5 +215,86 @@ class SupervisionTest extends TestCase
     {
         $this->actingAs($this->agente)->get(route('supervision.index'))->assertForbidden();
         $this->actingAs($this->owner)->get(route('supervision.index'))->assertOk();
+    }
+
+    public function test_el_index_lleva_mediana_comparativa_heatmap_compliance_y_backlog(): void
+    {
+        // 2026-08-05 = miércoles (w=3).
+        $c = $this->makeConversation($this->agente);
+        $this->msg($c, Message::SENDER_CUSTOMER, '2026-08-05 09:00:00');
+        $this->msg($c, Message::SENDER_AGENT, '2026-08-05 09:10:00', $this->agente);
+        // Un contacto que sigue esperando hace 2 horas → balde "1-4 h".
+        $c2 = $this->makeConversation($this->agente, 'Carla');
+        $this->msg($c2, Message::SENDER_CUSTOMER, '2026-08-07 10:00:00');
+
+        $this->actingAs($this->owner)
+            ->get(route('supervision.index'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->has('median_by_agent', 1)
+                ->where('median_by_agent.0.name', 'Daniel')
+                ->where('median_by_agent.0.median', 600)
+                ->where('backlog.1.label', '1-4 h')
+                ->where('backlog.1.count', 1)
+                ->where('heatmap', function ($rows) {
+                    $mie = collect($rows)->firstWhere('label', 'Mié');
+                    return $mie !== null && $mie['hours'][9] === 1;
+                })
+                ->where('compliance', function ($rows) {
+                    $day = collect($rows)->firstWhere('date', '2026-08-05');
+                    return $day !== null && $day['total'] === 1 && $day['within'] === 1 && $day['pct'] === 100;
+                }));
+    }
+
+    public function test_el_backlog_no_cuenta_una_respuesta_de_la_ia(): void
+    {
+        $c = $this->makeConversation($this->agente);
+        // Contacto escribió hace 3 h, la IA contestó a los 2 minutos... y el
+        // humano nunca respondió: el reloj NO se detiene con la IA.
+        $this->msg($c, Message::SENDER_CUSTOMER, '2026-08-07 09:00:00');
+        $this->msg($c, Message::SENDER_BOT, '2026-08-07 09:02:00');
+
+        $this->actingAs($this->owner)
+            ->get(route('supervision.index'))
+            ->assertInertia(fn ($page) => $page
+                ->where('backlog.1.label', '1-4 h')
+                ->where('backlog.1.count', 1));
+    }
+
+    public function test_la_ficha_incluye_el_promedio_del_equipo(): void
+    {
+        $c = $this->makeConversation($this->agente);
+        $this->msg($c, Message::SENDER_CUSTOMER, '2026-08-07 11:00:00');
+        $this->msg($c, Message::SENDER_AGENT, '2026-08-07 11:05:00', $this->agente);
+
+        $this->actingAs($this->owner)
+            ->get(route('supervision.agent', $this->agente->id))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->has('teamDaily')
+                ->where('daily', function ($rows) {
+                    $today = collect($rows)->firstWhere('date', '2026-08-07');
+                    return $today !== null && $today['avg_response_seconds'] === 300;
+                }));
+    }
+
+    public function test_los_datos_nuevos_no_se_filtran_por_cuenta(): void
+    {
+        // Otra cuenta con mensajes que el panel del owner no debe ver.
+        $otroFamiliar = User::create(['name' => 'Otra cuenta', 'email' => 'otra@test.com', 'password' => bcrypt('password')]);
+        $otherAccount = Account::create(['name' => 'Otra empresa', 'owner_user_id' => $otroFamiliar->id]);
+        $otroFamiliar->update(['account_id' => $otherAccount->id, 'account_role' => User::ROLE_OWNER]);
+
+        $oc = $this->makeConversation();
+        $oc->forceFill(['account_id' => $otherAccount->id])->save();
+        $this->msg($oc, Message::SENDER_CUSTOMER, '2026-08-07 10:00:00');
+
+        $this->actingAs($this->owner)
+            ->get(route('supervision.index'))
+            ->assertInertia(fn ($page) => $page
+                ->where('median_by_agent', [])
+                ->where('backlog', function ($buckets) {
+                    return collect($buckets)->every(fn ($b) => $b['count'] === 0);
+                }));
     }
 }

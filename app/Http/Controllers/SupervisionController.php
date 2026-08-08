@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Services\Supervision\BacklogCharts;
 use App\Services\Supervision\ResponseMetrics;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -36,13 +37,20 @@ class SupervisionController extends Controller
             $days = 30;
         }
 
+        $since = now()->subDays($days)->startOfDay();
+
         $metrics = (new ResponseMetrics(
             $user->account_id,
-            now()->subDays($days)->startOfDay(),
+            $since,
         ))->build();
+
+        // Los gráficos nuevos viven en su propia clase (no en el «gemelo» del
+        // ResponseMetrics que comparten con el Komo).
+        $charts = (new BacklogCharts($user->account_id, $since))->build();
 
         return Inertia::render('Supervision/Index', [
             ...$metrics,
+            ...$charts,
             'days' => $days,
             'ranges' => self::RANGES,
             'members' => User::where('account_id', $user->account_id)
@@ -73,13 +81,17 @@ class SupervisionController extends Controller
             $days = 30;
         }
 
-        $data = (new ResponseMetrics(
-            $viewer->account_id,
-            now()->subDays($days)->startOfDay(),
-        ))->forAgent($user->id);
+        $since = now()->subDays($days)->startOfDay();
+
+        $metrics = new ResponseMetrics($viewer->account_id, $since);
+
+        $data = $metrics->forAgent($user->id);
 
         return Inertia::render('Supervision/Agent', [
             ...$data,
+            // Línea de contexto en la ficha: promedios diarios de TODO el equipo
+            // para superponerlos a los del agente.
+            'teamDaily' => $metrics->build()['daily'],
             'days' => $days,
             'ranges' => self::RANGES,
             'currency' => $viewer->account->default_currency,

@@ -105,15 +105,19 @@ export function DailyVolumeChart({ daily }) {
 /**
  * Tiempo medio de respuesta por día, en área, con la banda del SLA de fondo.
  * Lo que importa no es el valor exacto sino cuándo se sale de la banda verde.
+ *
+ * `team` (opcional) es la serie diaria del equipo completo en el MISMO periodo:
+ * se superpone en gris para que el agente compare su curva contra la del grupo.
  */
-export function ResponseTimeChart({ daily, slaMinutes, formatDuration }) {
+export function ResponseTimeChart({ daily, slaMinutes, formatDuration, team }) {
     const points = daily.map((d, i) => ({ ...d, i }));
     const withData = points.filter((p) => p.avg_response_seconds !== null);
+    const teamPoints = (team || []).map((d, i) => ({ ...d, i })).filter((p) => p.avg_response_seconds !== null);
 
     if (withData.length === 0) return <EmptyChart message="Todavía no hay respuestas medidas en este periodo." />;
 
     const sla = slaMinutes * 60;
-    const max = Math.max(sla * 1.5, ...withData.map((p) => p.avg_response_seconds));
+    const max = Math.max(sla * 1.5, ...withData.map((p) => p.avg_response_seconds), ...teamPoints.map((p) => p.avg_response_seconds));
     const w = 100;
     const h = 100;
     const x = (i) => (points.length === 1 ? w / 2 : (i / (points.length - 1)) * w);
@@ -123,6 +127,9 @@ export function ResponseTimeChart({ daily, slaMinutes, formatDuration }) {
     // días sin respuestas inventaría un dato que no existe.
     const line = withData.map((p, n) => `${n === 0 ? 'M' : 'L'} ${x(p.i).toFixed(2)} ${y(p.avg_response_seconds).toFixed(2)}`).join(' ');
     const area = `${line} L ${x(withData[withData.length - 1].i).toFixed(2)} ${h} L ${x(withData[0].i).toFixed(2)} ${h} Z`;
+    const teamLine = teamPoints.length > 0
+        ? teamPoints.map((p, n) => `${n === 0 ? 'M' : 'L'} ${x(p.i).toFixed(2)} ${y(p.avg_response_seconds).toFixed(2)}`).join(' ')
+        : '';
 
     return (
         <div>
@@ -137,20 +144,32 @@ export function ResponseTimeChart({ daily, slaMinutes, formatDuration }) {
                     {/* Banda verde: por debajo del SLA. */}
                     <rect x="0" y={y(sla)} width={w} height={h - y(sla)} fill={TONE.responsable} opacity="0.07" />
                     <line x1="0" y1={y(sla)} x2={w} y2={y(sla)} stroke={TONE.vencido} strokeWidth="0.4" strokeDasharray="2 2" vectorEffect="non-scaling-stroke" />
+                    {teamLine && (
+                        <path d={teamLine} fill="none" stroke={TONE.desconocido} strokeWidth="1.4" strokeDasharray="3 2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+                    )}
                     <path d={area} fill="url(#respFill)" />
                     <path d={line} fill="none" stroke={TONE.responsable} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
                     {withData.map((p) => (
                         <circle key={p.date} cx={x(p.i)} cy={y(p.avg_response_seconds)} r="2.5" fill="#fff" stroke={TONE.responsable} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                    ))}
+                    {teamPoints.map((p) => (
+                        <circle key={`team-${p.date}`} cx={x(p.i)} cy={y(p.avg_response_seconds)} r="1.8" fill="#fff" stroke={TONE.desconocido} strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
                     ))}
                 </svg>
                 <span className="absolute right-0 text-[10px] font-semibold text-red-500 bg-white/80 px-1 rounded" style={{ top: `${(y(sla) / h) * 100}%`, transform: 'translateY(-50%)' }}>
                     SLA {slaMinutes}m
                 </span>
             </div>
-            <div className="flex justify-between text-[10px] text-gray-400 mt-2">
+            <div className="flex items-center justify-between text-[10px] text-gray-400 mt-2">
                 <span>{points[0]?.label}</span>
-                <span className="font-semibold text-gray-500">
-                    máx. {formatDuration(Math.max(...withData.map((p) => p.avg_response_seconds)))}
+                <span className="flex items-center gap-3">
+                    {teamLine && (
+                        <span className="inline-flex items-center gap-1 font-semibold text-gray-500">
+                            <span className="w-3 h-0 border-t-2 border-dashed" style={{ borderColor: TONE.desconocido }} />
+                            Equipo
+                        </span>
+                    )}
+                    <span className="font-semibold text-gray-500">máx. {formatDuration(Math.max(...withData.map((p) => p.avg_response_seconds)))}</span>
                 </span>
                 <span>{points[points.length - 1]?.label}</span>
             </div>
@@ -197,44 +216,6 @@ export function FirstResponderDonut({ slices, total }) {
                     </li>
                 ))}
             </ul>
-        </div>
-    );
-}
-
-/** Barras horizontales: 1ª respuesta media por responsable contra el SLA. */
-export function ResponseByAgentChart({ agents, slaMinutes, formatDuration }) {
-    const rows = agents.filter((a) => a.avg_first_response_seconds !== null);
-
-    if (rows.length === 0) return <EmptyChart message="Nadie tiene respuestas medidas todavía." />;
-
-    const sla = slaMinutes * 60;
-    const max = Math.max(sla, ...rows.map((a) => a.avg_first_response_seconds));
-
-    return (
-        <div className="space-y-3">
-            {rows.map((a) => {
-                const pct = (a.avg_first_response_seconds / max) * 100;
-                const over = a.avg_first_response_seconds > sla;
-
-                return (
-                    <div key={a.id ?? 'none'}>
-                        <div className="flex items-baseline justify-between text-xs mb-1">
-                            <span className="font-semibold text-gray-700 truncate">{a.name}</span>
-                            <span className={`tabular-nums font-bold ${over ? 'text-red-600' : 'text-emerald-600'}`}>
-                                {formatDuration(a.avg_first_response_seconds)}
-                            </span>
-                        </div>
-                        <div className="relative h-3 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                                className="absolute inset-y-0 left-0 rounded-full transition-all"
-                                style={{ width: `${Math.max(pct, 1.5)}%`, background: over ? TONE.vencido : TONE.responsable }}
-                            />
-                            <div className="absolute inset-y-0 w-px bg-gray-400/70" style={{ left: `${(sla / max) * 100}%` }} />
-                        </div>
-                    </div>
-                );
-            })}
-            <p className="text-[11px] text-gray-400 pt-1">La línea vertical marca el SLA de {slaMinutes} minutos.</p>
         </div>
     );
 }

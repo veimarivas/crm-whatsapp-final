@@ -6,11 +6,11 @@ import {
     ChartCard,
     DailyVolumeChart,
     FirstResponderDonut,
-    ResponseByAgentChart,
     ResponseTimeChart,
     StageChart,
     TONE,
 } from './Charts';
+import { CompareBars, HeatmapGrid, TrendArea, TONE as ChartTONE } from '@/Components/Charts';
 
 /** Segundos → "45s" / "12m" / "3h 20m" / "2d 4h". Null se muestra como guion. */
 function duration(seconds) {
@@ -227,7 +227,7 @@ function AgentRow({ agent, slaMinutes, currency, expanded, onToggle }) {
     );
 }
 
-export default function SupervisionIndex({ agents, conversations, totals, daily, stages, days, ranges, members, currency }) {
+export default function SupervisionIndex({ agents, conversations, totals, daily, stages, median_by_agent, compliance, heatmap, backlog, days, ranges, members, currency }) {
     const [agentFilter, setAgentFilter] = useState('all');
     const [onlyWaiting, setOnlyWaiting] = useState(false);
     const [expanded, setExpanded] = useState(null);
@@ -345,14 +345,51 @@ export default function SupervisionIndex({ agents, conversations, totals, daily,
                         <FirstResponderDonut slices={responderSlices} total={totals.conversations} />
                     </ChartCard>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <ChartCard title="1ª respuesta por agente" className="h-full">
-                            <ResponseByAgentChart agents={agents} slaMinutes={totals.sla_minutes} formatDuration={duration} />
-                        </ChartCard>
-                        <ChartCard title="Negocios por etapa" subtitle="Pipeline abierto" className="h-full">
-                            <StageChart stages={stages} />
-                        </ChartCard>
-                    </div>
+                    <ChartCard title="Negocios por etapa" subtitle="Pipeline abierto" className="h-full">
+                        <StageChart stages={stages} />
+                    </ChartCard>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <ChartCard
+                        title="Mediana de la primera respuesta por agente"
+                        subtitle={`Comparativa contra el SLA de ${totals.sla_minutes} minutos`}
+                    >
+                        <CompareBars
+                            data={median_by_agent.map((a) => ({ name: a.name, value: a.median, responses: a.responses }))}
+                            xKey="name"
+                            target={totals.sla_minutes * 60}
+                            targetLabel={`SLA ${totals.sla_minutes} m`}
+                            valueFormatter={duration}
+                            layout="horizontal"
+                            height={Math.max(200, median_by_agent.length * 42)}
+                            emptyMessage="Sin respuestas medidas todavía."
+                        />
+                    </ChartCard>
+
+                    <ChartCard title="Cumplimiento del SLA por día" subtitle="% de respuestas dentro de los 30 minutos del objetivo">
+                        <TrendArea
+                            data={compliance.map((c) => ({ label: c.label, pct: c.pct, within: c.within, total: c.total }))}
+                            xKey="label"
+                            series={[{ key: 'pct', name: 'Dentro del SLA', color: ChartTONE.positive }]}
+                            valueFormatter={(v) => `${Math.round(v).replace('.', ',')}%`}
+                            emptyMessage="Sin respuestas medidas en este periodo."
+                        />
+                    </ChartCard>
+
+                    <ChartCard title="Cuándo escriben los clientes" subtitle="Mensajes entrantes por hora y día de la semana">
+                        <HeatmapGrid data={heatmap} />
+                    </ChartCard>
+
+                    <ChartCard title="Edad del backlog" subtitle="Cuánto llevan esperando una respuesta humana las conversaciones sin atender">
+                        <CompareBars
+                            data={backlog.map((b) => ({ name: b.label, value: b.count }))}
+                            xKey="name"
+                            layout="vertical"
+                            valueFormatter={(v) => `${v}`}
+                            emptyMessage="Sin conversaciones esperando respuesta humana."
+                        />
+                    </ChartCard>
                 </div>
 
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
