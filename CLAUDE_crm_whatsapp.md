@@ -1,6 +1,14 @@
 # CRM de WhatsApp — Laravel 13 + MariaDB
 
-Port completo de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
+Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
+
+Ronda de UI — pantallas a ancho completo y modales (2026-08-07):
+
+Ronda de mejoras de layout y UX en `resources/js`, solo frontend. Sin migraciones ni cambios de lógica; el build de producción va en el servidor.
+
+- **`/settings/quick-replies`** (`Settings/QuickReplies.jsx`): layout a ancho completo (`max-w-4xl` → `max-w-7xl`). El **editor de una plantilla en edición** ahora muestra atajo y contenido en campos separados con labels, y el textarea de contenido se **autoajusta** (`rows = max(4, ceil(len/90))`) para ver todo el texto en vez de solo una parte. **Eliminar** pasó de `confirm()` nativo a **modal de confirmación** (muestra `/shortcut`, con Cancelar / "Sí, eliminar").
+- **`/settings/auto-tags`** (`Settings/AutoTags.jsx`): ancho completo; el formulario "Nueva regla" queda a la izquierda (1 col) y "Reglas activas" a la derecha (`lg:col-span-2`).
+- **`/settings/whatsapp`** (`Settings/WhatsApp.jsx`): ancho completo (`max-w-3xl` → `max-w-7xl`) con **Credenciales** y **Webhook** en 2 columnas; el estado Conectado/Desconectado queda a ancho completo arriba.
 
 ## Estado: port completo + mejoras (2026-07-10)
 
