@@ -262,16 +262,22 @@ export default function SupervisionIndex({ agents, conversations, totals, daily,
                             Conversaciones con actividad en los últimos {days} días. El SLA de respuesta es de {totals.sla_minutes} minutos.
                         </p>
                     </div>
-                    <div className="flex gap-1 bg-white rounded-xl border border-gray-200 p-1 shrink-0">
-                        {ranges.map((r) => (
-                            <button
-                                key={r}
-                                onClick={() => router.get(route('supervision.index'), { days: r }, { preserveScroll: true, preserveState: false })}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${r === days ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}
-                            >
-                                {r}d
-                            </button>
-                        ))}
+                    <div className="flex flex-wrap items-center gap-2">
+                        <a href={route('supervision.export', { days })} title="Descargar CSV de este lapso" className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 px-3 py-1.5 rounded-lg whitespace-nowrap">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                            CSV
+                        </a>
+                        <div className="flex gap-1 bg-white rounded-xl border border-gray-200 p-1 shrink-0">
+                            {ranges.map((r) => (
+                                <button
+                                    key={r}
+                                    onClick={() => router.get(route('supervision.index'), { days: r }, { preserveScroll: true, preserveState: false })}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${r === days ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}
+                                >
+                                    {r}d
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
@@ -356,7 +362,7 @@ export default function SupervisionIndex({ agents, conversations, totals, daily,
                         subtitle={`Comparativa contra el SLA de ${totals.sla_minutes} minutos`}
                     >
                         <CompareBars
-                            data={median_by_agent.map((a) => ({ name: a.name, value: a.median, responses: a.responses }))}
+                            data={median_by_agent.map((a) => ({ id: a.id, name: a.name, value: a.median, responses: a.responses }))}
                             xKey="name"
                             target={totals.sla_minutes * 60}
                             targetLabel={`SLA ${totals.sla_minutes} m`}
@@ -364,6 +370,7 @@ export default function SupervisionIndex({ agents, conversations, totals, daily,
                             layout="horizontal"
                             height={Math.max(200, median_by_agent.length * 42)}
                             emptyMessage="Sin respuestas medidas todavía."
+                            onBarClick={(a) => a && a.id && router.get(route('supervision.agent', a.id))}
                         />
                     </ChartCard>
 

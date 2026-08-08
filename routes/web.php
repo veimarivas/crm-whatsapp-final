@@ -36,6 +36,11 @@ Route::get('/supervision', [\App\Http\Controllers\SupervisionController::class, 
 Route::get('/supervision/agents/{user}', [\App\Http\Controllers\SupervisionController::class, 'show'])
     ->middleware(['auth', 'verified'])->name('supervision.agent');
 
+// CSV del panel de seguimiento. El corte admin-only va en el controlador,
+// igual que en el index.
+Route::get('/supervision/export', [\App\Http\Controllers\SupervisionController::class, 'exportCsv'])
+    ->middleware(['auth', 'verified'])->name('supervision.export');
+
 // Aceptación pública de invitaciones (el link se comparte fuera de la app).
 Route::get('/invite/{token}', [\App\Http\Controllers\TeamController::class, 'acceptForm'])->name('invitations.accept');
 Route::post('/invite/{token}', [\App\Http\Controllers\TeamController::class, 'redeem'])->name('invitations.redeem');
@@ -63,6 +68,7 @@ Route::middleware('auth')->group(function () {
     Route::patch('/inbox/conversations/{conversation}/ai-mode', [InboxController::class, 'setAiMode'])->name('inbox.ai-mode');
     Route::get('/inbox/quick-replies', [\App\Http\Controllers\QuickReplyController::class, 'available'])->name('inbox.quick-replies');
     Route::get('/broadcasts-metrics', [\App\Http\Controllers\BroadcastController::class, 'metrics'])->name('broadcasts.metrics');
+    Route::get('/broadcasts-metrics/export', [\App\Http\Controllers\BroadcastController::class, 'exportMetricsCsv'])->name('broadcasts.metrics.export');
 
     // Exportar contactos a CSV
     Route::get('/contacts/export', [\App\Http\Controllers\ContactController::class, 'exportCsv'])->name('contacts.export');
@@ -93,6 +99,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/settings/ai/sync-oferta', [\App\Http\Controllers\AiController::class, 'syncKnowledge'])->name('settings.ai.sync-oferta');
     Route::get('/settings/ai/stats', [\App\Http\Controllers\AiController::class, 'stats'])->name('settings.ai.stats');
     Route::get('/settings/response-time', [\App\Http\Controllers\AiController::class, 'responseTime'])->name('settings.response-time');
+    Route::get('/settings/response-time/export', [\App\Http\Controllers\AiController::class, 'exportResponseTimeCsv'])->name('settings.response-time.export');
 
     // Equipo + API keys
     Route::get('/settings/team', [\App\Http\Controllers\TeamController::class, 'index'])->name('settings.team');

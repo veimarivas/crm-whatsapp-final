@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AiController extends Controller
 {
@@ -224,26 +225,7 @@ class AiController extends Controller
 
         // Comparativo por agente/bot: la mediana es el número que no distorsiona
         // el promedio (una demora larga pesa igual que diez).
-        $byAgent = $current
-            ->groupBy(fn ($r) => $r->sender_id ?? 'bot')
-            ->map(function ($group) {
-                $first = $group->first();
-                $diffs = $this->sortedDiffs($group);
-                $avg = $diffs->count() > 0 ? (int) round($diffs->avg()) : 0;
-                $median = $diffs->count() > 0 ? (int) $diffs[(int) floor($diffs->count() / 2)] : 0;
-
-                return [
-                    'name' => $first->sender_type === 'bot' ? '✨ IA' : ($first->agent_name ?? 'Agente eliminado'),
-                    'is_bot' => $first->sender_type === 'bot',
-                    'count' => $group->count(),
-                    'avg_seconds' => $avg,
-                    'median_seconds' => $median,
-                    'avg_label' => $this->formatDuration($avg),
-                    'median_label' => $this->formatDuration($median),
-                ];
-            })
-            ->sortBy('median_seconds')
-            ->values();
+        $byAgent = $this->byAgentRanking($current);
 
         [$histogram, $daily] = $this->analytics($current, $days);
 
@@ -256,6 +238,66 @@ class AiController extends Controller
             'days' => $days,
             'ranges' => [7, 15, 30, 90],
         ]);
+    }
+
+    /**
+     * El mismo panel, en CSV: ranking por agente, histograma de espera y
+     * mediana diaria. Aplica la misma ventana `?days=` (7/15/30/90) y el
+     * mismo aislamiento por cuenta; stream con BOM UTF-8 y `;` como separador
+     * (patrón de `ContactController@exportCsv`) para que Excel lo abra bien.
+     */
+    public function exportResponseTimeCsv(Request $request): StreamedResponse
+    {
+        $accountId = $request->user()->account_id;
+
+        $days = (int) $request->query('days', 30);
+        if (! in_array($days, [7, 15, 30, 90], true)) {
+            $days = 30;
+        }
+
+        $current = $this->responseRows($accountId, now()->subDays($days));
+        $byAgent = $this->byAgentRanking($current);
+        [$histogram, $daily] = $this->analytics($current, $days);
+
+        $filename = 'ticks-respuesta-'.now()->format('Y-m-d-His').'.csv';
+
+        return response()->streamDownload(function () use ($byAgent, $histogram, $daily) {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF");
+
+            fputcsv($out, ['Ranking por agente (mediana en segundos)'], ';');
+            fputcsv($out, ['Agente', 'Es IA', 'Respuestas', 'Promedio (s)', 'Mediana (s)'], ';');
+            foreach ($byAgent as $a) {
+                fputcsv($out, [
+                    $a['name'],
+                    $a['is_bot'] ? 'Sí' : 'No',
+                    $a['count'],
+                    $a['avg_seconds'],
+                    $a['median_seconds'],
+                ], ';');
+            }
+
+            fputcsv($out, [], ';');
+            fputcsv($out, ['Histograma de espera'], ';');
+            fputcsv($out, ['Balde', 'Respuestas'], ';');
+            foreach ($histogram as $h) {
+                fputcsv($out, [$h['label'], $h['count']], ';');
+            }
+
+            fputcsv($out, [], ';');
+            fputcsv($out, ['Mediana diaria'], ';');
+            fputcsv($out, ['Fecha', 'Mediana (s)', 'Promedio (s)', 'Respuestas'], ';');
+            foreach ($daily as $d) {
+                fputcsv($out, [
+                    $d['date'],
+                    $d['median_seconds'] ?? '',
+                    $d['avg_seconds'] ?? '',
+                    $d['count'],
+                ], ';');
+            }
+
+            fclose($out);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 
     /**
@@ -308,6 +350,37 @@ class AiController extends Controller
         return $rows->pluck('diff_seconds')
             ->map(fn ($d) => (int) $d)
             ->sort()
+            ->values();
+    }
+
+    /**
+     * Comparativo por agente/bot. La mediana es el número que no distorsiona
+     * el promedio (una demora larga pesa igual que diez). Compartido entre la
+     * página y el CSV para que el ranking signifique lo mismo en los dos.
+     *
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function byAgentRanking(Collection $rows): Collection
+    {
+        return $rows
+            ->groupBy(fn ($r) => $r->sender_id ?? 'bot')
+            ->map(function ($group) {
+                $first = $group->first();
+                $diffs = $this->sortedDiffs($group);
+                $avg = $diffs->count() > 0 ? (int) round($diffs->avg()) : 0;
+                $median = $diffs->count() > 0 ? (int) $diffs[(int) floor($diffs->count() / 2)] : 0;
+
+                return [
+                    'name' => $first->sender_type === 'bot' ? '✨ IA' : ($first->agent_name ?? 'Agente eliminado'),
+                    'is_bot' => $first->sender_type === 'bot',
+                    'count' => $group->count(),
+                    'avg_seconds' => $avg,
+                    'median_seconds' => $median,
+                    'avg_label' => $this->formatDuration($avg),
+                    'median_label' => $this->formatDuration($median),
+                ];
+            })
+            ->sortBy('median_seconds')
             ->values();
     }
 

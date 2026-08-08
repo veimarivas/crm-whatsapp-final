@@ -297,4 +297,48 @@ class SupervisionTest extends TestCase
                     return collect($buckets)->every(fn ($b) => $b['count'] === 0);
                 }));
     }
+
+    public function test_solo_el_admin_exporta_el_csv(): void
+    {
+        $this->actingAs($this->agente)->get(route('supervision.export'))->assertForbidden();
+        $this->actingAs($this->owner)->get(route('supervision.export'))->assertOk();
+    }
+
+    public function test_exporta_agentes_y_conversaciones_a_csv(): void
+    {
+        $c = $this->makeConversation($this->agente, 'Ana');
+        $this->msg($c, Message::SENDER_CUSTOMER, '2026-08-07 10:00:00');
+        $this->msg($c, Message::SENDER_AGENT, '2026-08-07 10:10:00', $this->agente);
+
+        $response = $this->actingAs($this->owner)->get(route('supervision.export'));
+
+        $response->assertOk();
+        $content = $response->streamedContent();
+
+        $this->assertStringStartsWith("\xEF\xBB\xBF", $content, 'El CSV abre en Excel sin romper tildes.');
+        $this->assertStringContainsString('Por agente', $content);
+        $this->assertStringContainsString('Daniel', $content);
+        $this->assertStringContainsString('Contacto por contacto', $content);
+        $this->assertStringContainsString('Ana', $content);
+        $this->assertStringContainsString('asignado', $content);
+    }
+
+    public function test_export_no_filtra_los_datos_de_otra_cuenta(): void
+    {
+        $otroFamiliar = User::create(['name' => 'Otra cuenta', 'email' => 'otra@test.com', 'password' => bcrypt('password')]);
+        $otherAccount = Account::create(['name' => 'Otra empresa', 'owner_user_id' => $otroFamiliar->id]);
+        $otroFamiliar->update(['account_id' => $otherAccount->id, 'account_role' => User::ROLE_OWNER]);
+
+        $oc = $this->makeConversation($this->agente, 'Ana');
+        $oc->forceFill(['account_id' => $otherAccount->id])->save();
+        $this->msg($oc, Message::SENDER_CUSTOMER, '2026-08-07 10:00:00');
+        $this->msg($oc, Message::SENDER_AGENT, '2026-08-07 10:10:00', $this->agente);
+
+        $content = $this->actingAs($this->owner)
+            ->get(route('supervision.export'))
+            ->streamedContent();
+
+        $this->assertStringNotContainsString('Ana', $content);
+        $this->assertStringNotContainsString('Daniel', $content);
+    }
 }

@@ -56,6 +56,8 @@ export default function ResponseTime({ byAgent, histogram, daily, kpis, deltas, 
         color: a.median_seconds < 60 ? TONE.positive : a.median_seconds < SLA_SECONDS ? TONE.warning : TONE.danger,
     }));
 
+    const exportUrl = route('settings.response-time.export', { days });
+
     return (
         <AuthenticatedLayout header={<h2 className="text-lg font-semibold text-gray-900">Tiempo de respuesta</h2>}>
             <Head title="Tiempo de respuesta" />
@@ -68,7 +70,13 @@ export default function ResponseTime({ byAgent, histogram, daily, kpis, deltas, 
                             Últimos {days} días. Aquí la IA cuenta como una respuesta (a diferencia de /supervision, que mide la espera humana).
                         </p>
                     </div>
-                    <WindowPicker days={days} ranges={ranges} routeName="settings.response-time" />
+                    <div className="flex items-center gap-3">
+                        <a href={exportUrl} title="Descargar CSV de este lapso" className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 px-3 py-2 rounded-lg whitespace-nowrap">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                            CSV
+                        </a>
+                        <WindowPicker days={days} ranges={ranges} routeName="settings.response-time" />
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

@@ -51,6 +51,10 @@ export default function Metrics({ totals, rates, topByReply, funnels, chart, day
                     </div>
                     <div className="flex items-center gap-3">
                         <WindowPicker days={days} ranges={ranges} routeName="broadcasts.metrics" />
+                        <a href={route('broadcasts.metrics.export', { days })} title="Descargar CSV de este lapso" className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 px-3 py-2 rounded-lg whitespace-nowrap">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                            CSV
+                        </a>
                         <Link href={route('broadcasts.index')} className="text-xs font-semibold text-[#045474] bg-[#045474]/5 hover:bg-[#045474]/10 px-3 py-2 rounded-lg whitespace-nowrap">
                             ← Lista de broadcasts
                         </Link>

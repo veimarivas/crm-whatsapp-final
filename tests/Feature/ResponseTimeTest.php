@@ -153,4 +153,57 @@ class ResponseTimeTest extends TestCase
                 ->where('kpis.total_replies', 1)
                 ->where('byAgent', fn ($rows) => collect($rows)->contains(fn ($a) => $a['name'] === 'Daniel')));
     }
+
+    public function test_export_exige_sesion(): void
+    {
+        $this->get(route('settings.response-time.export'))->assertRedirect('/login');
+    }
+
+    public function test_exporta_el_mismo_panel_a_csv(): void
+    {
+        $c1 = $this->conversation($this->agente);
+        $this->msg($c1, Message::SENDER_CUSTOMER, now()->subHours(2)->toDateTimeString());
+        $this->msg($c1, Message::SENDER_AGENT, now()->subHours(2)->addSeconds(90)->toDateTimeString(), $this->agente);
+
+        $c2 = $this->conversation();
+        $this->msg($c2, Message::SENDER_CUSTOMER, now()->subHours(1)->toDateTimeString());
+        $this->msg($c2, Message::SENDER_BOT, now()->subHours(1)->addSeconds(240)->toDateTimeString());
+
+        $response = $this->actingAs($this->owner)
+            ->get(route('settings.response-time.export'));
+
+$response->assertOk();
+        // fputcsv encierra en comillas las celdas con espacios; se quitan
+        // porque no se quiere probar cómo escapa PHP, sino el contenido.
+        $content = str_replace('"', '', $response->streamedContent());
+
+        $this->assertStringStartsWith("\xEF\xBB\xBF", $content, 'El CSV abre en Excel sin romper tildes.');
+        $this->assertStringContainsString('Daniel;No;1;90;90', $content);
+        $this->assertStringContainsString('✨ IA;Sí;1;240;240', $content);
+        $this->assertStringContainsString('Mediana diaria', $content);
+        $this->assertStringContainsString('Histograma de espera', $content);
+    }
+
+    public function test_export_respeta_la_ventana_y_no_filtra_otra_cuenta(): void
+    {
+        $c1 = $this->conversation($this->agente);
+        $this->msg($c1, Message::SENDER_CUSTOMER, now()->subHours(2)->toDateTimeString());
+        $this->msg($c1, Message::SENDER_AGENT, now()->subHours(2)->addSeconds(90)->toDateTimeString(), $this->agente);
+
+        $foreignOwner = User::create(['name' => 'Otra', 'email' => 'otra@test.com', 'password' => bcrypt('password')]);
+        $foreignAccount = Account::create(['name' => 'Otra empresa', 'owner_user_id' => $foreignOwner->id]);
+        $foreignOwner->update(['account_id' => $foreignAccount->id, 'account_role' => User::ROLE_OWNER]);
+        $fc = $this->conversation();
+        $fc->forceFill(['account_id' => $foreignAccount->id])->save();
+        $this->msg($fc, Message::SENDER_CUSTOMER, now()->subHours(3)->toDateTimeString());
+        $this->msg($fc, Message::SENDER_BOT, now()->subHours(2)->toDateTimeString());
+
+        // Días inválidos → cae a 30; el mensaje ajeno (a 1 h de moda) no suma.
+        $content = $this->actingAs($this->owner)
+            ->get(route('settings.response-time.export', ['days' => 12]))
+            ->streamedContent();
+
+        $this->assertStringContainsString('Daniel;No;1;90;90', $content);
+        $this->assertStringNotContainsString('Agente eliminado;Sí;1;', $content);
+    }
 }

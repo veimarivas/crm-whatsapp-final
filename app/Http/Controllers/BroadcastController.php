@@ -12,6 +12,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class BroadcastController extends Controller
 {
@@ -89,11 +90,91 @@ class BroadcastController extends Controller
     {
         $accountId = $request->user()->account_id;
 
-        $days = (int) $request->query('days', 30);
-        if (! in_array($days, [7, 15, 30, 90], true)) {
-            $days = 30;
-        }
+        $days = $this->windowDays($request);
 
+        return Inertia::render('Broadcasts/Metrics', [
+            ...$this->metricsData($accountId, $days),
+            'days' => $days,
+            'ranges' => [7, 15, 30, 90],
+        ]);
+    }
+
+    /**
+     * El mismo panel, en CSV: totales y tasas globales, el top por tasa de
+     * respuesta y la evolución diaria. Misma ventana `?days=` y mismo
+     * aislamiento por cuenta; stream con BOM UTF-8 y `;` (patrón de
+     * `ContactController@exportCsv`).
+     */
+    public function exportMetricsCsv(Request $request): StreamedResponse
+    {
+        $accountId = $request->user()->account_id;
+
+        $days = $this->windowDays($request);
+        $data = $this->metricsData($accountId, $days);
+
+        $filename = 'broadcasts-'.now()->format('Y-m-d-His').'.csv';
+
+        return response()->streamDownload(function () use ($data) {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF");
+
+            fputcsv($out, ['Totales globales'], ';');
+            fputcsv($out, ['Campañas', 'Enviados', 'Entregados', 'Leídos', 'Respondidos', 'Fallos'], ';');
+            fputcsv($out, [
+                $data['totals']['broadcasts'],
+                $data['totals']['sent'],
+                $data['totals']['delivered'],
+                $data['totals']['read'],
+                $data['totals']['replied'],
+                $data['totals']['failed'],
+            ], ';');
+
+            fputcsv($out, [], ';');
+            fputcsv($out, ['Tasas globales (%)'], ';');
+            fputcsv($out, ['Entrega', 'Lectura', 'Respuesta', 'Fallos'], ';');
+            fputcsv($out, [
+                $data['rates']['delivery'],
+                $data['rates']['read'],
+                $data['rates']['reply'],
+                $data['rates']['failure'],
+            ], ';');
+
+            fputcsv($out, [], ';');
+            fputcsv($out, ['Top 10 por tasa de respuesta'], ';');
+            fputcsv($out, ['Campaña', 'Plantilla', 'Enviados', 'Entregados', 'Leídos', 'Respondidos', 'Tasa respuesta (%)'], ';');
+            foreach ($data['topByReply'] as $b) {
+                fputcsv($out, [
+                    $b->name,
+                    $b->template_name,
+                    $b->sent_count,
+                    $b->delivered_count,
+                    $b->read_count,
+                    $b->replied_count,
+                    $b->reply_rate ?? 0,
+                ], ';');
+            }
+
+            fputcsv($out, [], ';');
+            fputcsv($out, ['Evolución diaria'], ';');
+            fputcsv($out, ['Fecha', 'Enviados', 'Entregados', 'Leídos', 'Respondidos', 'Tasa respuesta (%)'], ';');
+            foreach ($data['chart'] as $d) {
+                fputcsv($out, [
+                    $d['day'],
+                    $d['sent'],
+                    $d['delivered'],
+                    $d['read'],
+                    $d['replied'],
+                    $d['reply_rate'] ?? '',
+                ], ';');
+            }
+
+            fclose($out);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    /** @return array{totals: array<string, int>, rates: array<string, float>, topByReply: mixed, funnels: array<int, mixed>, chart: \Illuminate\Support\Collection<int, array<string, mixed>>} */
+    private function metricsData(string $accountId, int $days): array
+    {
         $since = now()->subDays($days);
 
         // Totales agregados (sumas de counters de todos los broadcasts terminados)
@@ -170,7 +251,7 @@ class BroadcastController extends Controller
             ];
         });
 
-        return Inertia::render('Broadcasts/Metrics', [
+        return [
             'totals' => [
                 'broadcasts' => (int) ($totals?->broadcasts_count ?? 0),
                 'sent' => $sent,
@@ -183,9 +264,14 @@ class BroadcastController extends Controller
             'topByReply' => $topByReply,
             'funnels' => $funnels,
             'chart' => $chart,
-            'days' => $days,
-            'ranges' => [7, 15, 30, 90],
-        ]);
+        ];
+    }
+
+    private function windowDays(Request $request): int
+    {
+        $days = (int) $request->query('days', 30);
+
+        return in_array($days, [7, 15, 30, 90], true) ? $days : 30;
     }
 
     public function destroy(Request $request, Broadcast $broadcast): RedirectResponse

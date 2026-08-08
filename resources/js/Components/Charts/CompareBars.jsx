@@ -34,6 +34,7 @@ export default function CompareBars({
     valueFormatter = fmtNumber,
     emptyMessage = 'Sin datos en este periodo.',
     className = '',
+    onBarClick,
 }) {
     if (data.length === 0) return <EmptyChart message={emptyMessage} />;
 
@@ -45,6 +46,7 @@ export default function CompareBars({
             layout={layout}
             margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
             barSize={isHorizontal ? 16 : 14}
+            onClick={onBarClick ? (entry) => onBarClick((entry && entry.activePayload?.[0]?.payload) ?? null) : undefined}
         >
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={isHorizontal} horizontal={!isHorizontal} />
             {isHorizontal ? (
@@ -74,7 +76,7 @@ export default function CompareBars({
                     }}
                 />
             )}
-            <Bar dataKey="value" radius={isHorizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}>
+            <Bar dataKey="value" radius={isHorizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]} cursor={onBarClick ? 'pointer' : undefined}>
                 {data.map((d, i) => (
                     <Cell
                         key={`${d.id ?? d[xKey] ?? i}`}
