@@ -461,25 +461,59 @@ class AiController extends Controller
             ? round($botRepliesLast30d / ($botRepliesLast30d + $fallbacksLast30d) * 100, 1)
             : 100;
 
-        // Serie diaria últimos 14 días: cuántas respuestas IA por día
-        $daily = Message::whereHas('conversation', fn ($q) => $q->where('account_id', $accountId))
+        // Serie diaria (últimos 14 días): respuestas de IA + fallbacks, con la
+        // tasa de éxito diaria para que la línea de la derecha tenga sentido.
+        $since = now()->subDays(13)->startOfDay();
+
+        $dailyBot = Message::whereHas('conversation', fn ($q) => $q->where('account_id', $accountId))
             ->where('sender_type', 'bot')
-            ->where('messages.created_at', '>=', now()->subDays(13)->startOfDay())
+            ->where('messages.created_at', '>=', $since)
             ->selectRaw('DATE(messages.created_at) as day, COUNT(*) as count')
             ->groupBy('day')
-            ->orderBy('day')
             ->get()
             ->keyBy('day');
 
-        $chart = collect(range(13, 0))->map(function ($daysAgo) use ($daily) {
+        $dailyFallback = Notification::where('account_id', $accountId)
+            ->where('type', 'ai_fallback')
+            ->where('created_at', '>=', $since)
+            ->selectRaw('DATE(created_at) as day, COUNT(*) as count')
+            ->groupBy('day')
+            ->get()
+            ->keyBy('day');
+
+        $chart = collect(range(13, 0))->map(function ($daysAgo) use ($dailyBot, $dailyFallback) {
             $day = now()->subDays($daysAgo)->toDateString();
+            $bot = (int) ($dailyBot[$day]->count ?? 0);
+            $fallback = (int) ($dailyFallback[$day]->count ?? 0);
 
             return [
                 'day' => $day,
                 'label' => now()->subDays($daysAgo)->translatedFormat('D d/m'),
-                'count' => (int) ($daily[$day]->count ?? 0),
+                'ai_replies' => $bot,
+                'fallbacks' => $fallback,
+                'success_rate' => $bot + $fallback > 0 ? round($bot / ($bot + $fallback) * 100, 1) : null,
             ];
         });
+
+        // Deltas de los KPIs contra la ventana anterior: qué pasó respecto al
+        // período previo, no solo el número en sí.
+        $prevBot7d = $this->countBotRepliesBetween($accountId, now()->subDays(14), now()->subDays(7));
+        $prevBot30d = $this->countBotRepliesBetween($accountId, now()->subDays(60), now()->subDays(30));
+        $prevFallback30d = Notification::where('account_id', $accountId)
+            ->where('type', 'ai_fallback')
+            ->whereBetween('created_at', [now()->subDays(60), now()->subDays(30)])
+            ->count();
+        $prevSuccess30d = ($prevBot30d + $prevFallback30d) > 0
+            ? round($prevBot30d / ($prevBot30d + $prevFallback30d) * 100, 1)
+            : null;
+
+        $pctChange = fn (int $now, int $then) => $then > 0 ? (($now - $then) / $then) * 100 : null;
+
+        $deltas = [
+            'replies_7d_pct' => $pctChange($botRepliesLast7d, $prevBot7d),
+            'replies_30d_pct' => $pctChange($botRepliesLast30d, $prevBot30d),
+            'success_pp' => $prevSuccess30d !== null ? round($successRate - $prevSuccess30d, 1) : null,
+        ];
 
         // Últimas preguntas del cliente (para ver qué le preguntan a la IA
         // y saber qué agregar al knowledge base). Solo msgs de customer con IA activa.
@@ -502,8 +536,18 @@ class AiController extends Controller
                 'success_rate' => $successRate,
             ],
             'chart' => $chart,
+            'deltas' => $deltas,
             'recentQuestions' => $recentQuestions,
         ]);
+    }
+
+    /** Respuestas de la IA (sender_type='bot') dentro de una ventana. */
+    private function countBotRepliesBetween(string $accountId, Carbon $from, Carbon $to): int
+    {
+        return Message::whereHas('conversation', fn ($q) => $q->where('account_id', $accountId))
+            ->where('sender_type', 'bot')
+            ->whereBetween('messages.created_at', [$from, $to])
+            ->count();
     }
 
     public function destroyDocument(Request $request, AiKnowledgeDocument $document): RedirectResponse

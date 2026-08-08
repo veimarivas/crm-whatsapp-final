@@ -1,5 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link } from '@inertiajs/react';
+import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { ChartCard, TONE, axisStyle, tooltipStyle } from '@/Components/Charts';
 
 function timeAgo(iso) {
     const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -9,13 +11,28 @@ function timeAgo(iso) {
     return `${Math.floor(diff / 86400)}d`;
 }
 
-function StatCard({ label, value, gradient, icon }) {
+function DeltaChip({ pct, suffix = '%', lowerIsBetter = false }) {
+    if (pct === null || pct === undefined) return null;
+    const v = Math.abs(Math.round(pct));
+    const better = lowerIsBetter ? pct <= 0 : pct >= 0;
+    const arrow = pct >= 0 ? '↑' : '↓';
+    return (
+        <span
+            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${better ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}
+        >
+            {arrow} {v}{suffix}
+        </span>
+    );
+}
+
+function StatCard({ label, value, gradient, icon, delta }) {
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-start justify-between gap-2 mb-3">
                 <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-lg`}>
                     {icon}
                 </div>
+                {delta}
             </div>
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">{label}</p>
             <p className="text-2xl sm:text-3xl font-extrabold text-gray-900 tabular-nums">{value}</p>
@@ -23,47 +40,69 @@ function StatCard({ label, value, gradient, icon }) {
     );
 }
 
-function Chart({ data }) {
-    const max = Math.max(1, ...data.map((d) => d.count));
+function ChartTip({ active, payload, label }) {
+    if (!active || !payload || payload.length === 0) return null;
+    const ai = payload.find((p) => p.dataKey === 'ai_replies');
+    const fb = payload.find((p) => p.dataKey === 'fallbacks');
+    const ok = payload.find((p) => p.dataKey === 'success_rate');
+
     return (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-            <div className="mb-4">
-                <h4 className="text-sm font-bold text-gray-900">Respuestas de IA — últimos 14 días</h4>
-                <p className="text-xs text-gray-400 mt-0.5">Total por día</p>
-            </div>
-            <div className="relative h-48">
-                <div className="absolute inset-0 flex items-end gap-1">
-                    {data.map((d, i) => {
-                        const pct = (d.count / max) * 100;
-                        return (
-                            <div key={i} className="flex-1 flex flex-col items-center justify-end h-full group">
-                                <div className="w-full flex items-end justify-center relative" style={{ height: `${Math.max(pct, 3)}%` }}>
-                                    <div
-                                        className="w-full rounded-t-md transition-all duration-300 group-hover:brightness-110"
-                                        style={{
-                                            height: '100%',
-                                            background: 'linear-gradient(180deg, #a855f7 0%, #7c3aed 100%)',
-                                        }}
-                                    />
-                                    {d.count > 0 && (
-                                        <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-bold text-violet-700 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            {d.count}
-                                        </span>
-                                    )}
-                                </div>
-                                <span className="text-[9px] font-semibold text-gray-400 mt-2 truncate w-full text-center">
-                                    {d.label}
-                                </span>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
+        <div style={tooltipStyle} className="px-3 py-2 min-w-[150px]">
+            {label && <p className="text-xs font-semibold text-gray-500 mb-1">{label}</p>}
+            <ul className="space-y-0.5 text-xs">
+                <li className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: TONE.ai }} />
+                    <span className="text-gray-600">Respuestas IA</span>
+                    <span className="ml-auto pl-2 font-bold tabular-nums text-gray-900">{ai?.value ?? 0}</span>
+                </li>
+                <li className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: TONE.warning }} />
+                    <span className="text-gray-600">Fallbacks</span>
+                    <span className="ml-auto pl-2 font-bold tabular-nums text-gray-900">{fb?.value ?? 0}</span>
+                </li>
+            </ul>
+            {ok?.value !== undefined && ok?.value !== null && (
+                <p className="mt-1.5 pt-1.5 border-t border-gray-100 flex justify-between text-xs text-gray-600">
+                    <span>Éxito</span>
+                    <span className="font-bold tabular-nums" style={{ color: TONE.brand }}>{ok.value}%</span>
+                </p>
+            )}
         </div>
     );
 }
 
-export default function AiStats({ stats, chart, recentQuestions }) {
+function AiChart({ data }) {
+    const total = data.reduce((acc, d) => acc + d.ai_replies + d.fallbacks, 0);
+
+    return (
+        <ChartCard title="Respuestas IA vs fallbacks — últimos 14 días" subtitle="Barras moradas de respuestas; la línea ámbar son los fallbacks; la línea verde es la tasa de éxito (eje derecho).">
+            {total === 0 ? (
+                <div className="h-56 flex items-center justify-center text-sm text-gray-400">Sin actividad de la IA en los últimos 14 días.</div>
+            ) : (
+                <ResponsiveContainer width="100%" height={270}>
+                    <ComposedChart data={data} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
+                        <defs>
+                            <linearGradient id="aiBar" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor={TONE.ai} stopOpacity={0.95} />
+                                <stop offset="100%" stopColor={TONE.ai} stopOpacity={0.55} />
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                        <XAxis dataKey="label" {...axisStyle} />
+                        <YAxis yAxisId="left" {...axisStyle} width={40} allowDecimals={false} />
+                        <YAxis yAxisId="right" orientation="right" {...axisStyle} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                        <Tooltip content={<ChartTip />} />
+                        <Bar yAxisId="left" dataKey="ai_replies" name="Respuestas IA" fill="url(#aiBar)" radius={[4, 4, 0, 0]} barSize={18} />
+                        <Line yAxisId="left" dataKey="fallbacks" name="Fallbacks" stroke={TONE.warning} strokeWidth={2} dot={{ r: 2, fill: TONE.warning }} activeDot={{ r: 4 }} />
+                        <Line yAxisId="right" dataKey="success_rate" name="Tasa de éxito %" stroke={TONE.brand} strokeWidth={2} strokeDasharray="4 3" dot={{ r: 2, fill: TONE.brand }} activeDot={{ r: 4 }} connectNulls />
+                    </ComposedChart>
+                </ResponsiveContainer>
+            )}
+        </ChartCard>
+    );
+}
+
+export default function AiStats({ stats, chart, deltas, recentQuestions }) {
     return (
         <AuthenticatedLayout header={<h2 className="text-lg font-semibold text-gray-900">Estadísticas IA</h2>}>
             <Head title="Estadísticas IA" />
@@ -90,12 +129,14 @@ export default function AiStats({ stats, chart, recentQuestions }) {
                     <StatCard
                         label="Respuestas (7d)"
                         value={stats.replies_7d}
+                        delta={<DeltaChip pct={deltas.replies_7d_pct} />}
                         gradient="from-violet-500 to-purple-600"
                         icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>}
                     />
                     <StatCard
                         label="Respuestas (30d)"
                         value={stats.replies_30d}
+                        delta={<DeltaChip pct={deltas.replies_30d_pct} />}
                         gradient="from-blue-500 to-indigo-600"
                         icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" /></svg>}
                     />
@@ -114,13 +155,14 @@ export default function AiStats({ stats, chart, recentQuestions }) {
                     <StatCard
                         label="Tasa de éxito"
                         value={`${stats.success_rate}%`}
+                        delta={<DeltaChip pct={deltas.success_pp} suffix=" pp" lowerIsBetter={false} />}
                         gradient={stats.success_rate >= 90 ? 'from-emerald-500 to-green-600' : stats.success_rate >= 70 ? 'from-amber-500 to-orange-600' : 'from-red-500 to-rose-600'}
                         icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
                     />
                 </div>
 
                 {/* Chart */}
-                <Chart data={chart} />
+                <AiChart data={chart} />
 
                 {/* Últimas preguntas */}
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
