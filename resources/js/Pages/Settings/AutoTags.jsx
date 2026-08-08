@@ -19,7 +19,7 @@ export default function AutoTags({ rules, tags }) {
         <AuthenticatedLayout header={<h2 className="text-lg font-semibold text-gray-900">Reglas de auto-etiquetado</h2>}>
             <Head title="Auto-tags" />
 
-            <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
                 <div>
                     <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Auto-etiquetado</h1>
                     <p className="text-sm text-gray-400 mt-1">
@@ -39,6 +39,7 @@ export default function AutoTags({ rules, tags }) {
                 )}
 
                 {tags.length > 0 && (
+                    <div className="grid gap-6 lg:grid-cols-3 items-start">
                     <form onSubmit={submit} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6 space-y-4">
                         <h3 className="text-sm font-bold text-gray-900">Nueva regla</h3>
                         <div className="grid sm:grid-cols-2 gap-3">
@@ -83,9 +84,10 @@ export default function AutoTags({ rules, tags }) {
                             </button>
                         </div>
                     </form>
+                    </div>
                 )}
 
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden lg:col-span-2">
                     <div className="px-5 sm:px-6 py-4 border-b border-gray-100">
                         <h3 className="text-base font-bold text-gray-900">Reglas activas ({rules.filter((r) => r.is_active).length}/{rules.length})</h3>
                     </div>

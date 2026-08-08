@@ -29,7 +29,7 @@ export default function WhatsApp({ config, webhookUrl }) {
         <AuthenticatedLayout header={<h2 className="text-lg font-semibold text-gray-900">WhatsApp</h2>}>
             <Head title="WhatsApp" />
 
-            <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
                 <div>
                     <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">WhatsApp Business API</h1>
                     <p className="text-sm text-gray-400 mt-1">Conecta tu número oficial de WhatsApp para enviar y recibir mensajes</p>
@@ -79,6 +79,8 @@ export default function WhatsApp({ config, webhookUrl }) {
                         {flash.success}
                     </div>
                 )}
+
+                <div className="grid gap-6 lg:grid-cols-2 items-start">
 
                 {/* Credenciales */}
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -217,6 +219,8 @@ export default function WhatsApp({ config, webhookUrl }) {
                             </span>
                         </div>
                     </div>
+                </div>
+
                 </div>
             </div>
         </AuthenticatedLayout>
