@@ -24,6 +24,7 @@
     "dependencies": {
         "laravel-echo": "^2.3.7",
         "opus-recorder": "^8.0.5",
-        "pusher-js": "^8.5.0"
+        "pusher-js": "^8.5.0",
+        "recharts": "^3.10.1"
     }
 }
