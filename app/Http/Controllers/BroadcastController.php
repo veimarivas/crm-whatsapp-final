@@ -81,12 +81,20 @@ class BroadcastController extends Controller
     }
 
     /**
-     * Dashboard de métricas de broadcasts: tasas globales + top campañas +
-     * evolución de últimos 30 días. Útil para el equipo de marketing.
+     * Dashboard de métricas de broadcasts: tasas globales + embudo por
+     * campaña + evolución por día con la tasa de respuesta. Acepta `?days=`
+     * (7/15/30/90) para las ventanas de tiempo.
      */
     public function metrics(Request $request): Response
     {
         $accountId = $request->user()->account_id;
+
+        $days = (int) $request->query('days', 30);
+        if (! in_array($days, [7, 15, 30, 90], true)) {
+            $days = 30;
+        }
+
+        $since = now()->subDays($days);
 
         // Totales agregados (sumas de counters de todos los broadcasts terminados)
         $totals = Broadcast::forAccount($accountId)
@@ -109,34 +117,56 @@ class BroadcastController extends Controller
             'failure' => $sent > 0 ? round(($totals->total_failed / $sent) * 100, 1) : 0,
         ];
 
-        // Top 10 broadcasts por tasa de respuesta (los que más engagement generan)
+        // Top 10 broadcasts por tasa de respuesta, dentro de la ventana elegida
         $topByReply = Broadcast::forAccount($accountId)
             ->where('status', 'sent')
             ->where('sent_count', '>', 0)
+            ->where('created_at', '>=', $since)
             ->selectRaw('id, name, template_name, sent_count, delivered_count, read_count, replied_count, created_at,
                 ROUND((replied_count * 100.0) / NULLIF(sent_count, 0), 1) as reply_rate')
             ->orderByDesc('reply_rate')
             ->limit(10)
             ->get();
 
-        // Evolución últimos 30 días: cuántos mensajes enviados por día
+        // Embudo enviados → entregados → leídos → respondidos por campaña, para
+        // que la pérdida entre pasos se lea de un vistazo (mismo orden que la
+        // tabla y mismos colores que las barras de la página).
+        $funnels = $topByReply->map(function (Broadcast $b) {
+            return [
+                'id' => $b->id,
+                'name' => $b->name,
+                'steps' => [
+                    ['name' => 'Enviados', 'value' => (int) $b->sent_count, 'color' => '#3b82f6'],
+                    ['name' => 'Entregados', 'value' => (int) $b->delivered_count, 'color' => '#10b981'],
+                    ['name' => 'Leídos', 'value' => (int) $b->read_count, 'color' => '#8b5cf6'],
+                    ['name' => 'Respondidos', 'value' => (int) $b->replied_count, 'color' => '#ec4899'],
+                ],
+            ];
+        })->all();
+
+        // Evolución diaria: cuántos mensajes por día y qué porcentaje de los
+        // enviados llegó a responder (rate de respuesta diario).
         $daily = Broadcast::forAccount($accountId)
-            ->where('created_at', '>=', now()->subDays(29)->startOfDay())
-            ->selectRaw('DATE(created_at) as day, SUM(sent_count) as sent, SUM(delivered_count) as delivered, SUM(read_count) as read_count')
+            ->where('created_at', '>=', $since)
+            ->selectRaw('DATE(created_at) as day, SUM(sent_count) as sent, SUM(delivered_count) as delivered,
+                SUM(read_count) as read_count, SUM(replied_count) as replied_count')
             ->groupBy('day')
             ->orderBy('day')
             ->get()
             ->keyBy('day');
 
-        $chart = collect(range(29, 0))->map(function ($daysAgo) use ($daily) {
+        $chart = collect(range($days - 1, 0))->map(function ($daysAgo) use ($daily) {
             $day = now()->subDays($daysAgo)->toDateString();
+            $sent = (int) ($daily[$day]->sent ?? 0);
 
             return [
                 'day' => $day,
                 'label' => now()->subDays($daysAgo)->translatedFormat('d/m'),
-                'sent' => (int) ($daily[$day]->sent ?? 0),
+                'sent' => $sent,
                 'delivered' => (int) ($daily[$day]->delivered ?? 0),
                 'read' => (int) ($daily[$day]->read_count ?? 0),
+                'replied' => (int) ($daily[$day]->replied_count ?? 0),
+                'reply_rate' => $sent > 0 ? round(((int) ($daily[$day]->replied_count ?? 0) / $sent) * 100, 1) : null,
             ];
         });
 
@@ -151,7 +181,10 @@ class BroadcastController extends Controller
             ],
             'rates' => $rates,
             'topByReply' => $topByReply,
+            'funnels' => $funnels,
             'chart' => $chart,
+            'days' => $days,
+            'ranges' => [7, 15, 30, 90],
         ]);
     }
 

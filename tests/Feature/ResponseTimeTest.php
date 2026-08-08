@@ -8,6 +8,7 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 /**
@@ -39,6 +40,16 @@ class ResponseTimeTest extends TestCase
             'name' => 'Daniel', 'email' => 'daniel@test.com', 'password' => bcrypt('password'),
             'account_id' => $this->account->id, 'account_role' => User::ROLE_AGENT,
         ]);
+
+        // El panel recorta por día: congela «ahora» para que los mensajes del
+        // fixture nunca caigan en un límite de medianoche según la hora real.
+        Carbon::setTestNow('2026-08-08 12:00:00');
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
     }
 
     private function conversation(?User $agent = null): Conversation
