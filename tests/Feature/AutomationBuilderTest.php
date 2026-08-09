@@ -211,4 +211,67 @@ class AutomationBuilderTest extends TestCase
             'steps' => [['type' => 'borrar_todo', 'config' => []]],
         ])->assertStatus(422);
     }
+
+    // ---- Posicion en el lienzo ----
+
+    public function test_la_posicion_en_el_lienzo_se_guarda_y_vuelve(): void
+    {
+        $automation = \App\Models\Automation::create([
+            'account_id' => $this->account->id,
+            'name' => 'Con lienzo',
+            'trigger_type' => 'inbound_message',
+            'trigger_config' => [],
+        ]);
+
+        $this->actingAs($this->user)->patch(route('automations.update', $automation), [
+            'name' => 'Con lienzo',
+            'trigger_type' => 'inbound_message',
+            'trigger_config' => [],
+            'steps' => [
+                ['type' => 'send_message', 'config' => ['text' => 'Hola'], 'x' => 220, 'y' => 60],
+                ['type' => 'wait', 'config' => ['minutes' => 60]],
+            ],
+        ])->assertRedirect();
+
+        $steps = $automation->steps()->orderBy('position')->get();
+
+        $this->assertSame(220, $steps[0]->position_x);
+        $this->assertSame(60, $steps[0]->position_y);
+
+        // El paso que nunca se movio queda sin coordenadas: el lienzo lo ubica
+        // con el layout automatico en vez de amontonarlo en el origen.
+        $this->assertNull($steps[1]->position_x);
+
+        // `position` sigue siendo el ORDEN de ejecucion, no una coordenada.
+        $this->assertSame(0, $steps[0]->position);
+        $this->assertSame(1, $steps[1]->position);
+    }
+
+    public function test_mover_una_tarjeta_no_cambia_el_orden_de_ejecucion(): void
+    {
+        $automation = \App\Models\Automation::create([
+            'account_id' => $this->account->id,
+            'name' => 'Orden',
+            'trigger_type' => 'inbound_message',
+            'trigger_config' => [],
+        ]);
+
+        // El segundo paso queda visualmente ARRIBA del primero.
+        $this->actingAs($this->user)->patch(route('automations.update', $automation), [
+            'name' => 'Orden',
+            'trigger_type' => 'inbound_message',
+            'trigger_config' => [],
+            'steps' => [
+                ['type' => 'send_message', 'config' => ['text' => 'Primero'], 'x' => 0, 'y' => 400],
+                ['type' => 'send_message', 'config' => ['text' => 'Segundo'], 'x' => 0, 'y' => 0],
+            ],
+        ])->assertRedirect();
+
+        $steps = $automation->steps()->orderBy('position')->get();
+
+        // Mezclarlos haria que arrastrar una tarjeta cambie lo que hace el
+        // workflow, que es exactamente lo que no puede pasar.
+        $this->assertSame('Primero', $steps[0]->step_config['text']);
+        $this->assertSame('Segundo', $steps[1]->step_config['text']);
+    }
 }

@@ -12,6 +12,8 @@
  * «la rama se acabó» de «me olvidé de configurar el resto».
  */
 
+import { useEffect, useRef, useState } from 'react';
+
 const LINE = 'bg-slate-300';
 
 /** Tramo vertical simple. */
@@ -178,6 +180,165 @@ export function CanvasSurface({ children }) {
     return (
         <div className="rounded-2xl border border-slate-200 bg-[#f4f8fa] p-6 overflow-x-auto">
             <div className="min-w-[720px] flex flex-col items-center">{children}</div>
+        </div>
+    );
+}
+
+/* ------------------------------------------------------------ lienzo libre */
+
+/** Tamaño de la grilla a la que se pegan las tarjetas al soltarlas. */
+export const GRID = 20;
+
+const snap = (v) => Math.round(v / GRID) * GRID;
+
+/**
+ * Lienzo con nodos que se pueden mover libremente.
+ *
+ * Los nodos se posicionan en absoluto y se arrastran **desde su manija**, no
+ * desde toda la tarjeta: adentro hay inputs y textareas, y arrastrar desde
+ * cualquier parte haría imposible seleccionar texto.
+ *
+ * Se pega a una grilla al soltar. Sin eso, dos tarjetas puestas «a ojo» quedan
+ * desalineadas por tres píxeles y el lienzo se ve sucio enseguida.
+ *
+ * El alto del contenedor se calcula del nodo más bajo: sin eso, mover una
+ * tarjeta hacia abajo la deja fuera del área visible y no hay forma de
+ * alcanzarla.
+ *
+ * @param nodes [{ id, x, y, width, render({ dragHandleProps, dragging }) }]
+ * @param edges [{ from, to, label, tone }]
+ */
+export function FreeCanvas({ nodes = [], edges = [], onMove, height, children }) {
+    const [drag, setDrag] = useState(null);
+    const surfaceRef = useRef(null);
+
+    const startDrag = (node) => (event) => {
+        // Solo botón primario, y sin arrastrar cuando el gesto empieza en un
+        // control (el usuario quiere usarlo, no mover la tarjeta).
+        if (event.button !== 0) return;
+        event.preventDefault();
+
+        const rect = surfaceRef.current.getBoundingClientRect();
+        setDrag({
+            id: node.id,
+            offsetX: event.clientX - rect.left - node.x,
+            offsetY: event.clientY - rect.top - node.y,
+            x: node.x,
+            y: node.y,
+        });
+    };
+
+    useEffect(() => {
+        if (!drag) return undefined;
+
+        const move = (event) => {
+            const rect = surfaceRef.current.getBoundingClientRect();
+            setDrag((d) => d && {
+                ...d,
+                // Nunca a coordenadas negativas: una tarjeta arrastrada fuera
+                // por arriba o por la izquierda queda inalcanzable.
+                x: Math.max(0, event.clientX - rect.left - d.offsetX),
+                y: Math.max(0, event.clientY - rect.top - d.offsetY),
+            });
+        };
+
+        const end = () => {
+            setDrag((d) => {
+                if (d) onMove?.(d.id, snap(d.x), snap(d.y));
+
+                return null;
+            });
+        };
+
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', end);
+
+        return () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', end);
+        };
+    }, [drag, onMove]);
+
+    const positioned = nodes.map((n) => (drag?.id === n.id ? { ...n, x: drag.x, y: drag.y } : n));
+    const bottom = Math.max(360, ...positioned.map((n) => n.y + (n.height ?? 220)));
+    const right = Math.max(760, ...positioned.map((n) => n.x + (n.width ?? 320)));
+
+    return (
+        <div className="rounded-2xl border border-slate-200 bg-[#f4f8fa] overflow-auto">
+            <div
+                ref={surfaceRef}
+                className="relative"
+                style={{
+                    height: height ?? bottom + 80,
+                    width: right + 80,
+                    // Grilla de puntos: da referencia para alinear sin agregar
+                    // una sola línea de lógica.
+                    backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)',
+                    backgroundSize: `${GRID}px ${GRID}px`,
+                }}
+            >
+                <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: 'visible' }}>
+                    {edges.map((edge) => {
+                        const from = positioned.find((n) => n.id === edge.from);
+                        const to = positioned.find((n) => n.id === edge.to);
+                        if (!from || !to) return null;
+
+                        const x1 = from.x + (from.width ?? 320) / 2;
+                        const y1 = from.y + (from.height ?? 220);
+                        const x2 = to.x + (to.width ?? 320) / 2;
+                        const y2 = to.y;
+                        const mid = (y1 + y2) / 2;
+
+                        return (
+                            <g key={`${edge.from}->${edge.to}-${edge.label ?? ''}`}>
+                                {/* Codo en tres tramos: baja, cruza y vuelve a
+                                    bajar. Una recta diagonal entre tarjetas
+                                    lejanas cruza por encima de las del medio. */}
+                                <path
+                                    d={`M ${x1} ${y1} L ${x1} ${mid} L ${x2} ${mid} L ${x2} ${y2}`}
+                                    fill="none"
+                                    stroke="#cbd5e1"
+                                    strokeWidth="2"
+                                />
+                                {edge.label && (
+                                    <foreignObject x={(x1 + x2) / 2 - 24} y={mid - 11} width="48" height="22">
+                                        <div
+                                            className={`text-center text-[10px] font-bold uppercase rounded px-1 py-0.5 ${
+                                                edge.tone === 'yes'
+                                                    ? 'bg-emerald-100 text-emerald-700'
+                                                    : edge.tone === 'no'
+                                                        ? 'bg-rose-100 text-rose-700'
+                                                        : 'bg-slate-100 text-slate-600'
+                                            }`}
+                                        >
+                                            {edge.label}
+                                        </div>
+                                    </foreignObject>
+                                )}
+                            </g>
+                        );
+                    })}
+                </svg>
+
+                {positioned.map((node) => (
+                    <div
+                        key={node.id}
+                        className={`absolute ${drag?.id === node.id ? 'z-20' : 'z-10'}`}
+                        style={{ left: node.x, top: node.y, width: node.width ?? 320 }}
+                    >
+                        {node.render({
+                            dragging: drag?.id === node.id,
+                            dragHandleProps: {
+                                onPointerDown: startDrag(node),
+                                style: { cursor: drag?.id === node.id ? 'grabbing' : 'grab', touchAction: 'none' },
+                                title: 'Arrastrar para mover',
+                            },
+                        })}
+                    </div>
+                ))}
+
+                {children}
+            </div>
         </div>
     );
 }

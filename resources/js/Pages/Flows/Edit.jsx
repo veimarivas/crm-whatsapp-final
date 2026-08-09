@@ -1,5 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { EndFlag, TriggerCard } from '@/Components/WorkflowCanvas';
+import { FreeCanvas, TriggerCard } from '@/Components/WorkflowCanvas';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -272,7 +272,7 @@ function OptionsEditor({ options, onChange, label, max, hint, withDescription = 
  * lienzo compartido (`Components/WorkflowCanvas`), que este archivo también
  * importa.
  */
-function FlowNodeCard({ node, index, onChange, onRemove, onCreateNext, nodeKeys, tags, isEntry, onMakeEntry, incoming, orphan }) {
+function FlowNodeCard({ node, index, onChange, onRemove, onCreateNext, nodeKeys, tags, isEntry, onMakeEntry, incoming, orphan, dragHandleProps, dragging }) {
     const config = node.config ?? {};
     const setConfig = (patch) => onChange({ ...node, config: { ...config, ...patch } });
     const meta = NODE_META[node.node_type] ?? NODE_META.send_message;
@@ -283,11 +283,15 @@ function FlowNodeCard({ node, index, onChange, onRemove, onCreateNext, nodeKeys,
         <div
             id={`node-${node.node_key}`}
             className={`rounded-2xl border bg-white shadow-sm hover:shadow-md transition-all scroll-mt-24 ${
+                dragging ? 'shadow-xl ring-2 ring-emerald-400/50' : ''
+            } ${
                 orphan ? 'border-amber-300' : isEntry ? 'border-emerald-300 ring-2 ring-emerald-500/20' : problems.length ? 'border-amber-200' : 'border-gray-200'
             }`}
         >
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3.5">
-                <div className="flex items-center gap-2.5 min-w-0">
+                {/* Manija de arrastre: la cabecera, no la tarjeta entera —
+                    adentro hay inputs y textareas. */}
+                <div className="flex items-center gap-2.5 min-w-0" {...(dragHandleProps ?? {})}>
                     <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${meta.gradient} flex items-center justify-center text-white shadow-sm flex-shrink-0`}>
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d={meta.icon} />
@@ -695,8 +699,51 @@ export default function Edit({ flow, nodes, tags, sampleContacts = [] }) {
         patch(route('flows.update', flow.id), { preserveScroll: true });
     };
 
-    const renderNode = (node, index, orphan) => (
+    /**
+     * Nodos del lienzo.
+     *
+     * La posición guardada gana; `0,0` significa «nunca se movió» y entonces
+     * se ubica en columna por orden de recorrido. Los huérfanos van a una
+     * columna aparte a la derecha, para que se vea de un vistazo que están
+     * desconectados.
+     */
+    const canvasNodes = useMemo(() => {
+        const order = [...reachable, ...orphans];
+
+        return order.map((node, i) => {
+            const orphan = orphans.includes(node);
+            const auto = orphan
+                ? { x: 460, y: orphans.indexOf(node) * 320 }
+                : { x: 40, y: reachable.indexOf(node) * 320 };
+
+            return {
+                id: node.node_key,
+                width: 380,
+                height: 300,
+                x: node.position_x || auto.x,
+                y: node.position_y || auto.y,
+                render: ({ dragHandleProps, dragging }) =>
+                    renderNode(node, orphan ? null : reachable.indexOf(node) + 1, orphan, { dragHandleProps, dragging }),
+            };
+        });
+    }, [data.nodes, reachable, orphans]);
+
+    /** Una flecha por cada salida configurada. */
+    const canvasEdges = useMemo(
+        () => data.nodes.flatMap((node) => edgesOf(node)
+            .filter((edge) => edge.target)
+            .map((edge) => ({
+                from: node.node_key,
+                to: edge.target,
+                label: edge.label,
+                tone: edge.label === 'Sí' ? 'yes' : edge.label === 'No' ? 'no' : undefined,
+            }))),
+        [data.nodes],
+    );
+
+    const renderNode = (node, index, orphan, canvasProps = {}) => (
         <FlowNodeCard
+            {...canvasProps}
             // Se keyea por identidad y no por node_key: renombrar no debe
             // remontar la tarjeta (perdería el foco del input a media palabra).
             key={data.nodes.indexOf(node)}
@@ -820,19 +867,22 @@ export default function Edit({ flow, nodes, tags, sampleContacts = [] }) {
                                 />
                             </div>
 
-                            {/* Un flow es un GRAFO, no un árbol: dos ramas pueden
-                                caer en el mismo paso y un paso puede volver atrás.
-                                Por eso los nodos van en una columna ordenada por
-                                recorrido y las salidas se muestran como destinos
-                                con nombre — dibujarlo como árbol obligaría a
-                                duplicar nodos y mentiría sobre la estructura. */}
-                            {reachable.map((node, i) => renderNode(node, i + 1, false))}
+                            <p className="text-[11px] text-gray-400 text-center">
+                                Arrastrá una tarjeta desde su cabecera para moverla. Las flechas siguen las conexiones,
+                                no la posición.
+                            </p>
 
-                            {reachable.length > 0 && (
-                                <div className="flex justify-center pt-1">
-                                    <EndFlag label="Fin del recorrido" />
-                                </div>
-                            )}
+                            {/* Un flow es un GRAFO: dos ramas pueden caer en el
+                                mismo paso y un paso puede volver atrás. Por eso
+                                las conexiones se dibujan entre las tarjetas
+                                donde estén, en vez de imponer un árbol. */}
+                            <FreeCanvas
+                                nodes={canvasNodes}
+                                edges={canvasEdges}
+                                onMove={(key, x, y) => setData('nodes', data.nodes.map((n) => (
+                                    n.node_key === key ? { ...n, position_x: x, position_y: y } : n
+                                )))}
+                            />
 
                             {reachable.length === 0 && (
                                 <p className="text-xs text-red-500 font-medium text-center py-4">

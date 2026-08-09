@@ -1,7 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import {
-    BranchSplit, CanvasSurface, Connector, EndFlag, NodeCard, TriggerCard,
-} from '@/Components/WorkflowCanvas';
+import { Connector, FreeCanvas, NodeCard } from '@/Components/WorkflowCanvas';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 
@@ -333,32 +331,38 @@ function AddStepMenu({ onPick, onClose }) {
 }
 
 /** Conector vertical con el «+» que inserta un paso en esa posición exacta. */
-/** Conector del lienzo con el menú de «insertar paso» colgando del «+». */
-function StepConnector({ onAdd }) {
-    const [open, setOpen] = useState(false);
-
-    return (
-        <Connector onAdd={() => setOpen((v) => !v)}>
-            {open && (
-                <AddStepMenu
-                    onPick={(step) => { onAdd(step); setOpen(false); }}
-                    onClose={() => setOpen(false)}
-                />
-            )}
-        </Connector>
-    );
+/** Quita las posiciones manuales de todo el árbol: vuelve al layout automático. */
+function clearPositions(steps) {
+    return steps.map(({ x, y, ...step }) => ({
+        ...step,
+        children_yes: clearPositions(step.children_yes ?? []),
+        children_no: clearPositions(step.children_no ?? []),
+    }));
 }
 
-function StepNode({ step, index, total, onChange, onRemove, onMove, tags }) {
+function StepNode({ step, index, total, onChange, onRemove, onMove, tags, dragHandleProps, dragging, onAddAfter, onAddBranch }) {
     const meta = STEP_META[step.type] ?? STEP_META.send_message;
     const problem = stepProblem(step);
 
     return (
-        <NodeCard icon={meta.icon} gradient={meta.gradient} tone={problem ? 'warning' : undefined}>
+        <NodeCard
+            icon={meta.icon}
+            gradient={meta.gradient}
+            tone={problem ? 'warning' : undefined}
+            className={dragging ? 'shadow-xl ring-2 ring-emerald-400/50' : ''}
+        >
+            {/* La manija de arrastre es la cabecera, no la tarjeta entera:
+                adentro hay inputs y textareas, y arrastrar desde cualquier
+                parte haría imposible seleccionar texto. */}
             <div className="flex items-center justify-between gap-2 px-4">
-                <div className="min-w-0">
-                    <p className="text-sm font-bold text-gray-900 truncate">{meta.label}</p>
-                    <p className="text-[11px] text-gray-400">Paso {index + 1} de {total}</p>
+                <div className="min-w-0 flex items-center gap-2" {...(dragHandleProps ?? {})}>
+                    <svg className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M7 4a1 1 0 112 0 1 1 0 01-2 0zm0 6a1 1 0 112 0 1 1 0 01-2 0zm0 6a1 1 0 112 0 1 1 0 01-2 0zm5-12a1 1 0 112 0 1 1 0 01-2 0zm0 6a1 1 0 112 0 1 1 0 01-2 0zm0 6a1 1 0 112 0 1 1 0 01-2 0z" />
+                    </svg>
+                    <div className="min-w-0">
+                        <p className="text-sm font-bold text-gray-900 truncate">{meta.label}</p>
+                        <p className="text-[11px] text-gray-400">Paso {index + 1} de {total}</p>
+                    </div>
                 </div>
                 <div className="flex items-center gap-0.5 flex-shrink-0">
                     <button type="button" onClick={() => onMove(-1)} disabled={index === 0} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-25 disabled:hover:bg-transparent transition-colors" title="Subir">
@@ -394,91 +398,143 @@ function StepNode({ step, index, total, onChange, onRemove, onMove, tags }) {
             {step.type === 'wait' && (
                 <div className="px-4 pb-3 -mt-1">
                     <p className="text-[11px] text-amber-700 bg-amber-50 rounded-lg px-2.5 py-1.5">
-                        Todo lo que pongas debajo se ejecutará {humanMinutes(step.config?.minutes)} después.
+                        Todo lo que sigue se ejecutará {humanMinutes(step.config?.minutes)} después.
                     </p>
                 </div>
             )}
 
+            {/* En el lienzo libre el «+» vive en la tarjeta y no en la línea:
+                con las tarjetas movidas a mano no hay un punto medio fijo donde
+                ponerlo. */}
+            <div className="px-4 pb-3 flex flex-wrap gap-1.5">
+                {step.type === 'condition' ? (
+                    <>
+                        <StepAddButton label="+ rama No" tone="no" onAdd={(s) => onAddBranch?.('children_no', s)} />
+                        <StepAddButton label="+ rama Sí" tone="yes" onAdd={(s) => onAddBranch?.('children_yes', s)} />
+                    </>
+                ) : (
+                    <StepAddButton label="+ paso siguiente" onAdd={(s) => onAddAfter?.(s)} />
+                )}
+            </div>
         </NodeCard>
     );
 }
 
-/**
- * Rama del árbol: pasos encadenados, y cuando aparece una condición el árbol
- * **se abre debajo** en dos ramas etiquetadas SÍ/NO.
- *
- * Cada rama termina en una bandera a cuadros: sin ella no se distingue «la
- * rama se acabó» de «me falta configurar el resto».
- *
- * `depth` acota el anidado a 3 niveles. No es una limitación técnica del motor
- * sino de lectura: a partir del cuarto nivel las columnas quedan tan angostas
- * que el árbol deja de ser legible, que es justo lo que este rediseño arregla.
- */
-function StepLane({ steps, onChange, tags, depth = 0 }) {
-    const insert = (at, step) => onChange([...steps.slice(0, at), step, ...steps.slice(at)]);
-    const update = (i, step) => onChange(steps.map((s, idx) => (idx === i ? step : s)));
-    const remove = (i) => onChange(steps.filter((_, idx) => idx !== i));
-    const move = (i, dir) => {
-        const j = i + dir;
-        if (j < 0 || j >= steps.length) return;
-        const next = [...steps];
-        [next[i], next[j]] = [next[j], next[i]];
-        onChange(next);
-    };
+/** Botón que despliega el menú de pasos y lo inserta donde corresponda. */
+function StepAddButton({ label, tone, onAdd }) {
+    const [open, setOpen] = useState(false);
 
     return (
-        <div className="w-full flex flex-col items-center">
-            <StepConnector onAdd={(s) => insert(0, s)} />
-
-            {steps.map((step, i) => {
-                const isBranch = step.type === 'condition';
-
-                return (
-                    <div key={i} className="w-full flex flex-col items-center">
-                        {/* Ancho fijo: las tarjetas se leen igual en el tronco
-                            que dentro de una rama, y el árbol no se deforma
-                            según cuántas ramas haya al costado. */}
-                        <div className="w-[22rem] max-w-full">
-                            <StepNode
-                                step={step}
-                                index={i}
-                                total={steps.length}
-                                tags={tags}
-                                onChange={(s) => update(i, s)}
-                                onRemove={() => remove(i)}
-                                onMove={(dir) => move(i, dir)}
-                            />
-                        </div>
-
-                        {isBranch && depth < 3 ? (
-                            <BranchSplit
-                                branches={[
-                                    { key: 'no', label: 'No', tone: 'no', childrenKey: 'children_no' },
-                                    { key: 'yes', label: 'Sí', tone: 'yes', childrenKey: 'children_yes' },
-                                ].map((lane) => ({
-                                    ...lane,
-                                    content: (
-                                        <StepLane
-                                            steps={step[lane.childrenKey] ?? []}
-                                            onChange={(children) => update(i, { ...step, [lane.childrenKey]: children })}
-                                            tags={tags}
-                                            depth={depth + 1}
-                                        />
-                                    ),
-                                }))}
-                            />
-                        ) : (
-                            <StepConnector onAdd={(s) => insert(i + 1, s)} />
-                        )}
-                    </div>
-                );
-            })}
-
-            {/* Después de una condición el recorrido termina en cada rama, así
-                que la bandera la pone la rama y no el tronco. */}
-            {steps.at(-1)?.type !== 'condition' && <EndFlag />}
+        <div className="relative">
+            <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors ${
+                    tone === 'yes'
+                        ? 'border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
+                        : tone === 'no'
+                            ? 'border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100'
+                            : 'border-gray-200 text-gray-600 bg-white hover:border-emerald-300 hover:text-emerald-700'
+                }`}
+            >
+                {label}
+            </button>
+            {open && (
+                <AddStepMenu
+                    onPick={(step) => { onAdd(step); setOpen(false); }}
+                    onClose={() => setOpen(false)}
+                />
+            )}
         </div>
     );
+}
+
+/* ------------------------------------------------- árbol ⇄ lienzo libre */
+
+const NODE_W = 320;
+
+const NODE_H = 250;
+
+const GAP_X = 40;
+
+const GAP_Y = 70;
+
+/** Lee/escribe un paso dentro del árbol por su ruta (`[0,'children_no',1]`). */
+function readPath(steps, path) {
+    return path.reduce((acc, key) => (typeof key === 'number' ? acc[key] : acc[key] ?? []), steps);
+}
+
+function writePath(steps, path, updater) {
+    if (path.length === 0) return updater(steps);
+    const [head, ...rest] = path;
+
+    if (typeof head === 'number') {
+        return steps.map((s, i) => (i === head ? writePath(s, rest, updater) : s));
+    }
+
+    return { ...steps, [head]: writePath(steps[head] ?? [], rest, updater) };
+}
+
+/**
+ * Aplana el árbol a nodos posicionables y calcula el **layout automático**.
+ *
+ * La posición guardada gana; la calculada es el respaldo. Así las
+ * automatizaciones que ya existían —que no tienen coordenadas— se dibujan
+ * ordenadas en vez de amontonarse en el origen, y en cuanto alguien mueve una
+ * tarjeta esa posición manda.
+ */
+function flatten(steps, { path = [], x = 0, y = 0, nodes = [], edges = [], parentId = null, edgeLabel = null, edgeTone = null } = {}) {
+    let cursorY = y;
+    let right = x + NODE_W;
+    let previousId = parentId;
+    let previousLabel = edgeLabel;
+    let previousTone = edgeTone;
+
+    steps.forEach((step, i) => {
+        const nodePath = [...path, i];
+        const id = nodePath.join('/');
+
+        nodes.push({
+            id,
+            path: nodePath,
+            step,
+            width: NODE_W,
+            height: NODE_H,
+            x: step.x ?? x,
+            y: step.y ?? cursorY,
+        });
+
+        if (previousId !== null) {
+            edges.push({ from: previousId, to: id, label: previousLabel, tone: previousTone });
+        }
+
+        previousLabel = null;
+        previousTone = null;
+
+        if (step.type === 'condition') {
+            const childY = cursorY + NODE_H + GAP_Y;
+
+            const no = flatten(step.children_no ?? [], {
+                path: [...nodePath, 'children_no'], x, y: childY,
+                nodes, edges, parentId: id, edgeLabel: 'No', edgeTone: 'no',
+            });
+
+            const yes = flatten(step.children_yes ?? [], {
+                path: [...nodePath, 'children_yes'], x: no.right + GAP_X, y: childY,
+                nodes, edges, parentId: id, edgeLabel: 'Sí', edgeTone: 'yes',
+            });
+
+            right = Math.max(right, yes.right);
+            cursorY = Math.max(no.bottom, yes.bottom);
+            // Tras una condición el tronco no sigue: cada rama es su camino.
+            previousId = null;
+        } else {
+            previousId = id;
+            cursorY += NODE_H + GAP_Y;
+        }
+    });
+
+    return { nodes, edges, right, bottom: cursorY };
 }
 
 /* ---------------------------------------------------------------- panel de prueba */
@@ -622,6 +678,11 @@ export default function Edit({ automation, steps, tags, sampleContacts = [], isD
     const totalSteps = useMemo(() => countSteps(data.steps), [data.steps]);
     const trigger = TRIGGERS[data.trigger_type];
 
+    // Nodos y conexiones del lienzo. Se recalcula con cada cambio del árbol
+    // porque insertar o borrar un paso cambia el layout de los que no se
+    // movieron a mano.
+    const canvas = useMemo(() => flatten(data.steps), [data.steps]);
+
     const submit = (e) => {
         e.preventDefault();
         isEdit
@@ -742,25 +803,89 @@ export default function Edit({ automation, steps, tags, sampleContacts = [], isD
                                 <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 font-medium">{errors.steps}</div>
                             )}
 
-                            {/* El lienzo: el árbol entero sobre el fondo claro,
-                                con el resumen de la inscripción arriba. */}
-                            <div className="mt-3">
-                                <CanvasSurface>
-                                    <div className="w-[22rem]">
-                                        <TriggerCard
-                                            title="Se inscribe cuando"
-                                            description={trigger.help}
-                                        />
-                                    </div>
+                            {/* Lienzo libre: las tarjetas se arrastran desde su
+                                cabecera y la posición queda guardada con el
+                                paso. Lo que nunca se movió usa el layout
+                                automático del árbol. */}
+                            <div className="mt-3 space-y-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <StepAddButton
+                                        label="+ Añadir paso"
+                                        onAdd={(s) => setData('steps', [...data.steps, s])}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setData('steps', clearPositions(data.steps))}
+                                        className="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-gray-500 border border-gray-200 bg-white hover:text-gray-800"
+                                        title="Vuelve a acomodar todo con el layout automático"
+                                    >
+                                        Reordenar automáticamente
+                                    </button>
+                                    <span className="text-[11px] text-gray-400">
+                                        Arrastrá una tarjeta desde su cabecera para moverla.
+                                    </span>
+                                </div>
 
-                                    <div className="w-full">
-                                        <StepLane
-                                            steps={data.steps}
-                                            onChange={(s) => setData('steps', s)}
-                                            tags={tags}
-                                        />
-                                    </div>
-                                </CanvasSurface>
+                                <FreeCanvas
+                                    nodes={canvas.nodes.map((node) => ({
+                                        ...node,
+                                        render: ({ dragHandleProps, dragging }) => (
+                                            <StepNode
+                                                step={node.step}
+                                                index={node.path.at(-1)}
+                                                total={readPath(data.steps, node.path.slice(0, -1)).length}
+                                                tags={tags}
+                                                dragHandleProps={dragHandleProps}
+                                                dragging={dragging}
+                                                onChange={(s) => setData('steps', writePath(data.steps, node.path, () => s))}
+                                                onRemove={() => setData('steps', writePath(
+                                                    data.steps,
+                                                    node.path.slice(0, -1),
+                                                    (lane) => lane.filter((_, i) => i !== node.path.at(-1)),
+                                                ))}
+                                                onMove={(dir) => setData('steps', writePath(
+                                                    data.steps,
+                                                    node.path.slice(0, -1),
+                                                    (lane) => {
+                                                        const i = node.path.at(-1);
+                                                        const j = i + dir;
+                                                        if (j < 0 || j >= lane.length) return lane;
+                                                        const next = [...lane];
+                                                        [next[i], next[j]] = [next[j], next[i]];
+
+                                                        return next;
+                                                    },
+                                                ))}
+                                                onAddAfter={(s) => setData('steps', writePath(
+                                                    data.steps,
+                                                    node.path.slice(0, -1),
+                                                    (lane) => [
+                                                        ...lane.slice(0, node.path.at(-1) + 1),
+                                                        s,
+                                                        ...lane.slice(node.path.at(-1) + 1),
+                                                    ],
+                                                ))}
+                                                onAddBranch={(key, s) => setData('steps', writePath(
+                                                    data.steps,
+                                                    [...node.path, key],
+                                                    (lane) => [...lane, s],
+                                                ))}
+                                            />
+                                        ),
+                                    }))}
+                                    edges={canvas.edges}
+                                    onMove={(id, x, y) => {
+                                        const node = canvas.nodes.find((n) => n.id === id);
+                                        if (!node) return;
+                                        setData('steps', writePath(data.steps, node.path, (s) => ({ ...s, x, y })));
+                                    }}
+                                />
+
+                                {data.steps.length === 0 && (
+                                    <p className="text-xs text-gray-400 text-center py-2">
+                                        Todavía no hay pasos. Usá «Añadir paso» para el primero.
+                                    </p>
+                                )}
                             </div>
                         </div>
                     </form>

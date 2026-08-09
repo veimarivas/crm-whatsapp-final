@@ -92,6 +92,8 @@ class FlowController extends Controller
             'nodes.*.node_key' => 'required|string|max:60',
             'nodes.*.node_type' => ['required', Rule::in(Runner::NODE_TYPES)],
             'nodes.*.config' => 'nullable|array',
+            'nodes.*.position_x' => 'nullable|integer|min:0|max:20000',
+            'nodes.*.position_y' => 'nullable|integer|min:0|max:20000',
             'replies' => 'nullable|array|max:40',
             'replies.*' => 'nullable|string|max:500',
             'contact_id' => 'nullable|uuid',
@@ -137,7 +139,15 @@ class FlowController extends Controller
         return Inertia::render('Flows/Edit', [
             'flow' => $flow,
             'nodes' => $flow->nodes()->orderBy('created_at')->get()
-                ->map(fn ($n) => ['node_key' => $n->node_key, 'node_type' => $n->node_type, 'config' => $n->config]),
+                ->map(fn ($n) => [
+                    'node_key' => $n->node_key,
+                    'node_type' => $n->node_type,
+                    'config' => $n->config,
+                    // `0,0` significa «nunca se movió»: el lienzo lo acomoda
+                    // con el layout automático en vez de apilarlo en el origen.
+                    'position_x' => $n->position_x,
+                    'position_y' => $n->position_y,
+                ]),
             'tags' => Tag::forAccount($request->user()->account_id)->orderBy('name')->get(['id', 'name']),
             'sampleContacts' => Contact::forAccount($request->user()->account_id)
                 ->orderByDesc('updated_at')
@@ -165,6 +175,8 @@ class FlowController extends Controller
             'nodes.*.node_key' => 'required|string|max:60|regex:/^[a-z0-9_]+$/',
             'nodes.*.node_type' => ['required', Rule::in(Runner::NODE_TYPES)],
             'nodes.*.config' => 'nullable|array',
+            'nodes.*.position_x' => 'nullable|integer|min:0|max:20000',
+            'nodes.*.position_y' => 'nullable|integer|min:0|max:20000',
         ]);
 
         $this->validateGraph($validated);
@@ -189,6 +201,11 @@ class FlowController extends Controller
                     'node_key' => $node['node_key'],
                     'node_type' => $node['node_type'],
                     'config' => $node['config'] ?? [],
+                    // Dónde quedó la tarjeta en el lienzo. Las columnas ya
+                    // existían en el esquema desde el principio; hasta ahora
+                    // nadie las escribía.
+                    'position_x' => (int) ($node['position_x'] ?? 0),
+                    'position_y' => (int) ($node['position_y'] ?? 0),
                 ]);
             }
         });

@@ -8,7 +8,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['automation_id', 'parent_step_id', 'branch', 'step_type', 'step_config', 'position'])]
+#[Fillable([
+    'automation_id', 'parent_step_id', 'branch', 'step_type', 'step_config',
+    // `position` = orden de ejecución en la rama. `position_x/y` = dónde quedó
+    // la tarjeta en el lienzo. Son cosas distintas a propósito.
+    'position', 'position_x', 'position_y',
+])]
 class AutomationStep extends Model
 {
     use HasUuids;

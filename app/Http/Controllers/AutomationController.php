@@ -218,7 +218,12 @@ class AutomationController extends Controller
                 'branch' => $branch,
                 'step_type' => $step['type'],
                 'step_config' => $step['config'] ?? [],
+                // `position` es el ORDEN dentro de la rama; `position_x/y` es
+                // dónde quedó la tarjeta en el lienzo. Mezclarlos haría que
+                // mover una tarjeta cambie el orden de ejecución.
                 'position' => $position,
+                'position_x' => isset($step['x']) ? (int) $step['x'] : null,
+                'position_y' => isset($step['y']) ? (int) $step['y'] : null,
             ]);
 
             if ($step['type'] === 'condition') {
@@ -234,6 +239,8 @@ class AutomationController extends Controller
         return array_map(fn (array $step) => [
             'type' => $step['type'],
             'config' => $step['config'] ?? [],
+            'x' => $step['x'] ?? null,
+            'y' => $step['y'] ?? null,
             'children_yes' => $this->normalizeTree($step['children_yes'] ?? []),
             'children_no' => $this->normalizeTree($step['children_no'] ?? []),
         ], $steps);
@@ -253,6 +260,11 @@ class AutomationController extends Controller
                 ->map(fn ($s) => [
                     'type' => $s->step_type,
                     'config' => $s->step_config,
+                    // `null` cuando el paso nunca se movió: el lienzo lo ubica
+                    // con el layout automático del árbol, así que lo que ya
+                    // existía no se amontona en el origen.
+                    'x' => $s->position_x,
+                    'y' => $s->position_y,
                     'children_yes' => $s->step_type === 'condition' ? $build($s->id, 'yes') : [],
                     'children_no' => $s->step_type === 'condition' ? $build($s->id, 'no') : [],
                 ])

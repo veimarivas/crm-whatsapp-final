@@ -2,6 +2,29 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## Lienzo libre: tarjetas movibles en /automations y /flows (2026-08-08)
+
+Segunda mitad del rediseño: además de verse como HubSpot, **cada paso se puede mover por el lienzo** y la posición queda guardada.
+
+### `FreeCanvas` (en `Components/WorkflowCanvas.jsx`)
+Nodos posicionados en absoluto, conexiones en SVG y arrastre con eventos de puntero — sin librería nueva.
+
+- **Se arrastra desde la cabecera, no desde toda la tarjeta**: adentro hay inputs y textareas, y arrastrar desde cualquier parte haría imposible seleccionar texto.
+- **Se pega a una grilla de 20 px al soltar.** Sin eso, dos tarjetas puestas «a ojo» quedan desalineadas por tres píxeles y el lienzo se ve sucio enseguida.
+- **Nunca a coordenadas negativas** y el alto/ancho del contenedor se calculan del nodo más extremo: una tarjeta arrastrada fuera del área quedaría inalcanzable.
+- Las conexiones son **codos de tres tramos** (baja, cruza, baja). Una recta diagonal entre tarjetas lejanas pasa por encima de las del medio.
+
+### Persistencia
+- **`automation_steps` estrena `position_x`/`position_y`.** `position` ya existía pero es el **orden de ejecución** dentro de la rama: son cosas distintas y mezclarlas haría que **arrastrar una tarjeta cambie lo que hace el workflow**. Hay un test que mueve el segundo paso visualmente arriba del primero y verifica que el orden de ejecución no cambie.
+- **`flow_nodes` ya tenía `position_x`/`position_y`** desde el esquema original — nadie las escribía. Ahora sí.
+- **Nullable / `0,0` = «nunca se movió»**: esos nodos caen en el **layout automático**, así que las automatizaciones y flows que ya existen se dibujan ordenados en vez de amontonarse en el origen. No hizo falta migrar datos.
+- Botón **«Reordenar automáticamente»**: borra las posiciones manuales y devuelve todo al layout calculado.
+
+### Consecuencia en `/automations`
+El árbol dejó de dibujarse con `BranchSplit` y pasó a ser un grafo posicionado: `flatten()` aplana el árbol a nodos + aristas y calcula el layout de respaldo. El `+` se movió de la línea a la tarjeta —con las tarjetas movidas a mano no hay un punto medio fijo donde ponerlo— y una condición muestra **«+ rama No» / «+ rama Sí»** en vez de un solo botón.
+
+Tests: `AutomationBuilderTest` (11, +2). Suite **410/410 (1859 aserciones)**.
+
 ## Lienzo estilo HubSpot en /automations y /flows (2026-08-08)
 
 `Components/WorkflowCanvas.jsx` — primitivas compartidas: `CanvasSurface` (fondo azul claro), `TriggerCard` (nodo de inscripción), `NodeCard` (icono en círculo montado sobre el borde de la tarjeta), `Connector` (línea + «+»), `BranchSplit` y `EndFlag` (bandera a cuadros).
