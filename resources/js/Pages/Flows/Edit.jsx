@@ -1,12 +1,19 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { EndFlag, TriggerCard } from '@/Components/WorkflowCanvas';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 /**
- * Editor de chatbots. El grafo se ordena por recorrido desde el nodo de
- * entrada, así la lista se lee como la conversación en vez de como el
- * orden en que se crearon los nodos. Los nodos a los que no llega nadie
- * se agrupan aparte (son el error clásico de un flow).
+ * Editor de chatbots, con el mismo lenguaje visual que el de automatizaciones
+ * (lienzo claro, nodo de arranque arriba, bandera de fin).
+ *
+ * **Pero no es un árbol y no se dibuja como uno.** Un flow es un GRAFO: dos
+ * ramas pueden caer en el mismo paso y un paso puede volver atrás. Rendearlo
+ * como el árbol de HubSpot obligaría a duplicar nodos —o a cortar los ciclos—
+ * y mostraría una estructura que no es la real. Por eso los pasos van en una
+ * columna ordenada por recorrido desde la entrada, y las salidas se muestran
+ * como destinos con nombre. Los nodos a los que no llega nadie se agrupan
+ * aparte: son el error clásico de un flow.
  */
 
 const NODE_META = {
@@ -258,7 +265,14 @@ function OptionsEditor({ options, onChange, label, max, hint, withDescription = 
     );
 }
 
-function NodeCard({ node, index, onChange, onRemove, onCreateNext, nodeKeys, tags, isEntry, onMakeEntry, incoming, orphan }) {
+/**
+ * Tarjeta de un paso del chatbot.
+ *
+ * Se llama `FlowNodeCard` y no `NodeCard` para no chocar con la primitiva del
+ * lienzo compartido (`Components/WorkflowCanvas`), que este archivo también
+ * importa.
+ */
+function FlowNodeCard({ node, index, onChange, onRemove, onCreateNext, nodeKeys, tags, isEntry, onMakeEntry, incoming, orphan }) {
     const config = node.config ?? {};
     const setConfig = (patch) => onChange({ ...node, config: { ...config, ...patch } });
     const meta = NODE_META[node.node_type] ?? NODE_META.send_message;
@@ -682,7 +696,7 @@ export default function Edit({ flow, nodes, tags, sampleContacts = [] }) {
     };
 
     const renderNode = (node, index, orphan) => (
-        <NodeCard
+        <FlowNodeCard
             // Se keyea por identidad y no por node_key: renombrar no debe
             // remontar la tarjeta (perdería el foco del input a media palabra).
             key={data.nodes.indexOf(node)}
@@ -795,15 +809,30 @@ export default function Edit({ flow, nodes, tags, sampleContacts = [] }) {
                         </div>
 
                         {/* Grafo */}
-                        <div className="rounded-2xl border border-gray-100 bg-gray-50/60 p-4 sm:p-5 space-y-3">
+                        <div className="rounded-2xl border border-slate-200 bg-[#f4f8fa] p-4 sm:p-5 space-y-3">
                             {errors.nodes && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 font-medium">{errors.nodes}</div>}
                             {errors.entry_node_id && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 font-medium">{errors.entry_node_id}</div>}
 
-                            <div className="flex flex-col items-center">
-                                <span className="px-2.5 py-0.5 rounded-full bg-gray-900 text-white text-[10px] font-bold uppercase tracking-wider">Conversación</span>
+                            <div className="max-w-md mx-auto">
+                                <TriggerCard
+                                    title="La conversación arranca"
+                                    description={(TRIGGERS[data.trigger_type]?.help) ?? 'Cuando se cumple el disparador configurado arriba.'}
+                                />
                             </div>
 
+                            {/* Un flow es un GRAFO, no un árbol: dos ramas pueden
+                                caer en el mismo paso y un paso puede volver atrás.
+                                Por eso los nodos van en una columna ordenada por
+                                recorrido y las salidas se muestran como destinos
+                                con nombre — dibujarlo como árbol obligaría a
+                                duplicar nodos y mentiría sobre la estructura. */}
                             {reachable.map((node, i) => renderNode(node, i + 1, false))}
+
+                            {reachable.length > 0 && (
+                                <div className="flex justify-center pt-1">
+                                    <EndFlag label="Fin del recorrido" />
+                                </div>
+                            )}
 
                             {reachable.length === 0 && (
                                 <p className="text-xs text-red-500 font-medium text-center py-4">

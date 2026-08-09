@@ -2,6 +2,28 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## Lienzo estilo HubSpot en /automations y /flows (2026-08-08)
+
+`Components/WorkflowCanvas.jsx` — primitivas compartidas: `CanvasSurface` (fondo azul claro), `TriggerCard` (nodo de inscripción), `NodeCard` (icono en círculo montado sobre el borde de la tarjeta), `Connector` (línea + «+»), `BranchSplit` y `EndFlag` (bandera a cuadros).
+
+### `/automations`: el árbol se abre debajo, no adentro
+**El cambio no es cosmético.** Antes las dos ramas de una condición iban en dos columnas *dentro* de la tarjeta, así que en el segundo nivel el ancho se partía otra vez y el recorrido se volvía ilegible. Ahora la condición se cierra y el árbol se abre **debajo**, centrado, con conectores etiquetados **No / Sí** y cada rama hasta su propia bandera de fin.
+
+- El tramo horizontal se dibuja con **medias líneas por columna** (mitad derecha en la primera, mitad izquierda en la última): funciona con 2 ramas o con 5 sin recalcular anchos ni posicionar nada respecto del padre.
+- Las columnas usan `min-w-[19rem]` y **no** `min-w-0`: con anidado el lienzo tiene que **crecer y hacer scroll**, no comprimir las tarjetas hasta que no se lean.
+- Las tarjetas tienen **ancho fijo** para que se lean igual en el tronco que dentro de una rama.
+- El `+` sigue entre cada par de pasos: la mayoría de las correcciones de un workflow son «falta algo en el medio».
+- `depth < 3` acota el anidado. No es límite del motor sino de lectura.
+
+### `/flows`: mismo lenguaje visual, distinta estructura — y se dice
+**Un flow es un GRAFO, no un árbol.** Dos ramas pueden caer en el mismo paso y un paso puede volver atrás. Dibujarlo como el árbol de HubSpot obligaría a **duplicar nodos** —o a cortar los ciclos— y mostraría una estructura que no es la real.
+
+Se le aplicó el lenguaje visual (lienzo claro, nodo de arranque arriba, bandera de fin) manteniendo la **columna ordenada por recorrido** desde la entrada, con las salidas como destinos con nombre. Los nodos huérfanos siguen agrupados aparte.
+
+**Trampa:** `Flows/Edit.jsx` ya tenía un `NodeCard` local que choca con la primitiva del lienzo. Se renombró a `FlowNodeCard`; sin eso el import sombrea la función local y el editor renderiza cualquier cosa sin error de compilación.
+
+Suite **408/408 (1850 aserciones)**, sin cambios de backend.
+
 ## Feedback de la IA — lado wacrm (2026-08-08)
 
 Mitad de T5 de `mejoras2.md` del Komo. **La IA vive acá pero el agente que ve la respuesta mala está mirando el chat del lead en el Komo**, así que el feedback entra por la API y se acumula en una cola.

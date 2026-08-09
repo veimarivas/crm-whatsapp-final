@@ -1,11 +1,19 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import {
+    BranchSplit, CanvasSurface, Connector, EndFlag, NodeCard, TriggerCard,
+} from '@/Components/WorkflowCanvas';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 
 /**
- * Editor de automatizaciones como lienzo de workflow vertical:
- * un nodo disparador arriba, los pasos encadenados abajo y las
- * condiciones abiertas en dos carriles (Sí / No).
+ * Editor de automatizaciones como lienzo de workflow, al estilo HubSpot:
+ * el disparador arriba, los pasos encadenados hacia abajo y las condiciones
+ * **abriendo el árbol** en dos ramas etiquetadas (No / Sí), cada una hasta su
+ * propia bandera de fin.
+ *
+ * El cambio respecto del lienzo anterior no es cosmético: antes las dos ramas
+ * iban en dos columnas *dentro* de la tarjeta de condición, así que en el
+ * segundo nivel el ancho se partía otra vez y el recorrido se volvía ilegible.
  */
 
 const STEP_META = {
@@ -325,45 +333,32 @@ function AddStepMenu({ onPick, onClose }) {
 }
 
 /** Conector vertical con el «+» que inserta un paso en esa posición exacta. */
-function Connector({ onAdd, compact }) {
+/** Conector del lienzo con el menú de «insertar paso» colgando del «+». */
+function StepConnector({ onAdd }) {
     const [open, setOpen] = useState(false);
 
     return (
-        <div className={`relative flex flex-col items-center ${compact ? 'py-1' : 'py-1.5'}`}>
-            <div className="w-px h-3 bg-gray-300" />
-            <button
-                type="button"
-                onClick={() => setOpen((v) => !v)}
-                className="w-6 h-6 rounded-full border-2 border-dashed border-gray-300 bg-white text-gray-400 flex items-center justify-center hover:border-emerald-500 hover:text-emerald-600 hover:bg-emerald-50 transition-all"
-                title="Añadir un paso aquí"
-            >
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                </svg>
-            </button>
-            <div className="w-px h-3 bg-gray-300" />
-            {open && <AddStepMenu onPick={onAdd} onClose={() => setOpen(false)} />}
-        </div>
+        <Connector onAdd={() => setOpen((v) => !v)}>
+            {open && (
+                <AddStepMenu
+                    onPick={(step) => { onAdd(step); setOpen(false); }}
+                    onClose={() => setOpen(false)}
+                />
+            )}
+        </Connector>
     );
 }
 
-function StepNode({ step, index, total, onChange, onRemove, onMove, tags, depth }) {
+function StepNode({ step, index, total, onChange, onRemove, onMove, tags }) {
     const meta = STEP_META[step.type] ?? STEP_META.send_message;
     const problem = stepProblem(step);
 
     return (
-        <div className={`w-full rounded-2xl border bg-white shadow-sm hover:shadow-md transition-shadow ${problem ? 'border-amber-300' : 'border-gray-200'}`}>
-            <div className="flex items-center justify-between gap-2 px-4 pt-3.5">
-                <div className="flex items-center gap-2.5 min-w-0">
-                    <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${meta.gradient} flex items-center justify-center text-white shadow-sm flex-shrink-0`}>
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d={meta.icon} />
-                        </svg>
-                    </div>
-                    <div className="min-w-0">
-                        <p className="text-sm font-bold text-gray-900 truncate">{meta.label}</p>
-                        <p className="text-[11px] text-gray-400">Paso {index + 1} de {total}</p>
-                    </div>
+        <NodeCard icon={meta.icon} gradient={meta.gradient} tone={problem ? 'warning' : undefined}>
+            <div className="flex items-center justify-between gap-2 px-4">
+                <div className="min-w-0">
+                    <p className="text-sm font-bold text-gray-900 truncate">{meta.label}</p>
+                    <p className="text-[11px] text-gray-400">Paso {index + 1} de {total}</p>
                 </div>
                 <div className="flex items-center gap-0.5 flex-shrink-0">
                     <button type="button" onClick={() => onMove(-1)} disabled={index === 0} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-25 disabled:hover:bg-transparent transition-colors" title="Subir">
@@ -404,34 +399,22 @@ function StepNode({ step, index, total, onChange, onRemove, onMove, tags, depth 
                 </div>
             )}
 
-            {step.type === 'condition' && depth < 3 && (
-                <div className="px-3 pb-3 grid gap-3 md:grid-cols-2">
-                    {[
-                        { key: 'children_yes', label: 'Sí se cumple', mark: '✓', ring: 'border-emerald-200 bg-emerald-50/40', text: 'text-emerald-700', dot: 'bg-emerald-500' },
-                        { key: 'children_no', label: 'No se cumple', mark: '✗', ring: 'border-red-200 bg-red-50/40', text: 'text-red-700', dot: 'bg-red-500' },
-                    ].map((lane) => (
-                        <div key={lane.key} className={`rounded-xl border-2 border-dashed p-2.5 ${lane.ring}`}>
-                            <p className={`mb-1.5 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${lane.text}`}>
-                                <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-white text-[8px] ${lane.dot}`}>{lane.mark}</span>
-                                {lane.label}
-                            </p>
-                            <StepLane
-                                steps={step[lane.key] ?? []}
-                                onChange={(children) => onChange({ ...step, [lane.key]: children })}
-                                tags={tags}
-                                depth={depth + 1}
-                                emptyLabel="Sin pasos: no pasa nada por acá"
-                            />
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
+        </NodeCard>
     );
 }
 
-/** Una columna de pasos encadenados, con conectores «+» entre cada uno. */
-function StepLane({ steps, onChange, tags, depth = 0, emptyLabel }) {
+/**
+ * Rama del árbol: pasos encadenados, y cuando aparece una condición el árbol
+ * **se abre debajo** en dos ramas etiquetadas SÍ/NO.
+ *
+ * Cada rama termina en una bandera a cuadros: sin ella no se distingue «la
+ * rama se acabó» de «me falta configurar el resto».
+ *
+ * `depth` acota el anidado a 3 niveles. No es una limitación técnica del motor
+ * sino de lectura: a partir del cuarto nivel las columnas quedan tan angostas
+ * que el árbol deja de ser legible, que es justo lo que este rediseño arregla.
+ */
+function StepLane({ steps, onChange, tags, depth = 0 }) {
     const insert = (at, step) => onChange([...steps.slice(0, at), step, ...steps.slice(at)]);
     const update = (i, step) => onChange(steps.map((s, idx) => (idx === i ? step : s)));
     const remove = (i) => onChange(steps.filter((_, idx) => idx !== i));
@@ -444,28 +427,56 @@ function StepLane({ steps, onChange, tags, depth = 0, emptyLabel }) {
     };
 
     return (
-        <div className="flex flex-col items-stretch">
-            {steps.length === 0 && emptyLabel && (
-                <p className="text-[11px] text-gray-400 text-center py-1">{emptyLabel}</p>
-            )}
+        <div className="w-full flex flex-col items-center">
+            <StepConnector onAdd={(s) => insert(0, s)} />
 
-            <Connector compact={depth > 0} onAdd={(s) => insert(0, s)} />
+            {steps.map((step, i) => {
+                const isBranch = step.type === 'condition';
 
-            {steps.map((step, i) => (
-                <div key={i} className="flex flex-col items-stretch">
-                    <StepNode
-                        step={step}
-                        index={i}
-                        total={steps.length}
-                        depth={depth}
-                        tags={tags}
-                        onChange={(s) => update(i, s)}
-                        onRemove={() => remove(i)}
-                        onMove={(dir) => move(i, dir)}
-                    />
-                    <Connector compact={depth > 0} onAdd={(s) => insert(i + 1, s)} />
-                </div>
-            ))}
+                return (
+                    <div key={i} className="w-full flex flex-col items-center">
+                        {/* Ancho fijo: las tarjetas se leen igual en el tronco
+                            que dentro de una rama, y el árbol no se deforma
+                            según cuántas ramas haya al costado. */}
+                        <div className="w-[22rem] max-w-full">
+                            <StepNode
+                                step={step}
+                                index={i}
+                                total={steps.length}
+                                tags={tags}
+                                onChange={(s) => update(i, s)}
+                                onRemove={() => remove(i)}
+                                onMove={(dir) => move(i, dir)}
+                            />
+                        </div>
+
+                        {isBranch && depth < 3 ? (
+                            <BranchSplit
+                                branches={[
+                                    { key: 'no', label: 'No', tone: 'no', childrenKey: 'children_no' },
+                                    { key: 'yes', label: 'Sí', tone: 'yes', childrenKey: 'children_yes' },
+                                ].map((lane) => ({
+                                    ...lane,
+                                    content: (
+                                        <StepLane
+                                            steps={step[lane.childrenKey] ?? []}
+                                            onChange={(children) => update(i, { ...step, [lane.childrenKey]: children })}
+                                            tags={tags}
+                                            depth={depth + 1}
+                                        />
+                                    ),
+                                }))}
+                            />
+                        ) : (
+                            <StepConnector onAdd={(s) => insert(i + 1, s)} />
+                        )}
+                    </div>
+                );
+            })}
+
+            {/* Después de una condición el recorrido termina en cada rama, así
+                que la bandera la pone la rama y no el tronco. */}
+            {steps.at(-1)?.type !== 'condition' && <EndFlag />}
         </div>
     );
 }
@@ -727,23 +738,29 @@ export default function Edit({ automation, steps, tags, sampleContacts = [], isD
                                 </div>
                             </div>
 
-                            <div className="flex flex-col items-center mt-3">
-                                <span className="px-2.5 py-0.5 rounded-full bg-gray-900 text-white text-[10px] font-bold uppercase tracking-wider">Entonces</span>
-                            </div>
-
                             {errors.steps && (
                                 <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 font-medium">{errors.steps}</div>
                             )}
 
-                            <StepLane
-                                steps={data.steps}
-                                onChange={(s) => setData('steps', s)}
-                                tags={tags}
-                                emptyLabel="Todavía no hay pasos. Toca el + para añadir el primero."
-                            />
+                            {/* El lienzo: el árbol entero sobre el fondo claro,
+                                con el resumen de la inscripción arriba. */}
+                            <div className="mt-3">
+                                <CanvasSurface>
+                                    <div className="w-[22rem]">
+                                        <TriggerCard
+                                            title="Se inscribe cuando"
+                                            description={trigger.help}
+                                        />
+                                    </div>
 
-                            <div className="flex flex-col items-center">
-                                <span className="px-3 py-1 rounded-full bg-white border border-gray-200 text-gray-400 text-[10px] font-bold uppercase tracking-wider">Fin</span>
+                                    <div className="w-full">
+                                        <StepLane
+                                            steps={data.steps}
+                                            onChange={(s) => setData('steps', s)}
+                                            tags={tags}
+                                        />
+                                    </div>
+                                </CanvasSurface>
                             </div>
                         </div>
                     </form>
