@@ -45,6 +45,16 @@ Route::prefix('v1')->middleware('throttle:public-api')->group(function () {
     Route::get('/ai/status', [\App\Http\Controllers\Api\V1\AiStatusApiController::class, 'show'])
         ->middleware('api.key:conversations:read');
 
+    // Correcciones del equipo a lo que contestó la IA, reportadas desde Komo.
+    //
+    // Sin scope específico (solo `api.key`, como `/me`) a propósito: exigir un
+    // scope nuevo dejaría fuera a TODAS las keys ya emitidas, y la integración
+    // se rompería en silencio justo cuando el otro lado empiece a mandar. El
+    // riesgo es acotado: escribe en una cola de revisión de su propia cuenta y
+    // no toca el conocimiento.
+    Route::post('/ai/feedback', [\App\Http\Controllers\Api\V1\AiFeedbackApiController::class, 'store'])
+        ->middleware('api.key');
+
     Route::middleware('api.key:broadcasts:read')->group(function () {
         Route::get('/broadcasts', [ApiController::class, 'broadcasts']);
         Route::get('/broadcasts/{id}', [ApiController::class, 'showBroadcast']);

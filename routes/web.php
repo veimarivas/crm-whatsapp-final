@@ -98,6 +98,12 @@ Route::middleware('auth')->group(function () {
     Route::post('/settings/ai/reindex', [\App\Http\Controllers\AiController::class, 'reindex'])->name('settings.ai.reindex');
     Route::post('/settings/ai/sync-oferta', [\App\Http\Controllers\AiController::class, 'syncKnowledge'])->name('settings.ai.sync-oferta');
     Route::get('/settings/ai/stats', [\App\Http\Controllers\AiController::class, 'stats'])->name('settings.ai.stats');
+
+    // Cola de revisión de las correcciones que llegan desde Komo. Ninguna entra
+    // al conocimiento sin que un humano la apruebe acá.
+    Route::get('/settings/ai/feedback', [\App\Http\Controllers\AiFeedbackController::class, 'index'])->name('settings.ai.feedback');
+    Route::post('/settings/ai/feedback/{aiFeedback}/apply', [\App\Http\Controllers\AiFeedbackController::class, 'apply'])->name('settings.ai.feedback.apply');
+    Route::post('/settings/ai/feedback/{aiFeedback}/dismiss', [\App\Http\Controllers\AiFeedbackController::class, 'dismiss'])->name('settings.ai.feedback.dismiss');
     Route::get('/settings/response-time', [\App\Http\Controllers\AiController::class, 'responseTime'])->name('settings.response-time');
     Route::get('/settings/response-time/export', [\App\Http\Controllers\AiController::class, 'exportResponseTimeCsv'])->name('settings.response-time.export');
 

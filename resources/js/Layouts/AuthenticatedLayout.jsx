@@ -80,6 +80,20 @@ const navigation = [
         ),
     },
     {
+        // Cola de revisión de lo que el equipo marcó como mal contestado. Va
+        // junto a las estadísticas de IA porque se leen juntas: el número dice
+        // que la tasa de rechazo subió, esta pantalla dice por qué.
+        name: 'Correcciones IA',
+        pattern: 'settings.ai.feedback',
+        routeName: 'settings.ai.feedback',
+        analytics: true,
+        icon: (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zM19.5 12v6.75A2.25 2.25 0 0117.25 21H5.25A2.25 2.25 0 013 18.75V6.75A2.25 2.25 0 015.25 4.5H12" />
+            </svg>
+        ),
+    },
+    {
         name: 'Estadísticas IA',
         pattern: 'settings.ai.stats',
         routeName: 'settings.ai.stats',

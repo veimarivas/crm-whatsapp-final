@@ -2,6 +2,25 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## Feedback de la IA — lado wacrm (2026-08-08)
+
+Mitad de T5 de `mejoras2.md` del Komo. **La IA vive acá pero el agente que ve la respuesta mala está mirando el chat del lead en el Komo**, así que el feedback entra por la API y se acumula en una cola.
+
+- **`ai_feedback`** + **`POST /api/v1/ai/feedback`**. `ai_text` y `question` se **copian** en vez de referenciar el mensaje: para cuando alguien revise, la conversación puede estar archivada o el mensaje borrado, y el revisor necesita ver qué dijo la IA y a qué respondía.
+- **El endpoint es idempotente** (`updateOrCreate` por `(account_id, external_ref)`): es lo que permite que el job del Komo reintente sin miedo cuando este servicio estuvo caído. Cambiar el voto **reabre** la revisión.
+- **Sin scope específico** (solo `api.key`, como `/me`) **a propósito**: exigir un scope nuevo dejaría fuera a todas las keys ya emitidas y la integración se rompería en silencio justo cuando el otro lado empiece a mandar. El riesgo es acotado — escribe en una cola de revisión de su propia cuenta y no toca el conocimiento.
+- **`/settings/ai/feedback`** — la cola de revisión, con entrada propia **«Correcciones IA»** en el grupo Reportes del sidebar, al lado de Estadísticas IA: el número dice que la tasa de rechazo subió, esa pantalla dice por qué.
+
+### La cola de revisión es obligatoria, no un lujo
+Enchufar las correcciones directo a la base de conocimiento la envenena: un agente apurado escribe algo mal —o algo cierto para un caso puntual y falso en general— y la IA se lo repite a **todos** los clientes. Nada entra sin que un humano lo apruebe, y hay test de que reportar no crea ningún documento.
+
+- **El revisor edita el texto antes de aprobarlo**: revisar sin poder corregir la corrección sería aprobar a ciegas.
+- Lo aprobado entra como documento **fijo** (`is_pinned`): una corrección existe justamente porque el retrieval no encontró la respuesta correcta, así que dejarla sujeta al mismo retrieval repetiría el error.
+- **El pulgar arriba no entra a la cola** — es señal para la métrica, no trabajo pendiente. Mezclarlos convertiría la cola en una bandeja que nadie vacía.
+- **La tasa de rechazo sin datos es `null`, no 0%**: un 0% se leería como «la IA nunca falla».
+
+Tests: `AiFeedbackTest` (13). Suite **408/408 (1850 aserciones)**.
+
 ## Ronda de analítica — reportes legibles y analizables (2026-08-07)
 
 Ejecución de `mejoras.md` (raíz del repo), T1-T6. Objetivo: convertir los números que ya existían en gráficos que se puedan *leer y analizar* — series temporales, comparativas entre agentes, embudos con % y contexto (periodo anterior, SLA). **Ronda gemela**: el Komo hizo la suya en paralelo con su propio `mejoras.md` (ver `CLAUDE_komo.md`, sección equivalente). Sin migraciones: todo es lectura/agregación sobre `messages`, `conversations` y `broadcasts`.
