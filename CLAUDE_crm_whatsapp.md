@@ -2,6 +2,19 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## Lienzo a ancho completo con zoom (2026-08-08)
+
+- **`/automations` y `/flows` pasan a ancho completo** (`w-full` en vez de `max-w-7xl`): el lienzo de un workflow con ramas necesita todo el espacio, y recortarlo a 80rem obligaba a hacer scroll horizontal desde el segundo nivel.
+- **Barra de zoom** en el lienzo: `−` / porcentaje (clic = volver al 100%) / `+` / **Ajustar** (calcula la escala que hace entrar todo el contenido en la ventana visible) y **Pantalla completa**.
+
+### ⚠️ La trampa del zoom con arrastre
+`getBoundingClientRect()` devuelve el rectángulo **ya escalado**. Si el delta del puntero no se **divide por el zoom**, al 50% la tarjeta se mueve el doble de lo que se arrastra el mouse y al 150% la mitad. Es el error clásico de agregar zoom a un lienzo que ya arrastraba, y no se nota al 100%: aparece recién cuando alguien toca el zoom. Por eso el cálculo puntero→lienzo vive en una sola función (`toCanvas`).
+
+### Otro detalle que se nota enseguida
+El contenido escalado va dentro de un **envoltorio del tamaño ya escalado**. Sin él, las barras de scroll miden el contenido **sin** escalar: al alejar sobra espacio vacío y al acercar falta, y no se llega a las tarjetas del borde.
+
+Suite **410/410**, sin cambios de backend.
+
 ## Lienzo libre: tarjetas movibles en /automations y /flows (2026-08-08)
 
 Segunda mitad del rediseño: además de verse como HubSpot, **cada paso se puede mover por el lienzo** y la posición queda guardada.

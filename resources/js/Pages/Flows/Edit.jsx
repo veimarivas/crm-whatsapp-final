@@ -780,7 +780,8 @@ export default function Edit({ flow, nodes, tags, sampleContacts = [] }) {
         <AuthenticatedLayout header={<h2 className="text-lg font-semibold text-gray-900">Editar chatbot</h2>}>
             <Head title={`Chatbot — ${flow.name}`} />
 
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-5">
+            {/* Ancho completo: el grafo de un chatbot no entra en 80rem. */}
+            <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-5">
                 <div>
                     <Link href={route('flows.index')} className="text-sm text-emerald-600 hover:text-emerald-700 font-medium inline-flex items-center gap-1">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

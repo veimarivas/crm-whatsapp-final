@@ -208,21 +208,39 @@ const snap = (v) => Math.round(v / GRID) * GRID;
  * @param nodes [{ id, x, y, width, render({ dragHandleProps, dragging }) }]
  * @param edges [{ from, to, label, tone }]
  */
-export function FreeCanvas({ nodes = [], edges = [], onMove, height, children }) {
+export function FreeCanvas({ nodes = [], edges = [], onMove, children }) {
     const [drag, setDrag] = useState(null);
+    const [zoom, setZoom] = useState(1);
+    const [fullscreen, setFullscreen] = useState(false);
     const surfaceRef = useRef(null);
+    const viewportRef = useRef(null);
+
+    /**
+     * Puntero → coordenadas del lienzo.
+     *
+     * **La división por `zoom` no es opcional.** `getBoundingClientRect()`
+     * devuelve el rectángulo YA escalado, así que sin dividir, al 50% la
+     * tarjeta se movería el doble de lo que se arrastra el mouse y al 150% la
+     * mitad. Es el error clásico de agregar zoom a un lienzo que ya arrastraba.
+     */
+    const toCanvas = (event) => {
+        const rect = surfaceRef.current.getBoundingClientRect();
+
+        return {
+            x: (event.clientX - rect.left) / zoom,
+            y: (event.clientY - rect.top) / zoom,
+        };
+    };
 
     const startDrag = (node) => (event) => {
-        // Solo botón primario, y sin arrastrar cuando el gesto empieza en un
-        // control (el usuario quiere usarlo, no mover la tarjeta).
         if (event.button !== 0) return;
         event.preventDefault();
 
-        const rect = surfaceRef.current.getBoundingClientRect();
+        const point = toCanvas(event);
         setDrag({
             id: node.id,
-            offsetX: event.clientX - rect.left - node.x,
-            offsetY: event.clientY - rect.top - node.y,
+            offsetX: point.x - node.x,
+            offsetY: point.y - node.y,
             x: node.x,
             y: node.y,
         });
@@ -232,13 +250,13 @@ export function FreeCanvas({ nodes = [], edges = [], onMove, height, children })
         if (!drag) return undefined;
 
         const move = (event) => {
-            const rect = surfaceRef.current.getBoundingClientRect();
+            const point = toCanvas(event);
             setDrag((d) => d && {
                 ...d,
                 // Nunca a coordenadas negativas: una tarjeta arrastrada fuera
                 // por arriba o por la izquierda queda inalcanzable.
-                x: Math.max(0, event.clientX - rect.left - d.offsetX),
-                y: Math.max(0, event.clientY - rect.top - d.offsetY),
+                x: Math.max(0, point.x - d.offsetX),
+                y: Math.max(0, point.y - d.offsetY),
             });
         };
 
@@ -257,26 +275,89 @@ export function FreeCanvas({ nodes = [], edges = [], onMove, height, children })
             window.removeEventListener('pointermove', move);
             window.removeEventListener('pointerup', end);
         };
-    }, [drag, onMove]);
+    }, [drag, onMove, zoom]);
 
     const positioned = nodes.map((n) => (drag?.id === n.id ? { ...n, x: drag.x, y: drag.y } : n));
-    const bottom = Math.max(360, ...positioned.map((n) => n.y + (n.height ?? 220)));
-    const right = Math.max(760, ...positioned.map((n) => n.x + (n.width ?? 320)));
+    const contentH = Math.max(360, ...positioned.map((n) => n.y + (n.height ?? 220))) + 80;
+    const contentW = Math.max(760, ...positioned.map((n) => n.x + (n.width ?? 320))) + 80;
+
+    const setZoomClamped = (value) => setZoom(Math.min(1.5, Math.max(0.3, Math.round(value * 100) / 100)));
+
+    /**
+     * Ajusta el zoom para que entre todo el contenido en la ventana visible.
+     *
+     * Es lo que contesta «quiero ver todo»: con un workflow largo, bajar el
+     * zoom a mano hasta encontrar el punto justo es tedioso.
+     */
+    const fitToScreen = () => {
+        const viewport = viewportRef.current;
+        if (!viewport) return;
+
+        setZoomClamped(Math.min(
+            viewport.clientWidth / contentW,
+            viewport.clientHeight / contentH,
+            1,
+        ));
+    };
+
+    const toolbarButton = 'px-2 py-1 rounded-lg text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:border-emerald-400 hover:text-emerald-700 transition-colors';
 
     return (
-        <div className="rounded-2xl border border-slate-200 bg-[#f4f8fa] overflow-auto">
+        <div
+            className={
+                fullscreen
+                    // Pantalla completa: es la forma real de «ver todo el
+                    // contenido» en un workflow grande, más que cualquier ancho
+                    // que se le pueda dar dentro de la página.
+                    ? 'fixed inset-0 z-50 bg-white flex flex-col'
+                    : 'rounded-2xl border border-slate-200 bg-[#f4f8fa] flex flex-col'
+            }
+        >
+            <div className="flex items-center gap-1.5 px-3 py-2 border-b border-slate-200 bg-white/80 backdrop-blur-sm">
+                <button type="button" onClick={() => setZoomClamped(zoom - 0.1)} className={toolbarButton} title="Alejar">−</button>
+                <button
+                    type="button"
+                    onClick={() => setZoom(1)}
+                    className={`${toolbarButton} tabular-nums w-14`}
+                    title="Volver al 100%"
+                >
+                    {Math.round(zoom * 100)}%
+                </button>
+                <button type="button" onClick={() => setZoomClamped(zoom + 0.1)} className={toolbarButton} title="Acercar">+</button>
+                <button type="button" onClick={fitToScreen} className={toolbarButton} title="Ajustar todo a la pantalla">Ajustar</button>
+
+                <button
+                    type="button"
+                    onClick={() => setFullscreen((v) => !v)}
+                    className={`${toolbarButton} ml-auto`}
+                    title={fullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+                >
+                    {fullscreen ? 'Salir' : 'Pantalla completa'}
+                </button>
+            </div>
+
             <div
-                ref={surfaceRef}
-                className="relative"
-                style={{
-                    height: height ?? bottom + 80,
-                    width: right + 80,
-                    // Grilla de puntos: da referencia para alinear sin agregar
-                    // una sola línea de lógica.
-                    backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)',
-                    backgroundSize: `${GRID}px ${GRID}px`,
-                }}
+                ref={viewportRef}
+                className={`overflow-auto bg-[#f4f8fa] ${fullscreen ? 'flex-1' : ''}`}
+                style={fullscreen ? undefined : { height: 'min(70vh, 720px)' }}
             >
+                {/* Envoltorio del tamaño YA escalado: sin él las barras de
+                    scroll miden el contenido sin escalar y sobra o falta
+                    espacio según el zoom. */}
+                <div style={{ width: contentW * zoom, height: contentH * zoom }}>
+                    <div
+                        ref={surfaceRef}
+                        className="relative origin-top-left"
+                        style={{
+                            height: contentH,
+                            width: contentW,
+                            transform: `scale(${zoom})`,
+                            // Grilla de puntos: da referencia para alinear sin
+                            // agregar una sola línea de lógica.
+                            backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)',
+                            backgroundSize: `${GRID}px ${GRID}px`,
+                        }}
+                    >
                 <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: 'visible' }}>
                     {edges.map((edge) => {
                         const from = positioned.find((n) => n.id === edge.from);
@@ -337,7 +418,9 @@ export function FreeCanvas({ nodes = [], edges = [], onMove, height, children })
                     </div>
                 ))}
 
-                {children}
+                        {children}
+                    </div>
+                </div>
             </div>
         </div>
     );

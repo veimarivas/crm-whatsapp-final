@@ -1,5 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Connector, FreeCanvas, NodeCard } from '@/Components/WorkflowCanvas';
+import { FreeCanvas, NodeCard } from '@/Components/WorkflowCanvas';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 
@@ -694,7 +694,10 @@ export default function Edit({ automation, steps, tags, sampleContacts = [], isD
         <AuthenticatedLayout header={<h2 className="text-lg font-semibold text-gray-900">{isEdit ? 'Editar' : 'Nueva'} automatización</h2>}>
             <Head title="Automatización" />
 
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-5">
+            {/* Ancho completo y no `max-w-7xl`: el lienzo de un workflow con
+                ramas necesita todo el espacio disponible, y recortarlo a 80rem
+                obligaba a hacer scroll horizontal desde el segundo nivel. */}
+            <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-5">
                 <div>
                     <Link href={route('automations.index')} className="text-sm text-emerald-600 hover:text-emerald-700 font-medium inline-flex items-center gap-1">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
