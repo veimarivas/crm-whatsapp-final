@@ -266,6 +266,47 @@ function OptionsEditor({ options, onChange, label, max, hint, withDescription = 
 }
 
 /**
+ * Alta de un paso desde la barra del lienzo.
+ *
+ * Crea el paso **suelto**: sin conexión desde ningún otro. Es a propósito —
+ * conectar se hace desde el paso de origen, que es donde se sabe qué salida
+ * lleva a dónde. El paso queda marcado como huérfano hasta que se lo enganche,
+ * que es exactamente lo que hay que ver.
+ */
+function AddNodeButton({ onAdd }) {
+    const [open, setOpen] = useState(false);
+
+    return (
+        <div className="relative">
+            <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                className="px-2 py-1 rounded-lg text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:border-emerald-400 hover:text-emerald-700"
+            >
+                + Añadir paso
+            </button>
+            {open && (
+                <>
+                    <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+                    <div className="absolute left-0 top-full mt-1 z-40 w-56 rounded-xl border border-gray-200 bg-white shadow-lg p-1.5">
+                        {Object.entries(NODE_META).map(([type, meta]) => (
+                            <button
+                                key={type}
+                                type="button"
+                                onClick={() => { onAdd(type); setOpen(false); }}
+                                className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-gray-700 hover:bg-emerald-50 hover:text-emerald-700"
+                            >
+                                {meta.label}
+                            </button>
+                        ))}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
+/**
  * Tarjeta de un paso del chatbot.
  *
  * Se llama `FlowNodeCard` y no `NodeCard` para no chocar con la primitiva del
@@ -880,6 +921,12 @@ export default function Edit({ flow, nodes, tags, sampleContacts = [] }) {
                             <FreeCanvas
                                 nodes={canvasNodes}
                                 edges={canvasEdges}
+                                // Añadir pasos y ver el disparador tienen que
+                                // estar DENTRO del lienzo: en pantalla completa
+                                // tapa la página y todo lo de afuera queda
+                                // inalcanzable.
+                                toolbar={<AddNodeButton onAdd={addLooseNode} />}
+                                context={`Arranca ${(TRIGGERS[data.trigger_type]?.help ?? 'según el disparador configurado').toLowerCase()}`}
                                 onMove={(key, x, y) => setData('nodes', data.nodes.map((n) => (
                                     n.node_key === key ? { ...n, position_x: x, position_y: y } : n
                                 )))}

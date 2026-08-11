@@ -208,7 +208,15 @@ const snap = (v) => Math.round(v / GRID) * GRID;
  * @param nodes [{ id, x, y, width, render({ dragHandleProps, dragging }) }]
  * @param edges [{ from, to, label, tone }]
  */
-export function FreeCanvas({ nodes = [], edges = [], onMove, children }) {
+/**
+ * @param toolbar Controles propios del editor (añadir paso, reordenar…). Van
+ *   **dentro** de la barra del lienzo y no en la página: en pantalla completa
+ *   el lienzo tapa todo, así que cualquier control que quede afuera se vuelve
+ *   inalcanzable justo cuando más se está trabajando.
+ * @param context Texto corto de contexto (el disparador, por ejemplo) que
+ *   también hay que poder leer en pantalla completa.
+ */
+export function FreeCanvas({ nodes = [], edges = [], onMove, toolbar, context, children }) {
     const [drag, setDrag] = useState(null);
     const [zoom, setZoom] = useState(1);
     const [fullscreen, setFullscreen] = useState(false);
@@ -313,7 +321,12 @@ export function FreeCanvas({ nodes = [], edges = [], onMove, children }) {
                     : 'rounded-2xl border border-slate-200 bg-[#f4f8fa] flex flex-col'
             }
         >
-            <div className="flex items-center gap-1.5 px-3 py-2 border-b border-slate-200 bg-white/80 backdrop-blur-sm">
+            <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 border-b border-slate-200 bg-white/80 backdrop-blur-sm">
+                {/* Controles del editor primero: son los que se usan todo el
+                    tiempo. El zoom queda a la derecha, que se toca de a ratos. */}
+                {toolbar}
+                {toolbar && <span className="w-px h-5 bg-slate-200 mx-1" />}
+
                 <button type="button" onClick={() => setZoomClamped(zoom - 0.1)} className={toolbarButton} title="Alejar">−</button>
                 <button
                     type="button"
@@ -335,6 +348,14 @@ export function FreeCanvas({ nodes = [], edges = [], onMove, children }) {
                     {fullscreen ? 'Salir' : 'Pantalla completa'}
                 </button>
             </div>
+
+            {/* Contexto (el disparador): en pantalla completa es lo único que
+                recuerda para quién se está armando todo esto. */}
+            {context && (
+                <div className="px-3 py-1.5 border-b border-slate-100 bg-white/60 text-[11px] text-slate-500">
+                    {context}
+                </div>
+            )}
 
             <div
                 ref={viewportRef}

@@ -301,9 +301,16 @@ function StepConfig({ step, onChange, tags }) {
 
 /* ---------------------------------------------------------------- lienzo */
 
-function AddStepMenu({ onPick, onClose }) {
+/**
+ * `align`: centrado cuelga bien de un botón en medio de una tarjeta, pero en la
+ * barra del lienzo el botón está pegado al borde izquierdo y el menú —de 19rem—
+ * se saldría de la pantalla.
+ */
+function AddStepMenu({ onPick, onClose, align = 'center' }) {
     return (
-        <div className="absolute z-20 left-1/2 -translate-x-1/2 top-8 w-[19rem] rounded-2xl border border-gray-200 bg-white shadow-xl p-2">
+        <div className={`absolute z-30 top-8 w-[19rem] rounded-2xl border border-gray-200 bg-white shadow-xl p-2 ${
+            align === 'left' ? 'left-0' : 'left-1/2 -translate-x-1/2'
+        }`}>
             <div className="flex items-center justify-between px-2 py-1.5">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Añadir paso</span>
                 <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xs">✕</button>
@@ -421,7 +428,7 @@ function StepNode({ step, index, total, onChange, onRemove, onMove, tags, dragHa
 }
 
 /** Botón que despliega el menú de pasos y lo inserta donde corresponda. */
-function StepAddButton({ label, tone, onAdd }) {
+function StepAddButton({ label, tone, onAdd, align }) {
     const [open, setOpen] = useState(false);
 
     return (
@@ -441,6 +448,7 @@ function StepAddButton({ label, tone, onAdd }) {
             </button>
             {open && (
                 <AddStepMenu
+                    align={align}
                     onPick={(step) => { onAdd(step); setOpen(false); }}
                     onClose={() => setOpen(false)}
                 />
@@ -811,25 +819,29 @@ export default function Edit({ automation, steps, tags, sampleContacts = [], isD
                                 paso. Lo que nunca se movió usa el layout
                                 automático del árbol. */}
                             <div className="mt-3 space-y-2">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <StepAddButton
-                                        label="+ Añadir paso"
-                                        onAdd={(s) => setData('steps', [...data.steps, s])}
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => setData('steps', clearPositions(data.steps))}
-                                        className="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-gray-500 border border-gray-200 bg-white hover:text-gray-800"
-                                        title="Vuelve a acomodar todo con el layout automático"
-                                    >
-                                        Reordenar automáticamente
-                                    </button>
-                                    <span className="text-[11px] text-gray-400">
-                                        Arrastrá una tarjeta desde su cabecera para moverla.
-                                    </span>
-                                </div>
-
                                 <FreeCanvas
+                                    // Los controles van DENTRO de la barra: en
+                                    // pantalla completa el lienzo tapa la página
+                                    // y cualquier botón de afuera se vuelve
+                                    // inalcanzable.
+                                    toolbar={(
+                                        <>
+                                            <StepAddButton
+                                                label="+ Añadir paso"
+                                                align="left"
+                                                onAdd={(s) => setData('steps', [...data.steps, s])}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setData('steps', clearPositions(data.steps))}
+                                                className="px-2 py-1 rounded-lg text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:border-emerald-400 hover:text-emerald-700"
+                                                title="Vuelve a acomodar todo con el layout automático"
+                                            >
+                                                Reordenar
+                                            </button>
+                                        </>
+                                    )}
+                                    context={`Se ejecuta cuando: ${trigger.help}`}
                                     nodes={canvas.nodes.map((node) => ({
                                         ...node,
                                         render: ({ dragHandleProps, dragging }) => (

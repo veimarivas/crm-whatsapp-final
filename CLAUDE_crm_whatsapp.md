@@ -2,6 +2,19 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## Fix — la pantalla completa dejaba los controles afuera (2026-08-08)
+
+Al entrar en pantalla completa el lienzo (`fixed inset-0`) tapa la página, así que **todo control que viviera fuera de él quedaba inalcanzable** justo cuando más se está trabajando: en `/automations` desaparecían «+ Añadir paso» y «Reordenar», y en `/flows` el disparador y el alta de pasos.
+
+`FreeCanvas` gana dos props:
+
+- **`toolbar`** — controles propios del editor, renderizados **dentro** de la barra del lienzo (a la izquierda; el zoom queda a la derecha porque se toca de a ratos y aquéllos todo el tiempo).
+- **`context`** — línea corta con el disparador. En pantalla completa es lo único que recuerda para quién se está armando todo esto.
+
+**Detalle de posicionamiento:** el menú de «añadir paso» se abría centrado bajo su botón, lo cual está bien colgando de una tarjeta pero en la barra —con el botón pegado al borde izquierdo— tiraba un menú de 19rem fuera de la pantalla. Se agregó `align="left"`.
+
+En `/flows` el botón crea el paso **suelto**, sin conexión: conectar se hace desde el paso de origen, que es donde se sabe qué salida lleva a dónde. Queda marcado como huérfano hasta que se lo enganche, que es exactamente lo que hay que ver.
+
 ## Lienzo a ancho completo con zoom (2026-08-08)
 
 - **`/automations` y `/flows` pasan a ancho completo** (`w-full` en vez de `max-w-7xl`): el lienzo de un workflow con ramas necesita todo el espacio, y recortarlo a 80rem obligaba a hacer scroll horizontal desde el segundo nivel.
