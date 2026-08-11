@@ -218,6 +218,7 @@ const snap = (v) => Math.round(v / GRID) * GRID;
  */
 export function FreeCanvas({ nodes = [], edges = [], onMove, toolbar, context, children }) {
     const [drag, setDrag] = useState(null);
+    const [front, setFront] = useState(null);
     const [zoom, setZoom] = useState(1);
     const [fullscreen, setFullscreen] = useState(false);
     const surfaceRef = useRef(null);
@@ -321,7 +322,11 @@ export function FreeCanvas({ nodes = [], edges = [], onMove, toolbar, context, c
                     : 'rounded-2xl border border-slate-200 bg-[#f4f8fa] flex flex-col'
             }
         >
-            <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 border-b border-slate-200 bg-white/80 backdrop-blur-sm">
+            {/* `relative z-40` y **sin** `backdrop-blur`: el blur crea un
+                contexto de apilado que encierra a los menús de la barra, así
+                que quedaban por debajo del área del lienzo y no se podían
+                clickear. */}
+            <div className="relative z-40 flex flex-wrap items-center gap-1.5 px-3 py-2 border-b border-slate-200 bg-white">
                 {/* Controles del editor primero: son los que se usan todo el
                     tiempo. El zoom queda a la derecha, que se toca de a ratos. */}
                 {toolbar}
@@ -425,7 +430,17 @@ export function FreeCanvas({ nodes = [], edges = [], onMove, toolbar, context, c
                 {positioned.map((node) => (
                     <div
                         key={node.id}
-                        className={`absolute ${drag?.id === node.id ? 'z-20' : 'z-10'}`}
+                        // La tarjeta con la que se está interactuando pasa al
+                        // frente. No es solo estética: cada tarjeta es
+                        // `absolute` con z-index, o sea **un contexto de
+                        // apilado propio**, así que un menú desplegable adentro
+                        // no puede pintarse por encima de las tarjetas que
+                        // vienen después en el DOM — se veía, pero los clics
+                        // los recibía la tarjeta de arriba.
+                        onPointerDownCapture={() => setFront(node.id)}
+                        className={`absolute ${
+                            drag?.id === node.id ? 'z-30' : front === node.id ? 'z-20' : 'z-10'
+                        }`}
                         style={{ left: node.x, top: node.y, width: node.width ?? 320 }}
                     >
                         {node.render({

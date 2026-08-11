@@ -2,6 +2,15 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## Fix — los menús del lienzo no se podían clickear (2026-08-08)
+
+Los desplegables de «añadir paso» se **veían** pero los clics no llegaban a las opciones, en los dos editores. Dos contextos de apilado distintos, misma familia de error:
+
+1. **Dentro de una tarjeta.** Cada nodo es `absolute` con `z-index`, o sea **un contexto de apilado propio**: un menú con `z-30` adentro no puede pintarse por encima de otra tarjeta `z-10` que venga **después en el DOM**. El menú se dibujaba, pero los clics los recibía la tarjeta de abajo. → La tarjeta con la que se interactúa sube a `z-20` (`onPointerDownCapture` en el envoltorio). De paso es el comportamiento esperable: la tarjeta que tocás viene al frente.
+2. **En la barra del lienzo.** Tenía `backdrop-blur-sm`, y **`backdrop-filter` distinto de `none` crea un contexto de apilado**, encerrando los menús de la barra por debajo del área del lienzo. → Se quitó el blur y la barra pasó a `relative z-40`.
+
+**Regla para no repetirlo:** en este lienzo, cualquier cosa que tenga que salir por encima de otra tarjeta no puede confiar en su propio `z-index` — depende del `z-index` de la tarjeta que la contiene.
+
 ## Fix — la pantalla completa dejaba los controles afuera (2026-08-08)
 
 Al entrar en pantalla completa el lienzo (`fixed inset-0`) tapa la página, así que **todo control que viviera fuera de él quedaba inalcanzable** justo cuando más se está trabajando: en `/automations` desaparecían «+ Añadir paso» y «Reordenar», y en `/flows` el disparador y el alta de pasos.
