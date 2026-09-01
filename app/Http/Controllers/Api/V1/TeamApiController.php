@@ -141,6 +141,10 @@ class TeamApiController extends Controller
     {
         $validated = $request->validate([
             'stage_name' => 'required|string|max:100',
+            // D5: el uuid de la etapa en Komo, que acá se guarda como
+            // `external_id` al sincronizar los pipelines. Opcional para que un
+            // Komo viejo siga funcionando por nombre.
+            'stage_external_id' => 'nullable|uuid',
             'status' => ['nullable', Rule::in(['open', 'won', 'lost'])],
         ]);
 
@@ -158,7 +162,17 @@ class TeamApiController extends Controller
 
         $updates = [];
 
-        $stage = $deal->pipeline->stages()->where('name', $validated['stage_name'])->first();
+        // Por uuid primero: es la única correspondencia que no se rompe cuando
+        // se renombra una etapa ni se confunde entre dos homónimas de pipelines
+        // distintos. El nombre queda como respaldo para los pipelines que se
+        // sembraron acá antes de la integración y para un Komo sin desplegar.
+        $stage = null;
+
+        if (! empty($validated['stage_external_id'])) {
+            $stage = $deal->pipeline->stages()->where('external_id', $validated['stage_external_id'])->first();
+        }
+
+        $stage ??= $deal->pipeline->stages()->where('name', $validated['stage_name'])->first();
 
         // Etapas terminales que Komo siembra ("Ganado"/"Perdido"): si el
         // nombre no existe, se buscan por stage_type para respetar la columna.

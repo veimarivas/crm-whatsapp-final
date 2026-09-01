@@ -6,12 +6,31 @@ use App\Models\Pipeline;
 use App\Models\PipelineStage;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
+/**
+ * Desde D5, las etapas de un pipeline sincronizado las administra el Komo.
+ *
+ * No es una restricción nueva de verdad: crear, renombrar, reordenar o borrar
+ * una etapa acá **ya no sobrevivía** al próximo `pipelines/sync`, que reconcilia
+ * contra el catálogo de allá. Lo único que cambia es que ahora se dice, en vez
+ * de que el cambio desaparezca solo y sin explicación.
+ */
 class PipelineStageController extends Controller
 {
+    private function assertStructureEditable(Pipeline $pipeline): void
+    {
+        if ($pipeline->external_id !== null) {
+            throw ValidationException::withMessages([
+                'name' => 'Las etapas de este pipeline se administran desde el CRM de leads (Komo): un cambio hecho acá se perdería en la próxima sincronización.',
+            ]);
+        }
+    }
+
     public function store(Request $request, Pipeline $pipeline): RedirectResponse
     {
         abort_if($pipeline->account_id !== $request->user()->account_id, 403);
+        $this->assertStructureEditable($pipeline);
 
         $validated = $request->validate([
             'name' => 'required|string|max:60',
@@ -77,5 +96,6 @@ class PipelineStageController extends Controller
     private function authorizeStage(Request $request, PipelineStage $stage): void
     {
         abort_if($stage->pipeline->account_id !== $request->user()->account_id, 403);
+        $this->assertStructureEditable($stage->pipeline);
     }
 }

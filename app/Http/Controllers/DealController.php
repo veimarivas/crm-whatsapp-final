@@ -55,6 +55,14 @@ class DealController extends Controller
                         'deal.stage_changed',
                         [
                             'conversation_id' => $deal->conversation_id,
+                            // D5: el uuid de la etapa EN KOMO. Hasta acá la
+                            // correspondencia se hacía solo por nombre, y dos
+                            // etapas homónimas en pipelines distintos podían
+                            // aterrizar el movimiento en la columna equivocada
+                            // sin que nada lo delatara. `stage_name` se sigue
+                            // mandando: el contrato es aditivo y un Komo viejo
+                            // tiene que seguir funcionando.
+                            'stage_external_id' => $stage->external_id,
                             'stage_name' => $stage->name,
                             'status' => $status,
                         ],

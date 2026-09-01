@@ -415,6 +415,7 @@ function DealFormModal({ open, onClose, deal, pipeline, contacts, members, curre
 function StageManagerModal({ open, onClose, pipeline }) {
     const { data, setData, post, processing, errors, reset } = useForm({ name: '', color: '#10b981' });
     const { errors: pageErrors } = usePage().props;
+    const managed = !!pipeline?.managed_by_komo;
 
     const submit = (e) => {
         e.preventDefault();
@@ -432,7 +433,9 @@ function StageManagerModal({ open, onClose, pipeline }) {
                     </div>
                     <div>
                         <h2 className="text-base font-bold text-gray-900">Etapas de {pipeline?.name}</h2>
-                        <p className="text-xs text-gray-400 mt-0.5">Reordena, edita colores o elimina etapas</p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                            {managed ? 'Definidas en el CRM de leads' : 'Reordena, edita colores o elimina etapas'}
+                        </p>
                     </div>
                 </div>
 
@@ -441,11 +444,23 @@ function StageManagerModal({ open, onClose, pipeline }) {
                         <p className="mb-3 text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{pageErrors.stage}</p>
                     )}
 
+                    {/* D5: no se ofrece lo que el próximo sync revierte. Antes los
+                        controles estaban acá y el cambio desaparecía solo, sin
+                        explicación. */}
+                    {managed && (
+                        <p className="mb-4 text-xs text-gray-600 bg-gray-50 border border-gray-200 px-3 py-2.5 rounded-xl">
+                            Estas columnas las administra el <strong>CRM de leads</strong>: se sincronizan desde allá, así que
+                            un cambio hecho acá se perdería. Las oportunidades sí se mueven entre columnas normalmente.
+                        </p>
+                    )}
+
                     <ul className="space-y-2 mb-4">
                         {pipeline?.stages?.map((stage, i) => (
                             <li key={stage.id} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50 border border-gray-100">
                                 <span className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: stage.color }} />
                                 <span className="flex-1 text-sm font-medium text-gray-700">{stage.name}</span>
+                                {!managed && (
+                                  <>
                                 <button
                                     disabled={i === 0}
                                     onClick={() => router.patch(route('stages.move', stage.id), { direction: 'up' }, { preserveScroll: true })}
@@ -475,11 +490,13 @@ function StageManagerModal({ open, onClose, pipeline }) {
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
                                     </svg>
                                 </button>
+                                  </>
+                                )}
                             </li>
                         ))}
                     </ul>
 
-                    <form onSubmit={submit} className="flex items-end gap-2 pt-4 border-t border-gray-100">
+                    <form onSubmit={submit} hidden={managed} className="flex items-end gap-2 pt-4 border-t border-gray-100">
                         <div className="flex-1">
                             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Nueva etapa</label>
                             <input value={data.name} onChange={(e) => setData('name', e.target.value)} required className="w-full px-3.5 py-2 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 focus:bg-white transition-all" />
@@ -783,7 +800,7 @@ export default function Index({ pipelines, pipeline, deals, members, contacts, c
                     </div>
                 )}
 
-                {pipeline && (
+                {pipeline && !pipeline.managed_by_komo && (
                     <div className="flex justify-end">
                         <button
                             onClick={() => {

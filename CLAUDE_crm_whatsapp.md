@@ -2,6 +2,25 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## D5a — la etapa se correlaciona por uuid, no por nombre (2026-09-01)
+
+Tercera fase ejecutada de `plan_deduplicacion.md`. **Cross-repo** (D5b en Komo), **este lado primero**. No es una mejora de mantenimiento: **arregla un riesgo de corrupción silenciosa que ya estaba en producción.**
+
+### El circuito, que va en las dos direcciones
+- **Komo → acá:** `moveToStage` → `SyncLeadStageToWacrmJob` → `PATCH /api/v1/conversations/{id}/stage` → se buscaba la etapa con `stages()->where('name', …)`.
+- **Acá → Komo:** arrastrar en `/pipelines` → `DealController@update` → webhook `deal.stage_changed` con `stage_name` → allá se buscaba con `stages()->where('name', …)`.
+
+El bucle no rebota (hay un corte por «misma etapa»), eso estaba bien. **Lo que estaba mal es que las dos puntas correspondían la etapa por su NOMBRE.** Dos etapas homónimas en pipelines distintos podían aterrizar el movimiento en la columna equivocada — sin error, sin log y sin rastro. Y el uuid **ya viajaba**: `pipelines/sync` lo guarda como `external_id` desde el primer día. Solo faltaba usarlo.
+
+Ahora las dos puntas prueban el uuid primero y **caen al nombre si no viene**. El respaldo no es opcional: los deploys no son simultáneos, y hay pipelines sembrados acá antes de la integración que no tienen `external_id`.
+
+### La estructura del pipeline pasa a ser de solo lectura, y no es una restricción nueva
+Crear, renombrar, reordenar o borrar una etapa de un pipeline sincronizado **ya no sobrevivía**: el próximo `pipelines/sync` reconciliaba contra el catálogo de Komo y lo revertía. Lo único que cambia es que ahora **se dice**, en vez de que el cambio desaparezca solo y sin explicación. Los controles se ocultan en la UI (`managed_by_komo`) además del corte en el servidor: no ofrecer algo es mejor que explicarlo después del intento.
+
+**⚠️ Donde me aparté del plan, a propósito:** decía «`/pipelines` pasa a read-only». Se hizo más fino — **mover un deal entre columnas sigue permitido**. Ese es el gesto operativo del asesor, se espeja bien en las dos direcciones y bloquearlo habría roto un flujo que funciona. El corte es sobre la ESTRUCTURA, no sobre la operación.
+
+Tests: `StageCorrelationTest` (6). Suite **435/435 (1968 aserciones)**.
+
 ## D2a — la taxonomía pasa a tener un solo dueño (2026-09-01)
 
 Segunda fase de `plan_deduplicacion.md`. **Cross-repo**: D2b es la mitad del Komo y **este lado va primero**. Etiquetas y campos personalizados tenían catálogo propio en cada proyecto y **no se sincronizaban** — a diferencia de los pipelines, que sí. Una etiqueta puesta en el inbox no existía en Komo y viceversa.

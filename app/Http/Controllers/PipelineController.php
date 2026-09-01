@@ -10,6 +10,7 @@ use App\Services\WhatsApp\ServiceWindow;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -82,6 +83,10 @@ class PipelineController extends Controller
                 'id' => $selected->id,
                 'name' => $selected->name,
                 'stages' => $selected->stages,
+                // D5: la pantalla no ofrece lo que no puede conservar. Las
+                // columnas de un pipeline sincronizado las manda Komo y el
+                // próximo sync revierte cualquier cambio hecho acá.
+                'managed_by_komo' => $selected->external_id !== null,
             ] : null,
             'deals' => $deals,
             'filters' => $filters,
@@ -142,5 +147,16 @@ class PipelineController extends Controller
     private function authorizePipeline(Request $request, Pipeline $pipeline): void
     {
         abort_if($pipeline->account_id !== $request->user()->account_id, 403);
+
+        // D5: la ESTRUCTURA de un pipeline sincronizado la manda Komo. Renombrar
+        // o borrar acá no fallaba, pero el próximo sync lo revertía: una
+        // pantalla que promete un cambio que no sobrevive es peor que una que
+        // no lo ofrece. Mover deals entre columnas sigue permitido — ese es el
+        // gesto operativo del asesor y se espeja bien en las dos direcciones.
+        if ($pipeline->external_id !== null) {
+            throw ValidationException::withMessages([
+                'name' => 'Las columnas de este pipeline se administran desde el CRM de leads (Komo): un cambio hecho acá se perdería en la próxima sincronización.',
+            ]);
+        }
     }
 }
