@@ -2,6 +2,22 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## D3-red — guardián de deriva de los archivos compartidos (2026-09-01)
+
+**No es D3.** D3 —extraer los 36 archivos duplicados a un paquete compartido— **sigue bloqueada** por dónde alojar el paquete de npm, porque el build corre en el VPS. Esto es su red, para que la deriva no siga siendo invisible mientras tanto.
+
+`tests/Fixtures/twins/shared-files.json` lista los **36 archivos que deben ser byte-idénticos** en los dos proyectos: Breeze completo, componentes de UI, hooks. `SharedFilesDriftTest` los compara contra el repo hermano y falla nombrando **cuáles** se separaron.
+
+- **Es un test y no un comando a propósito.** Un comando hay que acordarse de correrlo, que es la misma debilidad que la convención escrita.
+- **Se salta solo donde el hermano no está** (VPS, CI), diciendo por qué. En desarrollo los dos repos están uno al lado del otro en `htdocs/`. `TWIN_REPO_PATH` lo pisa.
+- **El manifiesto se compara entre repos**: sin eso, alguien saca un archivo de la lista de un solo lado y la red deja de cubrirlo sin que se note.
+
+**Verificado que detecta**, no solo que pasa: se agregó una línea a `PrimaryButton.jsx` con la suite en verde y el test del Komo lo señaló por nombre. Después se revirtió.
+
+**Los 61 archivos que hoy divergen quedan fuera del manifiesto**, incluida la capa de gráficos (8 de 11 separados). Meterlos exige decidir cuál versión gana, archivo por archivo — es trabajo de D3.
+
+Tests: `SharedFilesDriftTest` (2). Suite **441/441 (2105 aserciones)**.
+
 ## D4 — el contrato de los gemelos, fijado con fixtures (2026-09-01)
 
 Cuarta fase ejecutada de `plan_deduplicacion.md`. **Cross-repo, pero sin orden de deploy**: son solo tests, y los dos lados van en el mismo día por definición.
