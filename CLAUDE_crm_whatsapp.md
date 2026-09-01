@@ -2,6 +2,27 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## F0 (2/n) — test de caracterización del camino de entrada (2026-09-01)
+
+`plan_omnicanal.md` §T0.2b va a extraer todo lo que hoy vive en `InboundProcessor::handleInboundMessage()` de `DB::transaction` para abajo a un `Ingestor` canal-agnóstico. El plan lo llama **«el cambio más riesgoso de F0»** y exige un test de caracterización **antes** de mover una línea. Este es ese test. **No se refactorizó nada todavía: solo se congeló el comportamiento actual.**
+
+Un test de caracterización tiene una regla que lo distingue: **si falla durante el refactor, el sospechoso es el refactor, no el test.** Cambiarlo para que pase es exactamente lo que no hay que hacer.
+
+### Lo que fija, y por qué el orden es lo primero
+La cola es FIFO y su orden es una decisión deliberada que viene de un bug histórico: con la IA encolada primero, Komo veía el mensaje del cliente **60 segundos tarde** porque esperaba a que Ollama terminara. El contrato queda escrito como un array literal:
+
+1. `DeliverWebhookJob` (contact.created, si es nuevo) · 2. `DeliverWebhookJob` (message.received) · 3. `TranscribeAudioJob` (si es audio) · 4. `ProcessFlowMessageJob` · 5-7. `ProcessAutomationEventJob` (new_contact / inbound_message / keyword) · 8. `AiAutoReplyJob` **siempre al final**.
+
+**⚠️ `Queue::fake()` NO sirve para esto:** agrupa los jobs por clase y pierde la secuencia global, que es justo el dato que hay que congelar. El test usa la cola de **base de datos** y lee la tabla `jobs` por `id` — el mecanismo real.
+
+Además fija: idempotencia por `wamid`, que **no se reinicia `ai_reply_count`** (regresión histórica: reiniciarlo volvía inalcanzable el tope de respuestas), que el **anuncio de entrada no se pisa** cuando el contacto vuelve por otro, el enlace de respuestas por `context.id`, el auto-etiquetado, la correlación de broadcasts, el alta del deal (una sola vez), el registro `AiReplyAttempt` de encolado, que un `phone_number_id` desconocido no hace nada, y **la forma exacta del payload de `message.received`** — el contrato con Komo: si el refactor deja de mandar una clave, allá se rompe algo y acá no fallaría nada.
+
+**Verificado que detecta:** se simuló el bug histórico —encolar la IA antes de los flows— con la suite en verde. **Cinco** de los quince tests salieron en rojo mostrando el reordenamiento exacto. Después se revirtió.
+
+**Trampa menor:** la columna de `AiReplyAttempt` es `decision`, no `estado`.
+
+Tests: `InboundProcessorParityTest` (15). Suite **458/458 (2217 aserciones)**.
+
 ## F0 (1/n) — los gemelos se vuelven conscientes del canal (2026-09-01)
 
 Primer paso de `plan_omnicanal.md` §F0. **Sin canales nuevos todavía: todo lo existente se comporta idéntico.** Se hizo justo después de D4 y no antes, a propósito — toca `ServiceWindow::build()` en los dos repos, que es exactamente lo que las fixtures de D4 protegen.
