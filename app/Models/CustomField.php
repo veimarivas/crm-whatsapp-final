@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['account_id', 'field_name', 'field_type', 'field_options'])]
+#[Fillable(['account_id', 'external_id', 'field_name', 'field_type', 'field_options'])]
 class CustomField extends Model
 {
     use BelongsToAccount, HasUuids;

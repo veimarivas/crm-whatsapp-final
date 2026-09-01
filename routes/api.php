@@ -87,4 +87,11 @@ Route::prefix('v1')->middleware('throttle:public-api')->group(function () {
     // verdad): /pipelines del wacrm queda con las mismas columnas.
     Route::post('/pipelines/sync', [\App\Http\Controllers\Api\V1\PipelineSyncController::class, 'sync'])
         ->middleware('api.key:conversations:write');
+
+    // Ídem para la taxonomía: etiquetas y campos personalizados. Va con el
+    // mismo scope que los pipelines a propósito — es la misma autorización
+    // («Komo administra la estructura de este proyecto») y pedir uno nuevo
+    // dejaría el sync callado hasta que alguien reemitiera la clave.
+    Route::post('/taxonomy/sync', [\App\Http\Controllers\Api\V1\TaxonomySyncController::class, 'sync'])
+        ->middleware('api.key:conversations:write');
 });

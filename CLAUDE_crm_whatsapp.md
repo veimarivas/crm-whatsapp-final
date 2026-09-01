@@ -2,6 +2,33 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## D2a — la taxonomía pasa a tener un solo dueño (2026-09-01)
+
+Segunda fase de `plan_deduplicacion.md`. **Cross-repo**: D2b es la mitad del Komo y **este lado va primero**. Etiquetas y campos personalizados tenían catálogo propio en cada proyecto y **no se sincronizaban** — a diferencia de los pipelines, que sí. Una etiqueta puesta en el inbox no existía en Komo y viceversa.
+
+`POST /api/v1/taxonomy/sync` es un calco de `PipelineSyncController` (mismo scope `conversations:write` a propósito: es la misma autorización, y pedir uno nuevo dejaría el sync callado hasta que alguien reemitiera la clave).
+
+### La diferencia con el sync de pipelines es qué pasa al BORRAR
+No es un detalle de implementación:
+
+- Una etapa que desaparece reasigna sus deals: no se pierde nada.
+- **Una etiqueta que desaparece desetiqueta contactos, y si tiene una regla de auto-tagging la borra en cascada** — `auto_tag_rules.tag_id` es `cascadeOnDelete`. O sea: alguien borra una etiqueta en Komo y el auto-etiquetado de este proyecto deja de funcionar **sin un solo aviso**, y se descubriría meses después.
+
+Por eso **una etiqueta EN USO no se borra: se desvincula** (`external_id → null`) y pasa a ser una etiqueta local. Borrarla en Komo significa «no la quiero en mi catálogo», no «rompé la automatización del otro lado». Ídem un campo personalizado con valores cargados: ese dato no lo tiene nadie más.
+
+### `external_id` nullable no es un detalle de esquema
+Una fila con `external_id` en NULL es una etiqueta **local**, que este proyecto crea y el sync no puede tocar. Es lo que hace posible tanto la etiqueta creada al vuelo por un agente como la que sobrevivió a un borrado en Komo. El unique `(account_id, external_id)` tolera múltiples NULL en MariaDB, así que no hace falta el índice parcial que MariaDB no tiene.
+
+### Se enlaza, no se pisa
+Cuando los dos lados ya tenían «Interesado», el sync los **enlaza** por nombre normalizado (`Str::ascii` + `lower` + `squish`): adopta el uuid de Komo sobre la fila que ya estaba, así que **las asociaciones a contactos y las reglas sobreviven**. No crea una segunda ni borra la vieja. Sin la normalización, «Interesado» y «interesado » serían dos y el equipo terminaría con las dos en la lista.
+
+`dry_run` devuelve el informe completo sin tocar nada — es lo único que hace segura la primera pasada, que es la única en la que el sync puede enlazar y borrar en masa.
+
+### `/tags` no queda read-only del todo, a propósito
+**Crear** una etiqueta local acá sigue permitido: un agente que necesita marcar algo en el momento no puede quedar bloqueado esperando a que un admin la cree en el otro sistema. Lo que se bloquea es **renombrar o borrar una que administra Komo** — el próximo sync la pisaría igual, así que la pantalla estaría prometiendo un cambio que no sobrevive. Hay un test por cada mitad.
+
+Tests: `TaxonomySyncTest` (12). Suite **429/429 (1949 aserciones)**.
+
 ## D1a — el motor de broadcasts deja de ser solo de plantillas (2026-09-01)
 
 Primera fase de `plan_deduplicacion.md` (vive en el repo del Komo). **Cross-repo**: D1b es la mitad de allá y **este lado va primero** — el contrato es aditivo, así que un Komo viejo sigue funcionando contra este wacrm, pero no al revés.

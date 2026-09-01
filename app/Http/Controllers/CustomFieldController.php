@@ -26,6 +26,15 @@ class CustomFieldController extends Controller
     {
         abort_if($customField->account_id !== $request->user()->account_id, 403);
 
+        // Igual que con las etiquetas (D2): lo que administra Komo no se borra
+        // acá — el próximo sync lo recrearía y, mientras tanto, la cascada se
+        // habría llevado los valores cargados.
+        if ($customField->external_id !== null) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'field_name' => 'Este campo se administra desde el CRM de leads (Komo). Borralo allá.',
+            ]);
+        }
+
         $customField->delete(); // los valores caen por FK cascade
 
         return back()->with('success', 'Campo eliminado.');
