@@ -1,0 +1,172 @@
+{
+    "contract": "response-metrics/1",
+    "_": [
+        "GEMELO — este archivo es IDENTICO en laravel_crm_whatsapp y laravel_komo_crm.",
+        "Si cambia una definicion de las metricas de respuesta hay que tocar los DOS repos",
+        "y los DOS archivos, el mismo dia. Ver la seccion D4 de plan_deduplicacion.md.",
+        "",
+        "Cada caso es una linea de tiempo. Cada evento:",
+        "  minutes_ago — minutos antes de un `now()` congelado",
+        "  who         — 'cliente' | 'humano' | 'ia'",
+        "",
+        "Los dos proyectos construyen la linea de tiempo con SU propia fuente (mensajes en",
+        "el wacrm, lead_events en Komo) y despues comparan contra lo mismo. Que las fuentes",
+        "sean distintas es legitimo; que los NUMEROS lo sean, no.",
+        "",
+        "`first_responder` se declara con el token portable __owner__ donde cada proyecto",
+        "dice una palabra distinta a proposito: 'asignado' (agente de la conversacion) en el",
+        "wacrm y 'responsable' (del lead) en Komo. Es la unica diferencia declarada."
+    ],
+    "constants": {
+        "SLA_MINUTES": 30
+    },
+    "cases": [
+        {
+            "name": "la rafaga cuenta desde el PRIMER mensaje, no desde el ultimo",
+            "timeline": [
+                { "minutes_ago": 60, "who": "cliente" },
+                { "minutes_ago": 58, "who": "cliente" },
+                { "minutes_ago": 56, "who": "cliente" },
+                { "minutes_ago": 50, "who": "humano" }
+            ],
+            "expect": {
+                "inbound": 3,
+                "human_replies": 1,
+                "bot_replies": 0,
+                "first_response_seconds": 600,
+                "avg_response_seconds": 600,
+                "slowest_response_seconds": 600,
+                "awaiting_minutes": null,
+                "breached_sla": false,
+                "first_responder": "__owner__"
+            }
+        },
+        {
+            "name": "la IA NO cierra la espera: sigue contando como desatendido",
+            "timeline": [
+                { "minutes_ago": 60, "who": "cliente" },
+                { "minutes_ago": 59, "who": "ia" }
+            ],
+            "expect": {
+                "inbound": 1,
+                "human_replies": 0,
+                "bot_replies": 1,
+                "first_response_seconds": null,
+                "avg_response_seconds": null,
+                "slowest_response_seconds": null,
+                "awaiting_minutes": 60,
+                "breached_sla": true,
+                "first_responder": "ia"
+            }
+        },
+        {
+            "name": "la IA gana tiempo pero el reloj del humano corre desde el entrante",
+            "timeline": [
+                { "minutes_ago": 60, "who": "cliente" },
+                { "minutes_ago": 59, "who": "ia" },
+                { "minutes_ago": 40, "who": "humano" }
+            ],
+            "expect": {
+                "inbound": 1,
+                "human_replies": 1,
+                "bot_replies": 1,
+                "first_response_seconds": 1200,
+                "avg_response_seconds": 1200,
+                "slowest_response_seconds": 1200,
+                "awaiting_minutes": null,
+                "breached_sla": false,
+                "first_responder": "ia"
+            }
+        },
+        {
+            "name": "un saliente sin espera abierta es seguimiento proactivo, no respuesta",
+            "timeline": [
+                { "minutes_ago": 60, "who": "humano" }
+            ],
+            "expect": {
+                "inbound": 0,
+                "human_replies": 1,
+                "bot_replies": 0,
+                "first_response_seconds": null,
+                "avg_response_seconds": null,
+                "slowest_response_seconds": null,
+                "awaiting_minutes": null,
+                "breached_sla": false,
+                "first_responder": "__owner__"
+            }
+        },
+        {
+            "name": "insistir despues de contestar no mejora ni empeora el promedio",
+            "timeline": [
+                { "minutes_ago": 60, "who": "cliente" },
+                { "minutes_ago": 50, "who": "humano" },
+                { "minutes_ago": 45, "who": "humano" }
+            ],
+            "expect": {
+                "inbound": 1,
+                "human_replies": 2,
+                "bot_replies": 0,
+                "first_response_seconds": 600,
+                "avg_response_seconds": 600,
+                "slowest_response_seconds": 600,
+                "awaiting_minutes": null,
+                "breached_sla": false,
+                "first_responder": "__owner__"
+            }
+        },
+        {
+            "name": "dos ciclos: promedio y peor caso salen de los dos",
+            "timeline": [
+                { "minutes_ago": 60, "who": "cliente" },
+                { "minutes_ago": 50, "who": "humano" },
+                { "minutes_ago": 40, "who": "cliente" },
+                { "minutes_ago": 20, "who": "humano" }
+            ],
+            "expect": {
+                "inbound": 2,
+                "human_replies": 2,
+                "bot_replies": 0,
+                "first_response_seconds": 600,
+                "avg_response_seconds": 900,
+                "slowest_response_seconds": 1200,
+                "awaiting_minutes": null,
+                "breached_sla": false,
+                "first_responder": "__owner__"
+            }
+        },
+        {
+            "name": "esperando dentro del SLA",
+            "timeline": [
+                { "minutes_ago": 10, "who": "cliente" }
+            ],
+            "expect": {
+                "inbound": 1,
+                "human_replies": 0,
+                "bot_replies": 0,
+                "first_response_seconds": null,
+                "avg_response_seconds": null,
+                "slowest_response_seconds": null,
+                "awaiting_minutes": 10,
+                "breached_sla": false,
+                "first_responder": "sin_respuesta"
+            }
+        },
+        {
+            "name": "el SLA se incumple AL llegar a los 30 minutos, no despues",
+            "timeline": [
+                { "minutes_ago": 30, "who": "cliente" }
+            ],
+            "expect": {
+                "inbound": 1,
+                "human_replies": 0,
+                "bot_replies": 0,
+                "first_response_seconds": null,
+                "avg_response_seconds": null,
+                "slowest_response_seconds": null,
+                "awaiting_minutes": 30,
+                "breached_sla": true,
+                "first_responder": "sin_respuesta"
+            }
+        }
+    ]
+}

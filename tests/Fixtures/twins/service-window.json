@@ -1,0 +1,131 @@
+{
+    "contract": "service-window/1",
+    "_": [
+        "GEMELO — este archivo es IDENTICO en laravel_crm_whatsapp y laravel_komo_crm.",
+        "Si cambia una definicion de la ventana de servicio hay que tocar los DOS repos y",
+        "los DOS archivos, el mismo dia. Ver la seccion D4 de plan_deduplicacion.md.",
+        "",
+        "Las dos reglas de Meta se comportan distinto y por eso hay casos para cada una:",
+        "  - 24 h de servicio: se REINICIA con cada entrante del cliente.",
+        "  - 72 h de free entry point: NO se reinicia; corren desde el clic en el anuncio.",
+        "Corren en paralelo, asi que vale la que venza mas tarde.",
+        "",
+        "`inbound_hours_ago` y `ad_hours_ago` son horas antes de un `now()` congelado;",
+        "null = ese hecho no ocurrio."
+    ],
+    "constants": {
+        "STANDARD_HOURS": 24,
+        "AD_REFERRAL_HOURS": 72,
+        "WARNING_HOURS": 4
+    },
+    "cases": [
+        {
+            "name": "sin actividad: no hay ventana que abrir",
+            "inbound_hours_ago": null,
+            "ad_hours_ago": null,
+            "expect": {
+                "source": "none",
+                "window_hours": null,
+                "is_open": false,
+                "is_expiring": false,
+                "remaining_seconds": 0
+            }
+        },
+        {
+            "name": "entrante reciente: 24 h desde su mensaje",
+            "inbound_hours_ago": 2,
+            "ad_hours_ago": null,
+            "expect": {
+                "source": "whatsapp",
+                "window_hours": 24,
+                "is_open": true,
+                "is_expiring": false,
+                "remaining_seconds": 79200
+            }
+        },
+        {
+            "name": "el limite de 24 h es exclusivo: justo al vencer ya esta cerrada",
+            "inbound_hours_ago": 24,
+            "ad_hours_ago": null,
+            "expect": {
+                "source": "whatsapp",
+                "window_hours": 24,
+                "is_open": false,
+                "is_expiring": false,
+                "remaining_seconds": 0
+            }
+        },
+        {
+            "name": "por vencer: menos de 4 h se avisa en ambar",
+            "inbound_hours_ago": 21,
+            "ad_hours_ago": null,
+            "expect": {
+                "source": "whatsapp",
+                "window_hours": 24,
+                "is_open": true,
+                "is_expiring": true,
+                "remaining_seconds": 10800
+            }
+        },
+        {
+            "name": "solo anuncio: 72 h gratis sin que el cliente haya escrito",
+            "inbound_hours_ago": null,
+            "ad_hours_ago": 10,
+            "expect": {
+                "source": "meta_ad",
+                "window_hours": 72,
+                "is_open": true,
+                "is_expiring": false,
+                "remaining_seconds": 223200
+            }
+        },
+        {
+            "name": "anuncio reciente + entrante: manda el anuncio, que vence mas tarde",
+            "inbound_hours_ago": 2,
+            "ad_hours_ago": 2,
+            "expect": {
+                "source": "meta_ad",
+                "window_hours": 72,
+                "is_open": true,
+                "is_expiring": false,
+                "remaining_seconds": 252000
+            }
+        },
+        {
+            "name": "las 72 h NO se reinician: escribir en la hora 71 no las estira",
+            "inbound_hours_ago": 71,
+            "ad_hours_ago": 71,
+            "expect": {
+                "source": "meta_ad",
+                "window_hours": 72,
+                "is_open": true,
+                "is_expiring": true,
+                "remaining_seconds": 3600
+            }
+        },
+        {
+            "name": "clic en el anuncio y escribe en la hora 71: la conversacion llega a la hora 95",
+            "inbound_hours_ago": 1,
+            "ad_hours_ago": 71,
+            "expect": {
+                "source": "whatsapp",
+                "window_hours": 24,
+                "is_open": true,
+                "is_expiring": false,
+                "remaining_seconds": 82800
+            }
+        },
+        {
+            "name": "las dos vencidas: la mas tardia sigue siendo la que define el origen",
+            "inbound_hours_ago": 30,
+            "ad_hours_ago": 80,
+            "expect": {
+                "source": "whatsapp",
+                "window_hours": 24,
+                "is_open": false,
+                "is_expiring": false,
+                "remaining_seconds": 0
+            }
+        }
+    ]
+}

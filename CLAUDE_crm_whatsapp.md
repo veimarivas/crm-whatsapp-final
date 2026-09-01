@@ -2,6 +2,28 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## D4 — el contrato de los gemelos, fijado con fixtures (2026-09-01)
+
+Cuarta fase ejecutada de `plan_deduplicacion.md`. **Cross-repo, pero sin orden de deploy**: son solo tests, y los dos lados van en el mismo día por definición.
+
+`ServiceWindow` y `ResponseMetrics` existen acá y en el Komo con definiciones que **deben** coincidir. Hasta hoy el mecanismo que lo garantizaba era **acordarse** — la convención está escrita en los dos `CLAUDE_*.md` y en `plan_omnicanal.md` §1, y nada la comprobaba. Ya había pasado con la capa de gráficos, que se creó explícitamente como «una sola» y en un mes tenía dos `format.js` distintos.
+
+`tests/Fixtures/twins/*.json` son **byte-idénticos en los dos repos**. Cada repo construye el estado con **su propia fuente** —acá `messages`, allá `lead_events`— y compara contra los mismos números. Que las fuentes difieran es legítimo; que los números difieran, no.
+
+**133 aserciones de cada lado, el mismo número.** Es la evidencia de que hoy los gemelos están de acuerdo de verdad.
+
+### Qué se fija
+- `ServiceWindow::build()` es una **función pura de dos fechas** en los dos repos: el objetivo ideal. 9 casos, incluido el de las 72 h que no se reinician y el de «toca el anuncio y escribe en la hora 71 → la conversación llega a la hora 95».
+- `ResponseMetrics` mide **los mismos 9 campos** en los dos: el reloj arranca en el primer mensaje de la ráfaga, la IA no cierra la espera, un saliente sin espera abierta es seguimiento proactivo y no entra en los promedios, el SLA se incumple **al** llegar a los 30 minutos.
+- **La única diferencia declarada** es `first_responder`: acá la conversación tiene un `'asignado'` y allá el lead un `'responsable'`. La fixture lo expresa con el token `__owner__` y cada repo lo traduce — la diferencia queda escrita, no escondida.
+
+### Se verificó que el guardián detecta, no solo que pasa
+Con la suite en verde se rompió la definición a propósito, dos veces: `WARNING_HOURS` 4→3 (lo agarra el test de constantes) y `max($adExpiry)`→`min()` (lo agarra el de comportamiento, nombrando el caso: *«anuncio reciente + entrante: manda el anuncio, que vence mas tarde» → source*). Un test que nunca se vio fallar no es una garantía, es una intención.
+
+**⚠️ Lo que NO protege, dicho explícito:** editar las fixtures de los dos repos de forma inconsistente sigue siendo posible. Para cerrar eso el archivo tiene que vivir **una** vez — es el paquete compartido de D3. Lo que sí se cierra hoy es el caso real: alguien toca la definición que tiene enfrente y su propia suite se pone roja.
+
+Tests: `TwinContractTest` (4, 133 aserciones). Suite **439/439 (2101 aserciones)**.
+
 ## D5a — la etapa se correlaciona por uuid, no por nombre (2026-09-01)
 
 Tercera fase ejecutada de `plan_deduplicacion.md`. **Cross-repo** (D5b en Komo), **este lado primero**. No es una mejora de mantenimiento: **arregla un riesgo de corrupción silenciosa que ya estaba en producción.**
