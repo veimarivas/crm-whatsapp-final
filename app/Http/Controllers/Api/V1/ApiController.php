@@ -144,30 +144,58 @@ class ApiController extends Controller
 
         return response()->json([
             ...$broadcast->toArray(),
+            'report' => $broadcast->audience_filter['report'] ?? null,
             'recipients_by_status' => $broadcast->recipients()
                 ->selectRaw('status, COUNT(*) as total')
                 ->groupBy('status')
                 ->pluck('total', 'status'),
+            // Motivos de fallo agrupados: sin esto, «40 fallaron» no dice si
+            // fue la ventana, un teléfono inválido o que Meta rechazó todo.
+            'failure_reasons' => $broadcast->recipients()
+                ->where('status', 'failed')
+                ->selectRaw('error_message, COUNT(*) as total')
+                ->groupBy('error_message')
+                ->pluck('total', 'error_message'),
         ]);
     }
 
     /** Crea y envía (o programa) un broadcast con una plantilla aprobada. */
+    /**
+     * Alta de un broadcast.
+     *
+     * Desde D1a acepta cuerpo de texto y audiencia por teléfonos, que es lo que
+     * necesita Komo para dejar de tener su propio motor de envíos. Las dos
+     * formas viejas (`body_type` ausente = plantilla, `audience` all|tags)
+     * siguen validando y comportándose igual: el contrato es aditivo.
+     */
     public function storeBroadcast(Request $request, Creator $creator): JsonResponse
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'template_name' => 'required|string',
-            'template_language' => 'required|string|max:10',
+            'body_type' => 'nullable|in:template,text',
+            // El texto y la plantilla son excluyentes, y cuál se exige depende
+            // del cuerpo. `required_if` con el default ausente no alcanza:
+            // sin `body_type` el cuerpo es plantilla (contrato viejo).
+            'body_text' => 'required_if:body_type,text|nullable|string|max:4000',
+            'media_base64' => 'nullable|string',
+            'media_mime' => 'nullable|string|max:100',
+            'template_name' => 'required_unless:body_type,text|nullable|string',
+            'template_language' => 'required_unless:body_type,text|nullable|string|max:10',
             'template_variables' => 'nullable|array',
             'template_variables.*' => 'string|max:500',
             'header_media_url' => 'nullable|url|max:2048',
-            'audience' => 'required|in:all,tags',
+            'audience' => 'required|in:all,tags,phones',
             'tag_ids' => 'required_if:audience,tags|array',
             'tag_ids.*' => 'uuid',
+            'recipients' => 'required_if:audience,phones|array|max:5000',
+            'recipients.*.phone' => 'required|string|max:32',
+            'recipients.*.external_ref' => 'nullable|string|max:64',
             'scheduled_at' => 'nullable|date|after:now',
         ]);
 
-        $connected = WhatsappConfig::forAccount($this->accountId($request))
+        $accountId = $this->accountId($request);
+
+        $connected = WhatsappConfig::forAccount($accountId)
             ->where('status', 'connected')
             ->exists();
 
@@ -175,13 +203,33 @@ class ApiController extends Controller
             return response()->json(['message' => 'WhatsApp is not connected.'], 422);
         }
 
+        // El adjunto viaja en base64 con el alta y se guarda UNA vez: el envío
+        // lo sube a Meta una sola vez para todos los destinatarios.
+        if (! empty($validated['media_base64'])) {
+            $binary = base64_decode($validated['media_base64'], true);
+
+            if ($binary === false) {
+                return response()->json(['message' => 'El adjunto no es base64 válido.'], 422);
+            }
+
+            $path = 'broadcasts/'.\Illuminate\Support\Str::uuid();
+            \Illuminate\Support\Facades\Storage::disk('local')->put($path, $binary);
+            $validated['body_media_path'] = $path;
+        }
+
         try {
-            $broadcast = $creator->create($this->accountId($request), $validated);
+            $broadcast = $creator->create($accountId, $validated);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        return response()->json($broadcast, 201);
+        // El informe de audiencia va en la respuesta y no solo guardado: quien
+        // pidió el envío tiene que poder decir «se manda a 40 de 300» ANTES de
+        // que el usuario cierre la pantalla.
+        return response()->json([
+            ...$broadcast->toArray(),
+            'report' => $broadcast->audience_filter['report'] ?? null,
+        ], 201);
     }
 
     /**

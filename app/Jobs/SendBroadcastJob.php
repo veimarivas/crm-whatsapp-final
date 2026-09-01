@@ -7,14 +7,22 @@ use App\Models\BroadcastRecipient;
 use App\Models\Contact;
 use App\Models\WhatsappConfig;
 use App\Services\WhatsApp\MetaApi;
+use App\Services\WhatsApp\ServiceWindow;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Envía un broadcast completo: recorre los destinatarios pendientes,
- * sustituye variables por contacto y envía la plantilla vía Meta.
+ * sustituye variables por contacto y envía vía Meta.
  * Equivalente al motor de src/lib/whatsapp/broadcast-core.ts.
+ *
+ * Desde D1a envía los dos cuerpos: plantilla aprobada (lo de siempre) y
+ * mensaje de sesión de texto libre, que es lo que le permitió a Komo apagar su
+ * motor paralelo. La diferencia que importa está en `sendText()`: **la ventana
+ * se vuelve a mirar acá**, no solo al crear. Un broadcast programado se arma
+ * hoy y sale mañana, y para entonces la ventana de medio mundo se cerró.
  */
 class SendBroadcastJob implements ShouldQueue
 {
@@ -27,6 +35,11 @@ class SendBroadcastJob implements ShouldQueue
     private ?string $headerType = null;
 
     private bool $headerTypeResolved = false;
+
+    /** media_id de Meta del adjunto, subido una sola vez para todo el envío. */
+    private ?string $mediaId = null;
+
+    private bool $mediaResolved = false;
 
     public function __construct(public readonly string $broadcastId)
     {
@@ -57,8 +70,16 @@ class SendBroadcastJob implements ShouldQueue
             ->where('status', 'pending')
             ->with('contact')
             ->chunkById(50, function ($recipients) use ($broadcast, $api) {
+                // La ventana se resuelve por lote, no por destinatario: son dos
+                // queries para los 50 en vez de dos por cada uno.
+                $windows = $broadcast->isText()
+                    ? app(ServiceWindow::class)->forContacts(
+                        $recipients->pluck('contact_id')->filter()->values()->all()
+                    )
+                    : [];
+
                 foreach ($recipients as $recipient) {
-                    $this->sendToRecipient($broadcast, $api, $recipient);
+                    $this->sendToRecipient($broadcast, $api, $recipient, $windows);
                 }
             });
 
@@ -72,26 +93,50 @@ class SendBroadcastJob implements ShouldQueue
         ]);
     }
 
-    private function sendToRecipient(Broadcast $broadcast, MetaApi $api, BroadcastRecipient $recipient): void
+    /**
+     * @param  array<string, array<string, mixed>>  $windows  ventana por contact_id
+     */
+    private function sendToRecipient(Broadcast $broadcast, MetaApi $api, BroadcastRecipient $recipient, array $windows): void
     {
         $contact = $recipient->contact;
 
-        if (! $contact) {
-            $recipient->update(['status' => 'failed', 'error_message' => 'Contacto eliminado']);
-            $broadcast->increment('failed_count');
+        // El contacto es opcional SOLO en audiencias por teléfono (las que
+        // manda Komo), donde el destinatario puede no existir todavía acá. En
+        // una audiencia de este proyecto, un contacto que ya no está es un
+        // contacto BORRADO, y a un borrado no se le escribe.
+        if (! $contact && ($broadcast->audience_filter['type'] ?? null) !== 'phones') {
+            $this->fail($broadcast, $recipient, 'Contacto eliminado');
+
+            return;
+        }
+
+        // El teléfono lo trae la fila; el contacto es opcional desde D1a
+        // (Komo manda audiencias con gente que este proyecto no conoce).
+        $phone = $recipient->phone ?: ($contact?->phone_normalized ?? $contact?->phone);
+
+        if (! $phone) {
+            $this->fail($broadcast, $recipient, 'Destinatario sin teléfono');
+
+            return;
+        }
+
+        if ($broadcast->isText() && ! ($windows[$recipient->contact_id]['is_open'] ?? false)) {
+            // No se intenta: Meta rechazaría el texto libre y el error diría
+            // «(#131047) Re-engagement message», que no le explica nada a nadie.
+            $this->fail($broadcast, $recipient, 'Ventana de 24 h cerrada: hace falta una plantilla aprobada.');
 
             return;
         }
 
         try {
-            $components = $this->buildComponents($broadcast, $contact);
-
-            $result = $api->sendTemplate(
-                $contact->phone_normalized ?? $contact->phone,
-                $broadcast->template_name,
-                $broadcast->template_language,
-                $components,
-            );
+            $result = $broadcast->isText()
+                ? $this->sendText($broadcast, $api, $phone, $contact)
+                : $api->sendTemplate(
+                    $phone,
+                    $broadcast->template_name,
+                    $broadcast->template_language,
+                    $this->buildComponents($broadcast, $contact),
+                );
 
             $recipient->update([
                 'status' => 'sent',
@@ -105,12 +150,59 @@ class SendBroadcastJob implements ShouldQueue
                 'error' => $e->getMessage(),
             ]);
 
-            $recipient->update([
-                'status' => 'failed',
-                'error_message' => mb_substr($e->getMessage(), 0, 500),
-            ]);
-            $broadcast->increment('failed_count');
+            $this->fail($broadcast, $recipient, mb_substr($e->getMessage(), 0, 500));
         }
+    }
+
+    private function fail(Broadcast $broadcast, BroadcastRecipient $recipient, string $reason): void
+    {
+        $recipient->update(['status' => 'failed', 'error_message' => $reason]);
+        $broadcast->increment('failed_count');
+    }
+
+    /**
+     * Mensaje de sesión: imagen con el texto de pie si el broadcast trae
+     * adjunto, texto suelto si no.
+     *
+     * El adjunto se sube a Meta UNA vez para todo el envío: subirlo por
+     * destinatario sería una carga completa del archivo por cada mensaje.
+     */
+    private function sendText(Broadcast $broadcast, MetaApi $api, string $phone, ?Contact $contact): array
+    {
+        $text = $this->interpolate($broadcast->body_text ?? '', $contact);
+
+        if ($broadcast->body_media_path) {
+            if (! $this->mediaResolved) {
+                $disk = Storage::disk('local');
+
+                if ($disk->exists($broadcast->body_media_path)) {
+                    $this->mediaId = $api->uploadMedia(
+                        $disk->get($broadcast->body_media_path),
+                        $disk->mimeType($broadcast->body_media_path) ?: 'image/jpeg',
+                        basename($broadcast->body_media_path),
+                    );
+                }
+
+                $this->mediaResolved = true;
+            }
+
+            if ($this->mediaId) {
+                return $api->sendMedia($phone, 'image', $this->mediaId, $text);
+            }
+        }
+
+        return $api->sendText($phone, $text);
+    }
+
+    /** Los mismos tokens que acepta el cuerpo de una plantilla. */
+    private function interpolate(string $text, ?Contact $contact): string
+    {
+        return strtr($text, [
+            '{name}' => $contact->name ?? '',
+            '{phone}' => $contact->phone ?? '',
+            '{email}' => $contact->email ?? '',
+            '{company}' => $contact->company ?? '',
+        ]);
     }
 
     /**
@@ -121,7 +213,7 @@ class SendBroadcastJob implements ShouldQueue
      * encabezado (imagen/video/documento por link) que Meta exige para
      * plantillas con header multimedia.
      */
-    private function buildComponents(Broadcast $broadcast, Contact $contact): array
+    private function buildComponents(Broadcast $broadcast, ?Contact $contact): array
     {
         $components = [];
 
@@ -149,18 +241,11 @@ class SendBroadcastJob implements ShouldQueue
         $variables = $broadcast->template_variables ?? [];
 
         if (! empty($variables)) {
-            $replacements = [
-                '{name}' => $contact->name ?? '',
-                '{phone}' => $contact->phone ?? '',
-                '{email}' => $contact->email ?? '',
-                '{company}' => $contact->company ?? '',
-            ];
-
             $components[] = [
                 'type' => 'body',
                 'parameters' => array_map(fn (string $value) => [
                     'type' => 'text',
-                    'text' => strtr($value, $replacements),
+                    'text' => $this->interpolate($value, $contact),
                 ], array_values($variables)),
             ];
         }

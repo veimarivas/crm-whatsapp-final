@@ -2,6 +2,31 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## D1a — el motor de broadcasts deja de ser solo de plantillas (2026-09-01)
+
+Primera fase de `plan_deduplicacion.md` (vive en el repo del Komo). **Cross-repo**: D1b es la mitad de allá y **este lado va primero** — el contrato es aditivo, así que un Komo viejo sigue funcionando contra este wacrm, pero no al revés.
+
+**El problema no era de código, era de facturación.** Komo tenía su propio motor de envíos (`Jobs\SendBroadcastMessageJob`) que mandaba **texto suelto** por `/api/v1/messages`. Su propio docblock lo admitía: *«este job envia texto simple asumiendo que el contacto ya esta en ventana»*. Fuera de las 24 h de Meta eso se rechaza, y el envío además no aparecía en `/broadcasts-metrics`. Para que ese motor pudiera morir, este tenía que saber hacer **las dos cosas**.
+
+- **`body_type`** — `template` (lo de siempre) o `text` (mensaje de sesión: texto libre con imagen opcional, gratis, solo dentro de la ventana). El default deja los broadcasts existentes idénticos.
+- **`audience: 'phones'`** — lista explícita de teléfonos con `external_ref`. Es la forma en que Komo expresa un segmento suyo: acá no hay leads, ni etapas, ni responsables, así que su `SegmentQuery` no se puede reproducir de este lado. **La división que hace que exista un solo motor: Komo resuelve a QUIÉN, el wacrm resuelve CÓMO SE MANDA.**
+- **Un teléfono desconocido no se descarta.** Es gente real que llegó por formulario web o correo. Se registra sin `contact_id` (por eso `broadcast_recipients.phone`) y, si contesta, el camino de entrada le crea el contacto como a cualquiera.
+
+### La ventana se mira DOS veces, y la segunda es la que importa
+Al crear se calcula el informe y se recortan los que no llegarían. Pero **un broadcast programado se arma hoy y sale mañana**, y para entonces la ventana de medio mundo se cerró: `SendBroadcastJob` la vuelve a resolver por lote antes de cada envío y **no llama a Meta** si está cerrada. El error de Meta en ese caso es *«(#131047) Re-engagement message»*, que no le explica nada a nadie; el motivo que se guarda sí.
+
+### El informe se guarda, no solo se devuelve
+`audience_filter.report` con `requested` / `unknown_contacts` / `out_of_window` / `sending_to` **y la lista `excluded`** con el motivo por teléfono (`ventana_cerrada` | `sin_conversacion`, cortada en 1.000 con `excluded_truncated`). La lista y no solo el total: quien pidió el envío tiene que poder marcar **sus** filas, y un número no le dice cuáles. Dentro de una semana la ventana de esos contactos es otra — «se mandó a 40 de 300» tiene que seguir contestándose con los números de aquel día.
+
+- **Una audiencia entera fuera de ventana es 422 con el motivo**, no un broadcast que dice «enviando» para siempre.
+- `GET /api/v1/broadcasts/{id}` estrena `failure_reasons` agrupados: sin eso «12 fallaron» no dice si fue la ventana, un teléfono inválido o que Meta cortó el envío entero.
+
+**⚠️ Trampa que casi cambia el comportamiento en silencio:** al aceptar destinatarios sin contacto, un contacto **borrado** en una audiencia normal pasaba a recibir el mensaje igual (la migración le copió el teléfono a la fila). El guardián de «Contacto eliminado» se conservó, acotado a las audiencias que NO son `phones`.
+
+**Trampa menor:** `foreach ($x as &$r)` dos veces sobre el mismo array deja la referencia colgando; van con `unset($r)`.
+
+Tests: `ApiBroadcastTextAudienceTest` (7). Suite **417/417 (1891 aserciones)**.
+
 ## Fix — los menús del lienzo no se podían clickear (2026-08-08)
 
 Los desplegables de «añadir paso» se **veían** pero los clics no llegaban a las opciones, en los dos editores. Dos contextos de apilado distintos, misma familia de error:

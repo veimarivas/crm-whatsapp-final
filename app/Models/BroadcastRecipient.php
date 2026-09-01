@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
-    'broadcast_id', 'contact_id', 'status', 'whatsapp_message_id',
+    'broadcast_id', 'contact_id', 'phone', 'external_ref', 'status', 'whatsapp_message_id',
     'sent_at', 'delivered_at', 'read_at', 'replied_at', 'error_message',
 ])]
 class BroadcastRecipient extends Model
