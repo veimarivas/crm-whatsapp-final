@@ -16,7 +16,10 @@
         "no pase inadvertida - que es exactamente lo que le paso a la capa de graficos, que",
         "nacio como 'una sola' y en un mes tenia dos format.js distintos.",
         "",
-        "Al agregar un archivo aca hay que agregarlo en el manifiesto del OTRO repo tambien."
+        "Al agregar un archivo aca hay que agregarlo en el manifiesto del OTRO repo tambien.",
+        "",
+        "ChannelRules (F0 omnicanal) entra aca desde el dia uno: nace como gemelo y no hay",
+        "razon para dejarlo separarse antes de que exista el paquete compartido."
     ],
     "files": [
         "app/Http/Controllers/Auth/AuthenticatedSessionController.php",
@@ -30,6 +33,7 @@
         "app/Http/Controllers/Controller.php",
         "app/Http/Controllers/ProfileController.php",
         "app/Http/Requests/Auth/LoginRequest.php",
+        "app/Services/Channels/ChannelRules.php",
         "resources/js/Components/ApplicationLogo.jsx",
         "resources/js/Components/Charts/ChartCard.jsx",
         "resources/js/Components/Checkbox.jsx",

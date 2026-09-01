@@ -4,6 +4,7 @@ namespace App\Services\WhatsApp;
 
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Services\Channels\ChannelRules;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 
@@ -76,10 +77,24 @@ class ServiceWindow
      *
      * @return array<string, mixed>
      */
-    public function build(?CarbonInterface $lastInboundAt, ?CarbonInterface $adReferralAt): array
+    public function build(?CarbonInterface $lastInboundAt, ?CarbonInterface $adReferralAt, string $channel = ChannelRules::DEFAULT): array
     {
+        // F0 — el corte de canal va acá y en ningún otro lado: los cuatro
+        // métodos públicos terminan en `build()`, así que una sola línea cubre
+        // el Inbox, los listados y los contactos. El default mantiene
+        // compatibles a todos los llamadores que no saben de canales.
+        if (! ChannelRules::hasServiceWindow($channel)) {
+            return $this->alwaysOpen($channel, $lastInboundAt);
+        }
+
         $standardExpiry = $lastInboundAt?->copy()->addHours(self::STANDARD_HOURS);
-        $adExpiry = $adReferralAt?->copy()->addHours(self::AD_REFERRAL_HOURS);
+
+        // Las 72 h del anuncio son de Click-to-WhatsApp y de nada más. En
+        // Messenger e Instagram rigen las 24 h y punto: extenderlas diría
+        // «todavía es gratis» cuando ya no lo es.
+        $adExpiry = ChannelRules::hasAdReferralWindow($channel)
+            ? $adReferralAt?->copy()->addHours(self::AD_REFERRAL_HOURS)
+            : null;
 
         // La que venza más tarde manda: las dos ventanas corren en paralelo.
         $expiry = match (true) {
@@ -109,6 +124,31 @@ class ServiceWindow
             'is_expiring' => $isOpen && $remaining <= self::WARNING_HOURS * 3600,
             'last_inbound_at' => $lastInboundAt?->toIso8601String(),
             'ad_referral_at' => $adReferralAt?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Canal sin plazo: siempre se puede escribir y no cuesta.
+     *
+     * **⚠️ Devuelve TODAS las claves del contrato, no un array corto.** La UI
+     * ya consume `window_hours`, `remaining_seconds` y `source`; un array
+     * incompleto rompe el badge con un error que no señala esta línea.
+     * `window_hours = null` es la señal de «sin límite» y la pantalla la lee
+     * para no dibujar una cuenta regresiva que no existe.
+     *
+     * @return array<string, mixed>
+     */
+    private function alwaysOpen(string $channel, ?CarbonInterface $lastInboundAt): array
+    {
+        return [
+            'source' => $channel,
+            'window_hours' => null,
+            'expires_at' => null,
+            'remaining_seconds' => 0,
+            'is_open' => true,
+            'is_expiring' => false,
+            'last_inbound_at' => $lastInboundAt?->toIso8601String(),
+            'ad_referral_at' => null,
         ];
     }
 

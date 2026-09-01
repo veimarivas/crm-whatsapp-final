@@ -1,7 +1,7 @@
 {
-    "contract": "service-window/1",
+    "contract": "service-window/2",
     "_": [
-        "GEMELO — este archivo es IDENTICO en laravel_crm_whatsapp y laravel_komo_crm.",
+        "GEMELO \u2014 este archivo es IDENTICO en laravel_crm_whatsapp y laravel_komo_crm.",
         "Si cambia una definicion de la ventana de servicio hay que tocar los DOS repos y",
         "los DOS archivos, el mismo dia. Ver la seccion D4 de plan_deduplicacion.md.",
         "",
@@ -11,7 +11,11 @@
         "Corren en paralelo, asi que vale la que venza mas tarde.",
         "",
         "`inbound_hours_ago` y `ad_hours_ago` son horas antes de un `now()` congelado;",
-        "null = ese hecho no ocurrio."
+        "null = ese hecho no ocurrio.",
+        "",
+        "F0 (omnicanal) \u2014 build() recibe ahora un `channel`, con default 'whatsapp'. Los",
+        "casos sin `channel` declarado prueban ese default, o sea que NADA cambio para lo",
+        "que ya existia. Los casos con `channel` fijan las reglas nuevas."
     ],
     "constants": {
         "STANDARD_HOURS": 24,
@@ -126,6 +130,133 @@
                 "is_expiring": false,
                 "remaining_seconds": 0
             }
+        },
+        {
+            "name": "telegram: no hay plazo que vencer, la ventana esta siempre abierta",
+            "channel": "telegram",
+            "inbound_hours_ago": 500,
+            "ad_hours_ago": null,
+            "expect": {
+                "source": "telegram",
+                "window_hours": null,
+                "is_open": true,
+                "is_expiring": false,
+                "remaining_seconds": 0,
+                "expires_at": null
+            }
+        },
+        {
+            "name": "telegram sin ningun mensaje: sigue abierta, no es 'none'",
+            "channel": "telegram",
+            "inbound_hours_ago": null,
+            "ad_hours_ago": null,
+            "expect": {
+                "source": "telegram",
+                "window_hours": null,
+                "is_open": true,
+                "is_expiring": false,
+                "remaining_seconds": 0,
+                "expires_at": null
+            }
+        },
+        {
+            "name": "messenger tiene las 24 h de Meta igual que WhatsApp",
+            "channel": "messenger",
+            "inbound_hours_ago": 2,
+            "ad_hours_ago": null,
+            "expect": {
+                "source": "whatsapp",
+                "window_hours": 24,
+                "is_open": true,
+                "remaining_seconds": 79200
+            }
+        },
+        {
+            "name": "messenger NO tiene las 72 h del anuncio: el referral se ignora",
+            "channel": "messenger",
+            "inbound_hours_ago": 30,
+            "ad_hours_ago": 10,
+            "expect": {
+                "source": "whatsapp",
+                "window_hours": 24,
+                "is_open": false,
+                "is_expiring": false,
+                "remaining_seconds": 0
+            }
+        },
+        {
+            "name": "el mismo caso en whatsapp SI queda abierto por el anuncio",
+            "channel": "whatsapp",
+            "inbound_hours_ago": 30,
+            "ad_hours_ago": 10,
+            "expect": {
+                "source": "meta_ad",
+                "window_hours": 72,
+                "is_open": true,
+                "is_expiring": false,
+                "remaining_seconds": 223200
+            }
+        },
+        {
+            "name": "un canal desconocido no rompe: se trata como sin ventana",
+            "channel": "canal_del_futuro",
+            "inbound_hours_ago": 100,
+            "ad_hours_ago": null,
+            "expect": {
+                "source": "canal_del_futuro",
+                "window_hours": null,
+                "is_open": true,
+                "is_expiring": false,
+                "remaining_seconds": 0
+            }
         }
-    ]
+    ],
+    "channel_rules": {
+        "_": "Lo que ChannelRules debe contestar. Si cambia, cambia en los DOS repos.",
+        "has_service_window": {
+            "whatsapp": true,
+            "messenger": true,
+            "instagram": true,
+            "telegram": false,
+            "email": false,
+            "sms": false,
+            "webchat": false
+        },
+        "has_ad_referral_window": {
+            "whatsapp": true,
+            "messenger": false,
+            "instagram": false,
+            "telegram": false,
+            "email": false,
+            "sms": false,
+            "webchat": false
+        },
+        "requires_approved_templates": {
+            "whatsapp": true,
+            "messenger": false,
+            "instagram": false,
+            "telegram": false,
+            "email": false,
+            "sms": false,
+            "webchat": false
+        },
+        "has_cost": {
+            "whatsapp": true,
+            "sms": true,
+            "telegram": false,
+            "messenger": false,
+            "instagram": false,
+            "email": false,
+            "webchat": false
+        },
+        "supports_outbound_first": {
+            "whatsapp": true,
+            "email": true,
+            "sms": true,
+            "telegram": false,
+            "messenger": false,
+            "instagram": false,
+            "webchat": false
+        }
+    }
 }

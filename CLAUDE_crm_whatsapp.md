@@ -2,6 +2,25 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## F0 (1/n) — los gemelos se vuelven conscientes del canal (2026-09-01)
+
+Primer paso de `plan_omnicanal.md` §F0. **Sin canales nuevos todavía: todo lo existente se comporta idéntico.** Se hizo justo después de D4 y no antes, a propósito — toca `ServiceWindow::build()` en los dos repos, que es exactamente lo que las fixtures de D4 protegen.
+
+**`Services\Channels\ChannelRules` es un GEMELO nuevo** y nace como tal: byte-idéntico en los dos proyectos y dentro del manifiesto de `SharedFilesDriftTest` desde el día uno. Clase **sin dependencias** (constantes + estáticos), que es lo que la hace posible: si dependiera de los adapters de este proyecto, en el Komo no podría existir.
+
+- **¿tiene ventana de servicio?** Solo los canales de Meta.
+- **¿tiene las 72 h del anuncio?** **Solo WhatsApp.** La regla más fácil de generalizar mal: Messenger e Instagram comparten la app de Meta y las 24 h, pero **no** el free entry point. El plan lo marcaba como el cambio de definición de gemelos más delicado; queda fijado con dos casos de fixture enfrentados — mismo escenario en messenger y en whatsapp, resultado opuesto.
+- **¿exige plantilla aprobada?** Solo WhatsApp. **¿se puede escribir primero?** Telegram no, webchat tampoco.
+
+### El corte va en `build()` y en ningún otro lado
+Los cuatro métodos públicos de `ServiceWindow` terminan ahí, así que una línea cubre el Inbox, los listados y los contactos. `$channel` tiene default `'whatsapp'`: **ningún llamador actual cambió**, y las 9 fixtures que ya existían prueban ese default.
+
+**⚠️ La trampa que el plan anticipaba y era real:** la rama «siempre abierta» devuelve **todas** las claves del contrato. Con `remaining_seconds: 0` y sin la señal `window_hours: null`, el badge diría **«Cerrada» sobre una conversación abierta para siempre**. `ServiceWindowBadge` lee esa señal y escribe *«Sin límite»*.
+
+**Un canal desconocido no rompe nada:** todas las reglas contestan que no, el criterio conservador. Hay fixture y test.
+
+Tests: `TwinContractTest` sube a 6 (211 aserciones). Suite **443/443 (2179 aserciones)**.
+
 ## D3-red — guardián de deriva de los archivos compartidos (2026-09-01)
 
 **No es D3.** D3 —extraer los 36 archivos duplicados a un paquete compartido— **sigue bloqueada** por dónde alojar el paquete de npm, porque el build corre en el VPS. Esto es su red, para que la deriva no siga siendo invisible mientras tanto.

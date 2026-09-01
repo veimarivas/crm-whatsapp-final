@@ -17,6 +17,18 @@ export function windowCountdown(seconds) {
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
+/**
+ * Un canal SIN plazo (Telegram, correo, SMS, webchat) llega con
+ * `window_hours: null` desde el servidor. No es un dato faltante: es la señal
+ * de «acá no hay cuenta regresiva que dibujar».
+ *
+ * Sin esta guarda el badge diría «Cerrada» sobre una conversación que en
+ * realidad está abierta para siempre, porque `remaining_seconds` viene en 0.
+ */
+export function windowIsUnlimited(w) {
+    return !!w?.is_open && (w.window_hours === null || w.window_hours === undefined);
+}
+
 export function windowTone(w) {
     if (!w?.is_open) return 'bg-red-50 border-red-200 text-red-700';
     if (w.is_expiring) return 'bg-amber-50 border-amber-200 text-amber-700';
@@ -27,6 +39,9 @@ export function windowTitle(w) {
     if (!w) return '';
     if (!w.is_open) {
         return 'Ventana cerrada: escribirle ahora requiere una plantilla aprobada y tiene costo.';
+    }
+    if (windowIsUnlimited(w)) {
+        return 'Este canal no tiene ventana de servicio: podés escribirle cuando quieras, sin costo.';
     }
     const origen = w.source === 'meta_ad' ? ', abierta por un anuncio de Facebook' : '';
 
@@ -41,21 +56,22 @@ export default function ServiceWindowBadge({ window: w, size = 'sm', showOrigin 
 
     const fromAd = w.source === 'meta_ad';
     const tone = windowTone(w);
+    const sinLimite = windowIsUnlimited(w);
 
     if (size === 'md') {
         return (
             <span title={windowTitle(w)} className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold border ${tone}`}>
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                {w.is_open ? windowCountdown(w.remaining_seconds) : 'Ventana cerrada'}
-                <span className="font-normal opacity-70">{fromAd ? '· anuncio 72h' : '· 24h'}</span>
+                {sinLimite ? 'Sin límite' : (w.is_open ? windowCountdown(w.remaining_seconds) : 'Ventana cerrada')}
+                <span className="font-normal opacity-70">{sinLimite ? `· ${w.source}` : (fromAd ? '· anuncio 72h' : '· 24h')}</span>
             </span>
         );
     }
 
     return (
         <span title={windowTitle(w)} className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold border ${tone}`}>
-            {fromAd ? '📣' : '💬'} {w.is_open ? windowCountdown(w.remaining_seconds) : 'Cerrada'}
-            {showOrigin && <span className="font-normal opacity-70">{fromAd ? '72h' : '24h'}</span>}
+            {fromAd ? '📣' : '💬'} {sinLimite ? 'Sin límite' : (w.is_open ? windowCountdown(w.remaining_seconds) : 'Cerrada')}
+            {showOrigin && !sinLimite && <span className="font-normal opacity-70">{fromAd ? '72h' : '24h'}</span>}
         </span>
     );
 }

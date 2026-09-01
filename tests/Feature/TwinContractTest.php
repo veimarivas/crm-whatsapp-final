@@ -7,6 +7,7 @@ use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
+use App\Services\Channels\ChannelRules;
 use App\Services\Supervision\ResponseMetrics;
 use App\Services\WhatsApp\ServiceWindow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -98,6 +99,9 @@ class TwinContractTest extends TestCase
             $result = $window->build(
                 $case['inbound_hours_ago'] === null ? null : now()->copy()->subHours($case['inbound_hours_ago']),
                 $case['ad_hours_ago'] === null ? null : now()->copy()->subHours($case['ad_hours_ago']),
+                // Sin `channel` declarado se prueba el DEFAULT, o sea que nada
+                // cambió para todo lo que ya existía antes de F0.
+                $case['channel'] ?? ChannelRules::DEFAULT,
             );
 
             foreach ($case['expect'] as $key => $expected) {
@@ -109,6 +113,59 @@ class TwinContractTest extends TestCase
                 );
             }
         }
+    }
+
+    public function test_las_reglas_de_canal_son_las_declaradas(): void
+    {
+        $reglas = $this->fixture('service-window')['channel_rules'];
+
+        $metodos = [
+            'has_service_window' => fn ($c) => ChannelRules::hasServiceWindow($c),
+            'has_ad_referral_window' => fn ($c) => ChannelRules::hasAdReferralWindow($c),
+            'requires_approved_templates' => fn ($c) => ChannelRules::requiresApprovedTemplates($c),
+            'has_cost' => fn ($c) => ChannelRules::hasCost($c),
+            'supports_outbound_first' => fn ($c) => ChannelRules::supportsOutboundFirst($c),
+        ];
+
+        foreach ($metodos as $regla => $fn) {
+            foreach ($reglas[$regla] as $canal => $esperado) {
+                $this->assertSame(
+                    $esperado,
+                    $fn($canal),
+                    "ChannelRules::{$regla}('{$canal}'). `ChannelRules` es un GEMELO: si el cambio es "
+                    .'intencional, actualizá la clase y la fixture en ESTE repo y en el Komo.',
+                );
+            }
+        }
+
+        // Todos los canales declarados existen en la clase, y al revés: si
+        // alguien agrega uno solo en un lado, la lista deja de coincidir.
+        // Se compara el CONJUNTO y no el orden: el orden de las claves de un
+        // JSON no es parte de ningún contrato.
+        $declarados = array_keys($reglas['has_service_window']);
+        sort($declarados);
+        $enLaClase = ChannelRules::ALL;
+        sort($enLaClase);
+
+        $this->assertSame(
+            $declarados,
+            $enLaClase,
+            'La lista de canales de ChannelRules no coincide con la de la fixture.',
+        );
+    }
+
+    public function test_un_canal_desconocido_no_rompe_ninguna_regla(): void
+    {
+        // Los canales nacen en el Komo y los deploys no son simultáneos: este
+        // proyecto va a recibir eventos de canales que todavía no conoce. El
+        // criterio es el más conservador — como mucho no ofrece algo, nunca
+        // gasta de más.
+        $this->assertFalse(ChannelRules::isKnown('canal_del_futuro'));
+        $this->assertFalse(ChannelRules::hasServiceWindow('canal_del_futuro'));
+        $this->assertFalse(ChannelRules::hasAdReferralWindow('canal_del_futuro'));
+        $this->assertFalse(ChannelRules::requiresApprovedTemplates('canal_del_futuro'));
+        $this->assertFalse(ChannelRules::hasCost('canal_del_futuro'));
+        $this->assertFalse(ChannelRules::supportsOutboundFirst('canal_del_futuro'));
     }
 
     public function test_el_sla_es_el_declarado(): void
