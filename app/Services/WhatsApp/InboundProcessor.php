@@ -10,12 +10,14 @@ use App\Models\AiReplyAttempt;
 use App\Models\AutoTagRule;
 use App\Models\BroadcastRecipient;
 use App\Models\Contact;
+use App\Models\ContactIdentity;
 use App\Models\Conversation;
 use App\Models\Deal;
 use App\Models\Message;
 use App\Models\MessageReaction;
 use App\Models\Pipeline;
 use App\Models\WhatsappConfig;
+use App\Services\Channels\ChannelRules;
 use App\Services\Webhooks\Dispatcher;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -62,7 +64,9 @@ class InboundProcessor
         $wamid = $message['id'] ?? null;
 
         // Idempotencia: Meta reintenta entregas — un wamid ya guardado se ignora.
-        if ($wamid && Message::where('message_id', $wamid)->exists()) {
+        // F0: filtra por canal. Dos canales distintos pueden emitir el mismo
+        // identificador externo y hoy la búsqueda no los distinguía.
+        if ($wamid && Message::where('channel', ChannelRules::WHATSAPP)->where('message_id', $wamid)->exists()) {
             return;
         }
 
@@ -90,19 +94,47 @@ class InboundProcessor
                 $contact->update(['name' => $profileName]);
             }
 
+            // F0: la identidad de canal. Acá todavía se resuelve el contacto
+            // por teléfono —es WhatsApp, siempre lo trae— y la identidad se
+            // registra en paralelo. Cuando el ingestor de T0.2b invierta el
+            // orden y resuelva POR identidad, la fila ya va a existir para
+            // todos: la creó esta línea o el backfill de la migración.
+            ContactIdentity::registrar(
+                $contact,
+                ChannelRules::WHATSAPP,
+                Contact::normalizePhone($from),
+                $profileName,
+            );
+
+            // F0: el canal entra en la clave. Sin él, el mismo humano
+            // escribiendo por dos canales caería en un solo hilo y el `channel`
+            // de la conversación mentiría. Es además la clave del índice único
+            // que estrena la migración.
             $conversation = Conversation::firstOrCreate(
                 [
                     'account_id' => $config->account_id,
                     'contact_id' => $contact->id,
+                    'channel' => ChannelRules::WHATSAPP,
                 ],
-                ['status' => Conversation::STATUS_OPEN],
+                [
+                    'status' => Conversation::STATUS_OPEN,
+                    // El id del hilo en el sistema del canal. Para WhatsApp es
+                    // el teléfono normalizado.
+                    'channel_conversation_id' => Contact::normalizePhone($from),
+                ],
             );
 
             [$contentType, $contentText, $mediaId, $interactiveReplyId] = $this->parseContent($message);
 
             $replyTo = null;
             if ($contextId = $message['context']['id'] ?? null) {
-                $replyTo = Message::where('message_id', $contextId)->value('id');
+                // F0: acotado al canal. Este lookup no filtraba por nada, así
+                // que al haber varios canales dos ids externos podrían
+                // colisionar y una respuesta quedaría enlazada al mensaje de
+                // otra conversación.
+                $replyTo = Message::where('channel', ChannelRules::WHATSAPP)
+                    ->where('message_id', $contextId)
+                    ->value('id');
             }
 
             // Atribución Click-to-WhatsApp: Meta adjunta `referral` cuando el
@@ -111,6 +143,11 @@ class InboundProcessor
 
             $storedMessage = Message::create([
                 'conversation_id' => $conversation->id,
+                'channel' => ChannelRules::WHATSAPP,
+                // Mismo valor que `message_id`, en la columna canal-agnóstica.
+                // Se escribe desde ya: si solo lo rellenara el backfill, el
+                // índice de deduplicación quedaría inútil hacia adelante.
+                'external_message_id' => $wamid,
                 'sender_type' => Message::SENDER_CUSTOMER,
                 'content_type' => $contentType,
                 'content_text' => $contentText,

@@ -2,6 +2,31 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## F0 (3/n) — el esquema deja de asumir que todo es WhatsApp (2026-09-01)
+
+`plan_omnicanal.md` §T0.1. **Nada cambia de comportamiento** — el `InboundProcessorParityTest` de la ronda anterior lo prueba, y pasó sin tocarlo. Lo que se abre es la posibilidad de que exista otra cosa.
+
+### Las cuatro decisiones del esquema
+1. **`contacts.phone` pasa a nullable.** Era el bloqueante: un contacto de Telegram no tiene teléfono y la columna era NOT NULL, así que `Contact::create` reventaba con un error de SQL. El `unique(account_id, phone_normalized)` tolera varios NULL en MariaDB, así que **no hay que inventar teléfonos sintéticos** — y no hay que inventarlos: uno falso rompería el merge de duplicados y los envíos masivos.
+2. **`conversations` es única por `(cuenta, contacto, canal)`.** Sin el canal en la clave, el mismo humano escribiendo por dos canales caería en un solo hilo y el `channel` mentiría.
+3. **`channel_conversation_id` es el id del hilo EN EL SISTEMA DEL CANAL** (chat_id de Telegram, PSID de Meta), no un uuid nuestro. Rellenarlo con el id propio lo volvería inútil justo para lo que sirve: encontrar la conversación cuando llega un webhook. Para WhatsApp es el teléfono normalizado.
+4. **`contact_identities`** — cómo se llama una persona en cada canal. Es lo que permite que un contacto deje de ser un teléfono. **El backfill va en la migración y no solo en un comando:** si el deploy corre migraciones y nadie corre el comando, el primer mensaje de un contacto existente le crearía una identidad duplicada.
+
+### La migración se niega a correr si va a fallar
+Los dos índices únicos nuevos pueden chocar contra datos históricos, y **fallarían en producción y no en local** — la peor forma de enterarse: se prueba contra una base limpia, pasa, y revienta en el deploy con el sitio a medio migrar. La migración cuenta primero y **lanza con el nombre del comando** en vez de arrancar.
+
+`wacrm:channel-precheck` informa por defecto y arregla con `--fix`:
+- **Conversaciones duplicadas**: gana **la más antigua** (tiene el historial y es a la que apuntan los enlaces ya repartidos). Se mudan `messages`, `message_reactions`, `deals`, `flow_runs` y `notifications`; los no leídos **se suman** (son mensajes reales que nadie abrió) y la atribución del anuncio original se conserva.
+- **`message_id` duplicados**: se conserva el más antiguo y a los demás se les pone el id en NULL. **La fila NO se borra**: es un mensaje real, y borrarlo cambiaría el historial y las métricas de respuesta. Perder el id de Meta solo impide correlacionarlo con un webhook de estado — costo mucho menor.
+- Sin `--fix` sale con **código de error**: se corre en un deploy, donde «hay que hacer algo» tiene que poder detectarlo un script.
+
+### ⚠️ Trampa nueva: `json` + cast `encrypted` no conviven en MariaDB
+`channel_configs.credentials` es **`text`, no `json`**. MariaDB le pone a las columnas `json` un CHECK de «esto es JSON válido», y el cast `encrypted:array` guarda un blob cifrado que no lo es. Con `json`, la fila se rechaza con *«CONSTRAINT `channel_configs.credentials` failed»* — un mensaje que no menciona el cifrado por ningún lado. `settings` sí queda como `json`: ese es JSON de verdad.
+
+**Cambios mínimos en `InboundProcessor`**, todos validados por el parity test: el canal entra en la clave del `firstOrCreate` de la conversación, los mensajes nuevos rellenan `channel`/`external_message_id` (si solo lo hiciera el backfill, el índice de deduplicación quedaría inútil hacia adelante), se registra la identidad, y **el lookup de `reply_to` ahora filtra por canal** (trampa 5 del plan: no filtraba por nada, así que dos ids externos podrían colisionar).
+
+Tests: `ChannelSchemaTest` (17). Suite **475/475 (2259 aserciones)**.
+
 ## F0 (2/n) — test de caracterización del camino de entrada (2026-09-01)
 
 `plan_omnicanal.md` §T0.2b va a extraer todo lo que hoy vive en `InboundProcessor::handleInboundMessage()` de `DB::transaction` para abajo a un `Ingestor` canal-agnóstico. El plan lo llama **«el cambio más riesgoso de F0»** y exige un test de caracterización **antes** de mover una línea. Este es ese test. **No se refactorizó nada todavía: solo se congeló el comportamiento actual.**

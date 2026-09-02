@@ -55,6 +55,17 @@ class Contact extends Model
         return $this->hasMany(Conversation::class);
     }
 
+    /**
+     * Cómo se llama esta persona en cada canal (F0).
+     *
+     * Es lo que permite que un contacto exista sin teléfono: hasta acá el
+     * identificador ERA `phone_normalized`.
+     */
+    public function identities(): HasMany
+    {
+        return $this->hasMany(ContactIdentity::class);
+    }
+
     public function deals(): HasMany
     {
         return $this->hasMany(Deal::class);

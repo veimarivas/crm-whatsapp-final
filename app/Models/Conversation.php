@@ -10,7 +10,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
-    'account_id', 'contact_id', 'status', 'assigned_agent_id', 'entry_ad_id',
+    'account_id', 'contact_id', 'channel', 'channel_conversation_id',
+    'status', 'assigned_agent_id', 'entry_ad_id',
     'last_message_text', 'last_message_at', 'unread_count',
     'ai_autoreply_disabled', 'ai_reply_count', 'ai_pending', 'ai_limit_notified_at', 'ai_paused_until',
     'ai_failure_count', 'ai_disabled_reason', 'ai_disabled_at', 'ai_pending_at',

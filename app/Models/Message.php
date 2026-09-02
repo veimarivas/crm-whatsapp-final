@@ -9,7 +9,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
-    'conversation_id', 'sender_type', 'sender_id', 'content_type', 'transcript',
+    'conversation_id', 'channel', 'external_message_id',
+    'sender_type', 'sender_id', 'content_type', 'transcript',
     'content_text', 'media_url', 'referral', 'template_name', 'message_id',
     'interactive_reply_id', 'reply_to_message_id', 'status',
 ])]
