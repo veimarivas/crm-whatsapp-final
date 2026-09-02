@@ -94,9 +94,10 @@ class OutboundRoutingTest extends TestCase
         try {
             $metodo->invoke($engine, $paso, ['contact_id' => $contact->id]);
         } catch (\RuntimeException $e) {
-            // Sin adapter de Telegram, el router lanza. Es el resultado
-            // correcto: mejor que falle a que salga por el canal equivocado.
-            $this->assertStringContainsString('telegram', $e->getMessage());
+            // La cuenta no conectó Telegram, así que el adapter lanza con ese
+            // motivo. Es el resultado correcto: mejor que falle diciendo qué
+            // falta a que el mensaje salga por el canal equivocado.
+            $this->assertStringContainsString('Telegram no está conectado', $e->getMessage());
         }
 
         // Y no se creó ninguna conversación de WhatsApp por el camino.
@@ -104,7 +105,7 @@ class OutboundRoutingTest extends TestCase
         $this->assertSame($telegram->id, $contact->conversations()->first()->id);
     }
 
-    public function test_un_canal_sin_adapter_no_manda_por_whatsapp(): void
+    public function test_un_canal_sin_conectar_no_manda_por_whatsapp(): void
     {
         $contact = $this->contacto();
         $telegram = $this->conversacion($contact, ChannelRules::TELEGRAM);

@@ -24,6 +24,14 @@ Route::get('/webhooks/whatsapp', [WebhookController::class, 'verify'])->name('we
 Route::post('/webhooks/whatsapp', [WebhookController::class, 'receive'])
     ->middleware('throttle:whatsapp-webhook');
 
+// Webhook de Telegram — la CUENTA VA EN LA URL: Telegram no manda nada que
+// permita deducirla (no hay equivalente del `phone_number_id` de Meta) y con un
+// bot por cuenta un webhook único no podría resolverla. Se autentica con el
+// `secret_token` que Telegram devuelve en cada petición.
+Route::post('/webhooks/telegram/{account}', \App\Http\Controllers\Telegram\WebhookController::class)
+    ->middleware('throttle:whatsapp-webhook')
+    ->name('webhooks.telegram');
+
 Route::get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])
     ->middleware(['auth', 'verified'])->name('dashboard');
 

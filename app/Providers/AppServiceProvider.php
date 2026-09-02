@@ -6,6 +6,7 @@ use App\Events\InboxUpdated;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\Channels\ChannelRouter;
+use App\Services\Channels\TelegramAdapter;
 use App\Services\Channels\WhatsAppAdapter;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -31,7 +32,15 @@ class AppServiceProvider extends ServiceProvider
         // se ve es un contador de errores que no cuadra. Construirlo cuesta
         // nada; que refleje el estado actual del contenedor vale mucho más.
         $this->app->bind(ChannelRouter::class, fn ($app) => (new ChannelRouter)
-            ->register($app->make(WhatsAppAdapter::class)));
+            ->register($app->make(WhatsAppAdapter::class))
+            // Telegram se registra siempre; **si la cuenta no lo tiene
+            // conectado, el adapter falla al enviar con un motivo legible**.
+            // Registrarlo solo cuando hay configuración obligaría a resolver
+            // la cuenta acá —que en el registro del contenedor todavía no se
+            // conoce— y haría que el error fuera «no hay forma de enviar por
+            // telegram» en vez de «Telegram no está conectado en esta cuenta»,
+            // que es lo que de verdad pasa.
+            ->register($app->make(TelegramAdapter::class)));
     }
 
     /**

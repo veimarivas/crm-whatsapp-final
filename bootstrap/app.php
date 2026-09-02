@@ -26,6 +26,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // El webhook de Meta se autentica por firma HMAC, no por sesión.
         $middleware->validateCsrfTokens(except: [
             'webhooks/whatsapp',
+            // F1 — Telegram. La autenticación va por el `secret_token` que
+            // viaja en `X-Telegram-Bot-Api-Secret-Token`, comparado con
+            // `hash_equals` contra el de esa cuenta.
+            'webhooks/telegram/*',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

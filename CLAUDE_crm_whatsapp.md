@@ -2,6 +2,32 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## F1 — Telegram, entrada y salida de texto (2026-09-02)
+
+**El controlador de webhook tiene 150 líneas y ese es el resultado de F0.** Traduce el `update` de Telegram a un `InboundMessage` y se lo pasa al `Ingestor`; contacto, identidad, conversación, lead en Komo, auto-etiquetas y el orden de la cola ya los hace el motor sin saber de canales.
+
+**Alcance de esta ronda: solo texto** (más botones de flows, que llegan como `callback_query`). Es el E2E completo que pedía el plan. Los adjuntos van aparte y con motivo — ver abajo.
+
+### La cuenta va en la URL
+`POST /webhooks/telegram/{account}`. Telegram no manda nada que permita deducir la cuenta —no hay equivalente del `phone_number_id` de Meta— y con un bot por cuenta un webhook único no podría resolverla. El `secret_token` se compara con **`hash_equals`**: la comparación de un secreto tiene que tardar lo mismo acierte o falle.
+
+- **404 y no 403** cuando la cuenta no tiene Telegram conectado: a quien prueba URLs no se le confirma que la cuenta existe.
+- **Idempotencia por `update_id`** en caché (6 h). Telegram reintenta hasta recibir un 200, así que un timeout nuestro se convertiría en el mismo mensaje procesado tres veces — y en tres respuestas de la IA.
+- **SIEMPRE 200**, incluso para updates que no procesamos. Devolver otra cosa hace que Telegram reintente para siempre y termine **desactivando el webhook**.
+- Un **mensaje editado se trata como nuevo**: descartarlo dejaría la conversación mostrando el texto que el propio cliente corrigió.
+- El nombre se arma de `first_name + last_name` y cae al `username`. El contacto **no tiene teléfono**, así que el nombre es lo único con lo que un asesor lo va a reconocer.
+
+### El token va en la URL de la Bot API
+Eso obliga a dos cuidados que no son opcionales: no loguear la URL completa, y **no exponer nunca al navegador un link de `getFile`** — también lo lleva dentro. Es la razón de que los adjuntos queden fuera de esta ronda: Meta se resuelve por proxy en vivo, pero un archivo de Telegram hay que **descargarlo a almacenamiento propio**, y eso es una decisión de almacenamiento que no corresponde improvisar dentro de un adapter. Mientras tanto un adjunto **deja rastro** (`[Archivo recibido por Telegram…]`) en vez de un salto inexplicable en la conversación.
+
+**`TelegramAdapter` se registra siempre**, no solo cuando hay configuración: en el registro del contenedor todavía no se conoce la cuenta, y hacerlo condicional daría *«no hay forma de enviar por telegram»* en vez de *«Telegram no está conectado en esta cuenta»*, que es lo que de verdad pasa.
+
+### ⚠️ Dos trampas de test que hacían pasar tests que medían lo contrario
+- **`$this->fail()` dentro de un `try/catch(\RuntimeException)` se atrapa a sí mismo**: la excepción de PHPUnit extiende `RuntimeException`. El test pasaba «verificando» justo lo que no ocurría.
+- **`Http::fake()` llamado dos veces ACUMULA stubs y gana el primero que matchea.** Un `fake` de fallo declarado después de uno de éxito nunca se aplica. Por eso el doble se arma por test y no en `setUp`.
+
+Tests: `TelegramWebhookTest` (12). Suite **508/508 (2368 aserciones)**.
+
 ## F0 (7/n) — T0.3: los puntos de salida internos pasan por el router (2026-09-02)
 
 **No era cosmético: era un bug esperando a F1.** `AiAutoReplyJob` se encola para **todos** los canales —lo hace el `Ingestor`— pero enviaba con `Messenger`, o sea por Meta. Con Telegram andando, eso habría intentado responderle a un contacto **sin teléfono**: en el mejor caso falla, en el peor le escribe a otra persona. Lo mismo con `Automations\Engine` y `Flows\Runner`.

@@ -120,11 +120,11 @@ class OutboundByConversationTest extends TestCase
         $this->assertSame(0, Message::count());
     }
 
-    public function test_un_canal_sin_adapter_no_cae_a_whatsapp(): void
+    public function test_un_canal_sin_conectar_no_cae_a_whatsapp(): void
     {
-        // Una conversación de Telegram sin adapter registrado: si el router
-        // cayera a WhatsApp, el mensaje saldría al teléfono del contacto — que
-        // puede no existir o, peor, ser el de otra persona.
+        // Telegram tiene adapter (F1) pero esta cuenta no lo conectó. Si el
+        // router cayera a WhatsApp, el mensaje saldría al teléfono del contacto
+        // — que puede no existir o, peor, ser el de otra persona.
         $conversation = $this->conversacion(ChannelRules::TELEGRAM);
 
         $this->withToken($this->token)->postJson('/api/v1/messages', [
@@ -155,15 +155,19 @@ class OutboundByConversationTest extends TestCase
         ])->assertStatus(502);
     }
 
-    public function test_el_router_resuelve_whatsapp_y_rechaza_lo_que_no_conoce(): void
+    public function test_el_router_conoce_los_canales_registrados_y_rechaza_el_resto(): void
     {
         $router = app(ChannelRouter::class);
 
         $this->assertInstanceOf(WhatsAppAdapter::class, $router->adapter(ChannelRules::WHATSAPP));
-        $this->assertSame([ChannelRules::WHATSAPP], $router->registered());
-        $this->assertFalse($router->supports(ChannelRules::TELEGRAM));
+        $this->assertSame([ChannelRules::WHATSAPP, ChannelRules::TELEGRAM], $router->registered());
 
-        $this->expectExceptionMessage('No hay forma de enviar por el canal «telegram».');
-        $router->adapter(ChannelRules::TELEGRAM);
+        // Telegram TIENE adapter desde F1 — que la cuenta lo haya conectado o
+        // no es otra cosa, y el error lo dice el adapter con ese motivo.
+        $this->assertTrue($router->supports(ChannelRules::TELEGRAM));
+
+        // Un canal para el que no hay nada escrito sí es un error del router.
+        $this->expectExceptionMessage('No hay forma de enviar por el canal «instagram».');
+        $router->adapter(ChannelRules::INSTAGRAM);
     }
 }
