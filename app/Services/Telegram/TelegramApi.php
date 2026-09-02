@@ -108,6 +108,13 @@ class TelegramApi
             throw new RuntimeException("Telegram [{$method}]: {$detalle}");
         }
 
-        return $body['result'] ?? [];
+        $result = $body['result'] ?? [];
+
+        // ⚠️ No todos los métodos devuelven un objeto: `setWebhook` y
+        // `deleteWebhook` devuelven `result: true` a secas. Sin normalizarlo, el
+        // tipo de retorno revienta con «Return value must be of type array, true
+        // returned» — un error que habla de PHP y no de que el webhook sí se
+        // registró, que es lo que en realidad pasó.
+        return is_array($result) ? $result : ['result' => $result];
     }
 }

@@ -2,6 +2,28 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## F1.b — Conectar Telegram desde la pantalla (2026-09-02)
+
+Hasta acá conectar el bot exigía insertar la fila de `channel_configs` a mano. Eso alcanza para probar; no para entregarlo.
+
+`/settings/channels` (admin) muestra el estado de cada canal. **WhatsApp se muestra pero no se administra ahí**: tiene su propia pantalla con la configuración de Meta, que es bastante más que un token — dos lugares para lo mismo es cómo se termina con dos verdades.
+
+### El token se valida ANTES de guardarlo
+`getMe` contra Telegram. **Una configuración guardada que no funciona es peor que ninguna:** la pantalla diría «Conectado» y los mensajes no llegarían, sin nada que mirar.
+
+- **Si el token es válido pero el webhook no se puede registrar** (URL sin HTTPS, no pública) la fila queda **deshabilitada** y el error lo dice. Mostrar «Conectado» sin que llegue nada es la peor forma de fallar.
+- **El `webhook_secret` lo genera el servidor**, no lo elige el usuario: es lo único que separa un update de Telegram de cualquiera que descubra la URL, y una clave elegida a mano termina siendo «telegram123».
+- **Desconectar avisa a Telegram** (`deleteWebhook`) y **borra la fila con las credenciales adentro**. Solo apagarla dejaría a Telegram golpeando la URL para siempre y conservaría un bot token que ya nadie va a usar.
+- La URL del webhook se muestra en la pantalla: cuando algo no llega, lo primero que hay que poder mirar es si es la que el bot tiene registrada.
+
+**`wacrm:telegram-setup-webhook` no duplica a la pantalla.** Existe para lo que ella no puede: reapuntar el bot tras un cambio de dominio, o reparar un webhook que Telegram desactivó por su cuenta —lo hace tras muchos errores seguidos— sin obligar a desconectar y volver a pegar el token. **Se niega a registrar si falta el `webhook_secret`**: antes que dejar el webhook abierto a cualquiera que descubra la URL, no se registra y se dice.
+
+### ⚠️ Dos bugs que encontró la suite
+- **`setWebhook` y `deleteWebhook` devuelven `result: true`, un booleano y no un objeto.** El tipo de retorno `: array` de `TelegramApi::call()` reventaba con *«Return value must be of type array, true returned»* — un error que habla de PHP y no de que el webhook **sí** se había registrado, que era lo que en realidad pasaba.
+- **`$coleccion['clave']` inexistente LANZA** en una Collection («Undefined array key»), no devuelve null, así que el `?->` que venía después nunca llegaba a actuar: con un canal sin configurar, la pantalla daba 500. Va `->get('clave')`.
+
+Tests: `ChannelSettingsTest` (8). Suite **516/516 (2410 aserciones)**.
+
 ## F1 — Telegram, entrada y salida de texto (2026-09-02)
 
 **El controlador de webhook tiene 150 líneas y ese es el resultado de F0.** Traduce el `update` de Telegram a un `InboundMessage` y se lo pasa al `Ingestor`; contacto, identidad, conversación, lead en Komo, auto-etiquetas y el orden de la cola ya los hace el motor sin saber de canales.

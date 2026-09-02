@@ -210,6 +210,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/broadcasts/{broadcast}', [BroadcastController::class, 'show'])->name('broadcasts.show');
     Route::delete('/broadcasts/{broadcast}', [BroadcastController::class, 'destroy'])->name('broadcasts.destroy');
 
+    // Canales — índice del estado de cada uno. WhatsApp se administra en su
+    // propia pantalla; acá solo se muestra y se enlaza.
+    Route::get('/settings/channels', [\App\Http\Controllers\ChannelController::class, 'index'])->name('settings.channels');
+    Route::post('/settings/channels/telegram', [\App\Http\Controllers\ChannelController::class, 'connectTelegram'])->name('settings.channels.telegram');
+    Route::delete('/settings/channels/telegram', [\App\Http\Controllers\ChannelController::class, 'disconnectTelegram'])->name('settings.channels.telegram.destroy');
+
     // WhatsApp
     Route::get('/settings/whatsapp', [ConfigController::class, 'edit'])->name('settings.whatsapp');
     Route::post('/settings/whatsapp', [ConfigController::class, 'update'])->name('settings.whatsapp.update');
