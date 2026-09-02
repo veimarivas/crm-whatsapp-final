@@ -19,7 +19,11 @@
         "Al agregar un archivo aca hay que agregarlo en el manifiesto del OTRO repo tambien.",
         "",
         "ChannelRules (F0 omnicanal) entra aca desde el dia uno: nace como gemelo y no hay",
-        "razon para dejarlo separarse antes de que exista el paquete compartido."
+        "razon para dejarlo separarse antes de que exista el paquete compartido.",
+        "",
+        "ContactIdentity (F0b) entra como gemelo: es el mismo concepto y hoy el mismo codigo.",
+        "Si alguno de los dos necesita un metodo propio, sacarlo del manifiesto EN LOS DOS",
+        "diciendo por que \u2014 que es justamente la decision que este test obliga a tomar."
     ],
     "files": [
         "app/Http/Controllers/Auth/AuthenticatedSessionController.php",
@@ -33,6 +37,7 @@
         "app/Http/Controllers/Controller.php",
         "app/Http/Controllers/ProfileController.php",
         "app/Http/Requests/Auth/LoginRequest.php",
+        "app/Models/ContactIdentity.php",
         "app/Services/Channels/ChannelRules.php",
         "resources/js/Components/ApplicationLogo.jsx",
         "resources/js/Components/Charts/ChartCard.jsx",

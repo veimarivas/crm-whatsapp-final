@@ -402,5 +402,11 @@ class InboundProcessorParityTest extends TestCase
         $this->assertArrayHasKey('contact', $job->data);
         $this->assertSame(['id', 'type', 'text', 'wamid', 'media_id', 'referral'], array_keys($job->data['message']));
         $this->assertSame('AD_1', $job->data['message']['referral']['source_id']);
+
+        // T0.3 — campos AGREGADOS al contrato (el resto no cambió). Un receptor
+        // viejo los ignora sin romperse; uno nuevo deja de asumir WhatsApp y
+        // puede resolver un contacto sin teléfono.
+        $this->assertSame('whatsapp', $job->data['channel']);
+        $this->assertSame('584125550001', $job->data['contact']['channel_external_id']);
     }
 }

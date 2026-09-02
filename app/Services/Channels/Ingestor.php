@@ -217,13 +217,28 @@ class Ingestor
         bool $isNewContact,
     ): void {
         $text = $storedMessage->content_text;
-        $contactData = $contact->only(['id', 'phone', 'name', 'email', 'company']);
+
+        // T0.3 — aditivo: `channel_external_id` es lo que permite al CRM externo
+        // resolver el contacto **sin teléfono**. Sin este campo, un contacto de
+        // Telegram llegaría allá sin ningún identificador y se descartaría en
+        // silencio, que es exactamente el bloqueante que F0b vino a arreglar.
+        $contactData = [
+            ...$contact->only(['id', 'phone', 'name', 'email', 'company']),
+            'channel_external_id' => $in->senderExternalId,
+        ];
 
         if ($isNewContact) {
-            $this->dispatcher->dispatch($in->accountId, 'contact.created', ['contact' => $contactData]);
+            $this->dispatcher->dispatch($in->accountId, 'contact.created', [
+                'channel' => $in->channel,
+                'conversation_id' => $conversation->id,
+                'contact' => $contactData,
+            ]);
         }
 
         $this->dispatcher->dispatch($in->accountId, 'message.received', [
+            // El canal viaja en la raíz del payload. Un receptor viejo lo
+            // ignora sin romperse; uno nuevo deja de asumir WhatsApp.
+            'channel' => $in->channel,
             'conversation_id' => $conversation->id,
             'contact' => $contactData,
             'message' => [
