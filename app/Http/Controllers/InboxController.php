@@ -100,6 +100,10 @@ class InboxController extends Controller
         $conversations = Conversation::forAccount($user->account_id)
             ->with(['contact:id,name,phone,avatar_url', 'assignedAgent:id,name'])
             ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
+            // Filtro de canal server-side (T0.5). Va acá y no en el cliente:
+            // el listado se corta en 100, así que filtrar en pantalla mostraría
+            // «3 de Telegram» cuando en realidad hay treinta más sin traer.
+            ->when($request->query('channel'), fn ($q, $channel) => $q->where('channel', $channel))
             // Restricción por rol: agent/viewer solo ven las conversaciones
             // asignadas a ellos. admin/owner ven todo.
             ->when(! $user->hasRoleAtLeast(User::ROLE_ADMIN),

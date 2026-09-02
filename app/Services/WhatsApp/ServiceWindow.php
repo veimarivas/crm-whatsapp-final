@@ -68,7 +68,11 @@ class ServiceWindow
             ->latest('created_at')
             ->first(['created_at']);
 
-        return $this->build($lastInbound?->created_at, $lastAdInbound?->created_at);
+        return $this->build(
+            $lastInbound?->created_at,
+            $lastAdInbound?->created_at,
+            $conversation->channel ?? ChannelRules::DEFAULT,
+        );
     }
 
     /**
@@ -178,12 +182,20 @@ class ServiceWindow
         $lastInbound = $latest(false);
         $lastAd = $latest(true);
 
+        // El canal del hilo con actividad más reciente de cada contacto.
+        // Ordenado ascendente a propósito: `pluck` va pisando la clave, así que
+        // gana el último — el mismo criterio con el que se eligió la fecha.
+        $channels = Conversation::whereIn('contact_id', $contactIds)
+            ->orderBy('last_message_at')
+            ->pluck('channel', 'contact_id');
+
         $out = [];
 
         foreach ($contactIds as $id) {
             $out[$id] = $this->build(
                 isset($lastInbound[$id]) ? Carbon::parse($lastInbound[$id]) : null,
                 isset($lastAd[$id]) ? Carbon::parse($lastAd[$id]) : null,
+                $channels[$id] ?? ChannelRules::DEFAULT,
             );
         }
 
@@ -202,6 +214,10 @@ class ServiceWindow
         if ($conversationIds === []) {
             return [];
         }
+
+        // El canal de cada conversación: sin esto, un hilo de Telegram
+        // mostraría una cuenta regresiva de 24 h que no existe.
+        $channels = Conversation::whereIn('id', $conversationIds)->pluck('channel', 'id');
 
         $lastInbound = Message::whereIn('conversation_id', $conversationIds)
             ->where('sender_type', Message::SENDER_CUSTOMER)
@@ -222,6 +238,7 @@ class ServiceWindow
             $out[$id] = $this->build(
                 isset($lastInbound[$id]) ? Carbon::parse($lastInbound[$id]) : null,
                 isset($lastAd[$id]) ? Carbon::parse($lastAd[$id]) : null,
+                $channels[$id] ?? ChannelRules::DEFAULT,
             );
         }
 

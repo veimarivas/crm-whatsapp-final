@@ -1,5 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import ServiceWindowBadge from '@/Components/ServiceWindowBadge';
+import ChannelBadge, { channelMeta } from '@/Components/ChannelBadge';
 import ImageModal from '@/Components/ImageModal';
 import { Head, Link, usePage } from '@inertiajs/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -475,6 +476,7 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
     const [error, setError] = useState(null);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
+    const [channelFilter, setChannelFilter] = useState('all');
     const [showContactPanel, setShowContactPanel] = useState(true);
     const [showConversationList, setShowConversationList] = useState(true);
     const [replyTo, setReplyTo] = useState(null);
@@ -513,11 +515,14 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
     const accountId = me?.account_id;
     const isAdmin = me?.account_role === 'owner' || me?.account_role === 'admin';
 
+    // El filtro de canal viaja al servidor, no se aplica sobre lo ya traído: el
+    // listado se corta en 100, así que filtrar en pantalla mostraría «3 de
+    // Telegram» cuando hay treinta más que nunca se pidieron.
     const loadConversations = useCallback(async () => {
         try {
-            setConversations(await api(route('inbox.conversations')));
+            setConversations(await api(route('inbox.conversations', channelFilter === 'all' ? {} : { channel: channelFilter })));
         } catch { /* siguiente poll */ }
-    }, []);
+    }, [channelFilter]);
 
     const loadMessages = useCallback(async (id) => {
         try {
@@ -657,6 +662,17 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
                 return name.includes(s) || phone.includes(s) || last.includes(s);
             });
     }, [conversations, search, statusFilter]);
+
+    // Los canales realmente presentes, para no ofrecer un filtro vacío. Se
+    // calcula sobre lo traído a propósito: si el filtro de canal está activo la
+    // lista viene recortada, así que se conserva el canal elegido en la lista
+    // de opciones para poder volver.
+    const canalesPresentes = useMemo(() => {
+        const vistos = new Set(conversations.map((c) => c.channel).filter(Boolean));
+        if (channelFilter !== 'all') vistos.add(channelFilter);
+
+        return [...vistos].sort();
+    }, [conversations, channelFilter]);
 
     const totals = useMemo(() => ({
         all: conversations.length,
@@ -928,6 +944,32 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
                                     </button>
                                 ))}
                             </div>
+
+                            {/* Selector de canal. Aparece SOLO si hay más de uno
+                                en juego: mientras todo entra por WhatsApp, un
+                                filtro que no filtra nada es ruido. */}
+                            {canalesPresentes.length > 1 && (
+                                <div className="flex flex-wrap gap-1 pt-1">
+                                    {['all', ...canalesPresentes].map((c) => (
+                                        <button
+                                            key={c}
+                                            onClick={() => setChannelFilter(c)}
+                                            className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold transition-all ${
+                                                channelFilter === c
+                                                    ? 'bg-gray-900 text-white'
+                                                    : 'text-gray-600 hover:bg-gray-100'
+                                            }`}
+                                        >
+                                            {c === 'all' ? 'Todos los canales' : (
+                                                <>
+                                                    <span aria-hidden="true">{channelMeta(c).icon}</span>
+                                                    {channelMeta(c).label}
+                                                </>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex-1 overflow-y-auto">
@@ -1023,6 +1065,7 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
                                             <div className="mt-1.5 flex items-center gap-1.5">
                                                 <span className={`w-1.5 h-1.5 rounded-full ${STATUS_META[conv.status]?.dot ?? 'bg-gray-300'}`} />
                                                 <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{STATUS_LABELS[conv.status]}</span>
+                                                <ChannelBadge channel={conv.channel} />
                                                 <ServiceWindowBadge window={conv.service_window} />
                                                 {conv.assigned_agent && (
                                                     <span className="ml-auto text-[10px] text-gray-400 truncate">👤 {conv.assigned_agent.name}</span>
@@ -1134,6 +1177,7 @@ export default function Index({ hasWhatsappConfig, hasAi, members }) {
                                                 )}
                                             </button>
                                         )}
+                                        <ChannelBadge channel={selected.channel} size="md" />
                                         <ServiceWindowBadge window={selected.service_window} size="md" />
                                         <span
                                             title={isAdmin ? 'La asignación se cambia desde el lead en Komo' : 'Solo el admin puede reasignar (desde Komo)'}

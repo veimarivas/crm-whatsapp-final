@@ -2,6 +2,19 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## F0 (6/n) — T0.5: el canal se ve y se filtra (2026-09-01)
+
+Hasta acá el sistema ya podía **recibir y responder** por cualquier canal, pero en pantalla todo se veía igual: un hilo de Telegram era indistinguible de uno de WhatsApp. Se hizo antes de F1 justo por eso — estrenar un canal nuevo sin poder distinguirlo es estrenarlo a ciegas.
+
+- **`ChannelBadge.jsx`** — gemelo (byte-idéntico con el Komo, dentro del manifiesto). **Se calla cuando el canal es WhatsApp**: mientras casi todo entra por ahí, un badge en cada fila es ruido que nadie lee. Lo que informa es lo que *no* es lo habitual. Un canal desconocido se dibuja con su nombre crudo en vez de ocultarse.
+- **Filtro `?channel=` server-side** en `/inbox/conversations`. Va en el servidor y no en el cliente porque **el listado se corta en 100**: filtrar en pantalla mostraría «3 de Telegram» cuando hay treinta más que nunca se pidieron — un número que se lee como un dato y es un artefacto del recorte.
+- **El selector de canal aparece solo si hay más de uno en juego.** Un filtro que no filtra nada es ruido; y si el filtro está activo, el canal elegido se conserva entre las opciones para poder volver (si no, quedaría sin forma de deshacerlo).
+
+### ⚠️ `ServiceWindow` tenía tres puertas y solo una sabía del canal
+El corte de canal vive en `build()`, pero los tres métodos de lote lo llamaban **sin pasarlo**: `for()`, `forMany()` y `forContacts()`. O sea que en la ficha y en los listados un hilo de Telegram mostraba una cuenta regresiva de 24 h inventada y decía «Cerrada» sobre una conversación abierta para siempre. Los tres resuelven ahora el canal del hilo (`forContacts` con el mismo criterio con que elige la fecha: el de actividad más reciente). Hay test con el mismo escenario en los dos canales y resultado opuesto.
+
+Tests: `InboxChannelFilterTest` (4). Suite **492/492 (2321 aserciones)**.
+
 ## F0 (5/n) — la salida: router, adapter y direccionamiento por conversación (2026-09-01)
 
 El espejo del ingestor. Allá el motor dejó de saber por dónde **entró** un mensaje; acá deja de saber por dónde **sale**. Con esto **F0 queda cerrada de este lado**.
