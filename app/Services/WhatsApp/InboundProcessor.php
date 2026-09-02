@@ -2,24 +2,15 @@
 
 namespace App\Services\WhatsApp;
 
-use App\Jobs\AiAutoReplyJob;
-use App\Jobs\ProcessAutomationEventJob;
-use App\Jobs\ProcessFlowMessageJob;
-use App\Jobs\TranscribeAudioJob;
-use App\Models\AiReplyAttempt;
-use App\Models\AutoTagRule;
 use App\Models\BroadcastRecipient;
 use App\Models\Contact;
-use App\Models\ContactIdentity;
 use App\Models\Conversation;
-use App\Models\Deal;
 use App\Models\Message;
 use App\Models\MessageReaction;
-use App\Models\Pipeline;
 use App\Models\WhatsappConfig;
 use App\Services\Channels\ChannelRules;
-use App\Services\Webhooks\Dispatcher;
-use Illuminate\Support\Facades\DB;
+use App\Services\Channels\InboundMessage;
+use App\Services\Channels\Ingestor;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -29,6 +20,8 @@ use Illuminate\Support\Facades\Log;
  */
 class InboundProcessor
 {
+    public function __construct(private readonly Ingestor $ingestor) {}
+
     public function process(array $payload): void
     {
         foreach ($payload['entry'] ?? [] as $entry) {
@@ -59,18 +52,20 @@ class InboundProcessor
         }
     }
 
+    /**
+     * Traduce el mensaje del sobre de Meta a un `InboundMessage` y se lo pasa
+     * al ingestor. **Todo lo que hacía de `DB::transaction` para abajo vive
+     * ahora en `Services\Channels\Ingestor`** (F0/T0.2b): era igual para
+     * cualquier canal, y dejarlo acá obligaba a cada canal nuevo a copiarlo.
+     *
+     * Lo que queda es lo único genuinamente específico de WhatsApp: los nombres
+     * de los campos de Meta, el `profile.name` que viaja aparte del mensaje, y
+     * las reacciones, que no crean fila de mensaje.
+     */
     private function handleInboundMessage(WhatsappConfig $config, array $message, array $waContacts): void
     {
-        $wamid = $message['id'] ?? null;
-
-        // Idempotencia: Meta reintenta entregas — un wamid ya guardado se ignora.
-        // F0: filtra por canal. Dos canales distintos pueden emitir el mismo
-        // identificador externo y hoy la búsqueda no los distinguía.
-        if ($wamid && Message::where('channel', ChannelRules::WHATSAPP)->where('message_id', $wamid)->exists()) {
-            return;
-        }
-
         // Las reacciones no crean fila de mensaje: actualizan message_reactions.
+        // Es un concepto de Meta y se queda de este lado.
         if (($message['type'] ?? '') === 'reaction') {
             $this->handleReaction($message);
 
@@ -78,189 +73,29 @@ class InboundProcessor
         }
 
         $from = $message['from'];
-        $profileName = collect($waContacts)->firstWhere('wa_id', $from)['profile']['name'] ?? null;
+        [$contentType, $contentText, $mediaId, $interactiveReplyId] = $this->parseContent($message);
 
-        [$contact, $conversation, $storedMessage, $isNewContact] = DB::transaction(function () use ($config, $message, $from, $profileName, $wamid) {
-            $contact = Contact::firstOrCreate(
-                [
-                    'account_id' => $config->account_id,
-                    'phone_normalized' => Contact::normalizePhone($from),
-                ],
-                ['phone' => $from, 'name' => $profileName],
-            );
-            $isNewContact = $contact->wasRecentlyCreated;
-
-            if ($profileName && ! $contact->name) {
-                $contact->update(['name' => $profileName]);
-            }
-
-            // F0: la identidad de canal. Acá todavía se resuelve el contacto
-            // por teléfono —es WhatsApp, siempre lo trae— y la identidad se
-            // registra en paralelo. Cuando el ingestor de T0.2b invierta el
-            // orden y resuelva POR identidad, la fila ya va a existir para
-            // todos: la creó esta línea o el backfill de la migración.
-            ContactIdentity::registrar(
-                $contact,
-                ChannelRules::WHATSAPP,
-                Contact::normalizePhone($from),
-                $profileName,
-            );
-
-            // F0: el canal entra en la clave. Sin él, el mismo humano
-            // escribiendo por dos canales caería en un solo hilo y el `channel`
-            // de la conversación mentiría. Es además la clave del índice único
-            // que estrena la migración.
-            $conversation = Conversation::firstOrCreate(
-                [
-                    'account_id' => $config->account_id,
-                    'contact_id' => $contact->id,
-                    'channel' => ChannelRules::WHATSAPP,
-                ],
-                [
-                    'status' => Conversation::STATUS_OPEN,
-                    // El id del hilo en el sistema del canal. Para WhatsApp es
-                    // el teléfono normalizado.
-                    'channel_conversation_id' => Contact::normalizePhone($from),
-                ],
-            );
-
-            [$contentType, $contentText, $mediaId, $interactiveReplyId] = $this->parseContent($message);
-
-            $replyTo = null;
-            if ($contextId = $message['context']['id'] ?? null) {
-                // F0: acotado al canal. Este lookup no filtraba por nada, así
-                // que al haber varios canales dos ids externos podrían
-                // colisionar y una respuesta quedaría enlazada al mensaje de
-                // otra conversación.
-                $replyTo = Message::where('channel', ChannelRules::WHATSAPP)
-                    ->where('message_id', $contextId)
-                    ->value('id');
-            }
-
+        $this->ingestor->handle(new InboundMessage(
+            accountId: $config->account_id,
+            channel: ChannelRules::WHATSAPP,
+            // En WhatsApp el identificador del remitente ES su teléfono
+            // normalizado. En otros canales no lo es, y por eso el teléfono
+            // viaja aparte.
+            senderExternalId: Contact::normalizePhone($from),
+            senderName: collect($waContacts)->firstWhere('wa_id', $from)['profile']['name'] ?? null,
+            threadExternalId: Contact::normalizePhone($from),
+            contentType: $contentType,
+            contentText: $contentText,
+            // media id de Meta; se resuelve vía el proxy /whatsapp/media/{id}
+            mediaRef: $mediaId,
+            externalMessageId: $message['id'] ?? null,
             // Atribución Click-to-WhatsApp: Meta adjunta `referral` cuando el
-            // usuario llegó tocando un anuncio ({source_id: AD_ID, headline, source_url…}).
-            $referral = $message['referral'] ?? null;
-
-            $storedMessage = Message::create([
-                'conversation_id' => $conversation->id,
-                'channel' => ChannelRules::WHATSAPP,
-                // Mismo valor que `message_id`, en la columna canal-agnóstica.
-                // Se escribe desde ya: si solo lo rellenara el backfill, el
-                // índice de deduplicación quedaría inútil hacia adelante.
-                'external_message_id' => $wamid,
-                'sender_type' => Message::SENDER_CUSTOMER,
-                'content_type' => $contentType,
-                'content_text' => $contentText,
-                'media_url' => $mediaId, // media id de Meta; se resuelve vía el proxy /whatsapp/media/{id}
-                'referral' => $referral,
-                'message_id' => $wamid,
-                'interactive_reply_id' => $interactiveReplyId,
-                'reply_to_message_id' => $replyTo,
-                'status' => 'delivered',
-            ]);
-
-            // El ad de ENTRADA se conserva: solo se escribe si la conversación
-            // aún no tiene uno (preserva la atribución original).
-            if (($referral['source_id'] ?? null) && ! $conversation->entry_ad_id) {
-                $conversation->entry_ad_id = $referral['source_id'];
-            }
-
-            $conversation->update([
-                'last_message_text' => $contentText ?? "[{$contentType}]",
-                'last_message_at' => now(),
-                'unread_count' => $conversation->unread_count + 1,
-                'status' => Conversation::STATUS_OPEN,
-                // OJO: acá NO se reinicia `ai_reply_count`. Antes se ponía a 0
-                // con cada mensaje entrante, lo que volvía inalcanzable el
-                // "máximo N respuestas por conversación" de Ajustes — el tope
-                // no limitaba nada. Ahora el contador se acumula y lo reinicia
-                // `AiAutoReplyJob` cuando vence la pausa (`ai_paused_until`).
-            ]);
-
-            // Correlaciona respuestas con broadcasts (replied tracking).
-            BroadcastRecipient::where('contact_id', $contact->id)
-                ->whereNotNull('sent_at')
-                ->whereNull('replied_at')
-                ->get()
-                ->each(function (BroadcastRecipient $recipient) {
-                    $recipient->update(['status' => 'replied', 'replied_at' => now()]);
-                    $recipient->broadcast?->increment('replied_count');
-                });
-
-            return [$contact, $conversation, $storedMessage, $isNewContact];
-        });
-
-        $text = $storedMessage->content_text;
-
-        // Auto-tagging: aplica reglas de keywords al contacto según el contenido.
-        // Se hace ANTES del webhook para que Komo reciba los tags actualizados.
-        if ($text) {
-            $this->applyAutoTags($contact, $text, $isNewContact);
-        }
-
-        $dispatcher = app(Dispatcher::class);
-        $contactData = $contact->only(['id', 'phone', 'name', 'email', 'company']);
-
-        // ORDEN IMPORTANTE — la cola es FIFO. Priorizamos:
-        //   1. Webhooks a integraciones (Komo, etc.): ligeros, deben salir YA
-        //      para que el CRM externo vea el mensaje casi en tiempo real.
-        //   2. Flows y automatizaciones: rápidos, procesan reglas locales.
-        //   3. AiAutoReplyJob al final: puede tardar 30-60s con Qwen y no debe
-        //      bloquear los webhooks. Si se pusiera antes, Komo esperaría a
-        //      que Ollama termine para recibir el mensaje del cliente.
-
-        if ($isNewContact) {
-            $dispatcher->dispatch($config->account_id, 'contact.created', ['contact' => $contactData]);
-        }
-
-        $dispatcher->dispatch($config->account_id, 'message.received', [
-            'conversation_id' => $conversation->id,
-            'contact' => $contactData,
-            'message' => [
-                'id' => $storedMessage->id,
-                'type' => $storedMessage->content_type,
-                'text' => $storedMessage->content_text,
-                'wamid' => $storedMessage->message_id,
-                'media_id' => $storedMessage->media_url, // Meta media_id — Komo lo usa para el proxy /leads/media/{id}
-                'referral' => $storedMessage->referral, // atribución de anuncio (komo la guarda como source_ref)
-            ],
-        ]);
-
-        // Si es un audio, encolamos la transcripción (asincrónico, no bloquea nada).
-        if ($storedMessage->content_type === 'audio' && $storedMessage->media_url) {
-            TranscribeAudioJob::dispatch($storedMessage->id);
-        }
-
-        // Ahora sí, dispatch de flow + automations + AI (en ese orden).
-        // Todo esto pasa DESPUÉS que el webhook a Komo ya está encolado,
-        // así el mensaje aparece en Komo en 1-2s aunque Ollama tarde 60s.
-        ProcessFlowMessageJob::dispatch($contact->id, $conversation->id, $storedMessage->id);
-
-        if ($isNewContact) {
-            $this->createLeadDeal($contact, $conversation);
-            ProcessAutomationEventJob::dispatch('new_contact', $contact->id, $conversation->id, $text);
-        }
-
-        ProcessAutomationEventJob::dispatch('inbound_message', $contact->id, $conversation->id, $text);
-
-        if ($text) {
-            ProcessAutomationEventJob::dispatch('keyword', $contact->id, $conversation->id, $text);
-        }
-
-        // Bot IA al final: es el job más lento (30-60s con Qwen). Se abstiene
-        // si hay un flow activo (el chatbot estructurado tiene prioridad).
-        // Para audios NO se encola acá: la respuesta se difiere hasta que la
-        // transcripción esté lista. La encola TranscribeAudioJob al guardar el
-        // transcript, así la IA nunca contesta a un audio que no escuchó.
-        if ($storedMessage->content_type !== 'audio') {
-            AiAutoReplyJob::dispatch($conversation->id);
-
-            // Marca del encolado, no del resultado. Es lo que permite
-            // distinguir «el job corrió y decidió callarse» de «el job nunca
-            // corrió»: sin esta fila, las dos cosas se ven igual — un registro
-            // vacío — y son problemas completamente distintos.
-            AiReplyAttempt::registrar($conversation, 'encolada', 'cola: '.(config('services.ai_context.queue') ?: 'default'));
-        }
+            // usuario llegó tocando un anuncio.
+            referral: $message['referral'] ?? null,
+            replyToExternalId: $message['context']['id'] ?? null,
+            interactiveReplyId: $interactiveReplyId,
+            phone: $from,
+        ));
     }
 
     /** @return array{0:string,1:?string,2:?string,3:?string} [content_type, content_text, media_id, interactive_reply_id] */
@@ -375,69 +210,4 @@ class InboundProcessor
         }
     }
 
-    /**
-     * Aplica reglas de auto-tagging al contacto según keywords en el mensaje.
-     * Cada regla que matchea agrega su tag (silencioso si ya lo tenía).
-     * Si la regla tiene first_message_only=true, solo aplica cuando el contacto
-     * es nuevo (evita spam de tags en cada mensaje subsecuente).
-     */
-    private function applyAutoTags(Contact $contact, string $text, bool $isNewContact): void
-    {
-        $textLower = mb_strtolower($text);
-
-        $rules = AutoTagRule::forAccount($contact->account_id)
-            ->where('is_active', true)
-            ->when(! $isNewContact, fn ($q) => $q->where('first_message_only', false))
-            ->get();
-
-        $tagIds = [];
-        foreach ($rules as $rule) {
-            if (str_contains($textLower, mb_strtolower($rule->keyword))) {
-                $tagIds[] = $rule->tag_id;
-            }
-        }
-
-        if (! empty($tagIds)) {
-            // syncWithoutDetaching: solo agrega los tags nuevos, no toca los existentes.
-            $contact->tags()->syncWithoutDetaching(array_unique($tagIds));
-        }
-    }
-
-    /**
-     * Crea un deal en la primera etapa del pipeline por defecto de la cuenta
-     * al recibir un lead nuevo desde WhatsApp. Silencioso si la cuenta no
-     * tiene pipelines configurados o si el contacto ya tiene un deal abierto.
-     */
-    private function createLeadDeal(Contact $contact, Conversation $conversation): void
-    {
-        // Evita duplicados: si el contacto ya tiene un deal abierto, no crea otro.
-        if (Deal::where('contact_id', $contact->id)->where('status', 'open')->exists()) {
-            return;
-        }
-
-        // El pipeline por defecto (espejo del default del Komo) o el primero.
-        $pipeline = Pipeline::forAccount($contact->account_id)
-            ->with(['stages' => fn ($q) => $q->orderBy('position')])
-            ->orderByDesc('is_default')
-            ->orderBy('created_at')
-            ->first();
-
-        // Primera etapa abierta (nunca una terminal como Ganado/Perdido).
-        $firstStage = $pipeline?->stages->where('stage_type', 'open')->first() ?? $pipeline?->stages->first();
-
-        if (! $pipeline || ! $firstStage) {
-            return;
-        }
-
-        Deal::create([
-            'account_id' => $contact->account_id,
-            'pipeline_id' => $pipeline->id,
-            'stage_id' => $firstStage->id,
-            'contact_id' => $contact->id,
-            'conversation_id' => $conversation->id,
-            'title' => $contact->name ?: $contact->phone,
-            'assigned_to' => $conversation->assigned_agent_id,
-            'status' => 'open',
-        ]);
-    }
 }

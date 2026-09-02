@@ -2,6 +2,30 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## F0 (4/n) — T0.2b: el ingestor canal-agnóstico (2026-09-01)
+
+El cambio que `plan_omnicanal.md` llama **«el más riesgoso de F0»**, hecho con las dos redes puestas: el parity test (ronda 2) y el esquema (ronda 3).
+
+`handleInboundMessage()` hacía **dos cosas mezcladas**: parsear el sobre de Meta y procesar el mensaje. Lo primero es de WhatsApp; lo segundo —contacto, conversación, guardado, broadcasts, auto-etiquetas y el orden de los jobs— es igual para Telegram, Messenger o un widget web. Sin separarlo, cada canal nuevo habría copiado ese método entero.
+
+- **`Services\Channels\InboundMessage`** — DTO readonly. Nombres deliberadamente neutros: `senderExternalId` y no `phone`, `externalMessageId` y no `wamid`. Un nombre que arrastra el canal obliga después a leer código para saber si el valor sirve para otro.
+- **`Services\Channels\Ingestor`** — todo lo que vivía de `DB::transaction` para abajo.
+- **`InboundProcessor` pasa de 406 a 213 líneas** y queda como lo que siempre debió ser: el parser del sobre de Meta. Se queda con `parseContent`, las reacciones y los estados de entrega, que son conceptos de Meta.
+
+### El contacto se resuelve por IDENTIDAD, con respaldo por teléfono
+Es la inversión que hace posible todo lo demás. Primero `contact_identities(channel, external_id)`; si no hay y el canal trae teléfono, cae al camino de siempre (cubre a los contactos anteriores a F0 y a cualquier fila que haya entrado por otra vía, y de paso les deja la identidad que faltaba); si no hay ninguno de los dos, **crea un contacto sin teléfono** — lo que T0.1 hizo posible.
+
+**⚠️ `message_id` se sigue escribiendo SOLO para WhatsApp.** Es la columna vieja de Meta y hay consultas que la usan **sin filtrar por canal** (estados de entrega, correlación de broadcasts). Un id de Telegram ahí las haría matchear de más. `external_message_id` es la canal-agnóstica.
+
+### Lo que dice que el refactor salió bien
+`InboundProcessorParityTest` pasó **15/15 sin tocar una aserción**. Eso es todo el valor de haberlo escrito primero: sin él, «anda igual» habría sido una opinión.
+
+`IngestorMultiChannelTest` (7) prueba lo otro: que ahora existe lo que antes era irrepresentable. Un mensaje de Telegram sin teléfono crea contacto, identidad, conversación y mensaje; la idempotencia es **por canal** (el mismo id externo en dos canales no es una repetición); una persona con dos identidades tiene **un historial y dos hilos**; y **el orden de la cola es idéntico** al de WhatsApp — el orden es del motor, no del canal.
+
+**Trampa del refactor:** `DealAssignmentSyncTest` invocaba `createLeadDeal` por reflexión sobre `InboundProcessor`. Un método privado alcanzado por reflexión es un acoplamiento que el compilador no ve y que ninguna búsqueda de «usos» encuentra; solo lo delató la suite completa.
+
+Tests: `IngestorMultiChannelTest` (7). Suite **481/481 (2285 aserciones)**.
+
 ## F0 (3/n) — el esquema deja de asumir que todo es WhatsApp (2026-09-01)
 
 `plan_omnicanal.md` §T0.1. **Nada cambia de comportamiento** — el `InboundProcessorParityTest` de la ronda anterior lo prueba, y pasó sin tocarlo. Lo que se abre es la posibilidad de que exista otra cosa.

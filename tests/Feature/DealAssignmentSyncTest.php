@@ -156,9 +156,11 @@ class DealAssignmentSyncTest extends TestCase
 
         // createLeadDeal es privado y solo se dispara en el flujo de inbound;
         // se invoca directo para fijar que copia assigned_agent_id al deal.
-        $method = new \ReflectionMethod(\App\Services\WhatsApp\InboundProcessor::class, 'createLeadDeal');
+        // F0/T0.2b: vive en el `Ingestor` — se mudó ahí junto con todo lo que
+        // no era específico de Meta. El comportamiento no cambió.
+        $method = new \ReflectionMethod(\App\Services\Channels\Ingestor::class, 'createLeadDeal');
         $method->setAccessible(true);
-        $method->invoke(app(\App\Services\WhatsApp\InboundProcessor::class), $contact, $conversation);
+        $method->invoke(app(\App\Services\Channels\Ingestor::class), $contact, $conversation);
 
         $deal = Deal::where('conversation_id', $conversation->id)->first();
         $this->assertNotNull($deal, 'El lead nuevo debe crear un deal.');
