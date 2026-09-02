@@ -12,7 +12,10 @@ use App\Models\Notification;
 use App\Models\QuickReply;
 use App\Models\WhatsappConfig;
 use App\Services\Broadcasts\Creator;
+use App\Services\Channels\ChannelRouter;
+use App\Services\Channels\ChannelRules;
 use App\Services\WhatsApp\Messenger;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use App\Services\WhatsApp\MetaApi;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -268,35 +271,66 @@ class ApiController extends Controller
     }
 
     /** Envía un texto a un teléfono (crea contacto/conversación si no existen). */
-    public function sendMessage(Request $request, Messenger $messenger): JsonResponse
+    /**
+     * Envía un mensaje saliente.
+     *
+     * **F0 — se puede direccionar por conversación, no solo por teléfono.** Era
+     * el bloqueante 2 del plan omnicanal: un lead de Telegram no tiene teléfono,
+     * así que desde el CRM externo no había forma de contestarle. `to` sigue
+     * funcionando igual para todo lo que ya existía.
+     */
+    public function sendMessage(Request $request, ChannelRouter $router): JsonResponse
     {
         $validated = $request->validate([
-            'to' => 'required|string|max:32',
+            'to' => 'required_without:conversation_id|string|max:32',
+            'conversation_id' => 'required_without:to|uuid',
             'text' => 'required|string|max:4096',
         ]);
 
         $accountId = $this->accountId($request);
 
-        $connected = WhatsappConfig::forAccount($accountId)->where('status', 'connected')->exists();
+        try {
+            $conversation = $this->resolveOutboundConversation($request, $accountId, $validated);
+        } catch (ModelNotFoundException) {
+            return response()->json(['message' => 'Conversation not found.'], 404);
+        }
 
-        if (! $connected) {
+        // El chequeo de WhatsApp conectado solo aplica a WhatsApp: exigirlo para
+        // Telegram bloquearía un canal por la configuración de otro.
+        if ($conversation->channel === ChannelRules::WHATSAPP
+            && ! WhatsappConfig::forAccount($accountId)->where('status', 'connected')->exists()
+        ) {
             return response()->json(['message' => 'WhatsApp is not connected.'], 422);
         }
 
-        $contact = Contact::firstOrCreate(
-            ['account_id' => $accountId, 'phone_normalized' => Contact::normalizePhone($validated['to'])],
-            ['phone' => $validated['to']],
-        );
-
-        $conversation = $messenger->resolveConversation($contact);
-
         try {
-            $message = $messenger->sendText($conversation, $validated['text'], Message::SENDER_AGENT);
+            $message = $router->forConversation($conversation)
+                ->sendText($conversation, $validated['text'], Message::SENDER_AGENT);
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 502);
         }
 
         return response()->json($message, 201);
+    }
+
+    /**
+     * La conversación de un envío: la indicada, o la de WhatsApp del teléfono.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function resolveOutboundConversation(Request $request, string $accountId, array $validated): Conversation
+    {
+        if (! empty($validated['conversation_id'])) {
+            return Conversation::forAccount($accountId)->findOrFail($validated['conversation_id']);
+        }
+
+        // Camino legado: por teléfono, y por lo tanto siempre WhatsApp.
+        $contact = Contact::firstOrCreate(
+            ['account_id' => $accountId, 'phone_normalized' => Contact::normalizePhone($validated['to'])],
+            ['phone' => $validated['to']],
+        );
+
+        return app(Messenger::class)->resolveConversation($contact, ChannelRules::WHATSAPP);
     }
 
     /**

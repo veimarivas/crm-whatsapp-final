@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
 use App\Models\WhatsappConfig;
+use App\Services\Channels\ChannelRules;
 use App\Services\Webhooks\Dispatcher;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -234,11 +235,21 @@ class Messenger
     }
 
     /** Busca o crea la conversación abierta de un contacto. */
-    public function resolveConversation(Contact $contact): Conversation
+    public function resolveConversation(Contact $contact, string $channel = ChannelRules::DEFAULT): Conversation
     {
+        // F0: el canal entra en la clave. Sin él, con el índice único nuevo
+        // este `firstOrCreate` podría devolver el hilo de OTRO canal — y el
+        // mensaje saldría por donde no era.
         return Conversation::firstOrCreate(
-            ['account_id' => $contact->account_id, 'contact_id' => $contact->id],
-            ['status' => Conversation::STATUS_OPEN],
+            [
+                'account_id' => $contact->account_id,
+                'contact_id' => $contact->id,
+                'channel' => $channel,
+            ],
+            [
+                'status' => Conversation::STATUS_OPEN,
+                'channel_conversation_id' => $contact->phone_normalized ?? $contact->phone,
+            ],
         );
     }
 }

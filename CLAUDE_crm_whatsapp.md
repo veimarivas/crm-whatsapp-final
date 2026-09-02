@@ -2,6 +2,26 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## F0 (5/n) — la salida: router, adapter y direccionamiento por conversación (2026-09-01)
+
+El espejo del ingestor. Allá el motor dejó de saber por dónde **entró** un mensaje; acá deja de saber por dónde **sale**. Con esto **F0 queda cerrada de este lado**.
+
+### El bloqueante 2 del plan, levantado
+`POST /api/v1/messages` acepta **`conversation_id` como alternativa a `to`** (`required_without` en los dos sentidos). Todo lo que salía del CRM externo direccionaba por teléfono, así que a un lead de Telegram no había forma de contestarle: no tiene número. El camino por teléfono **no cambió** — sigue creando el contacto y resolviendo su conversación de WhatsApp.
+
+### `Messenger` no se reescribe: se envuelve
+`WhatsAppAdapter` delega en él. Tiene el manejo de errores de Meta, el guardado, la actualización de la conversación y los webhooks de salida, todo probado; y lo usan directo el composer del Inbox y la API de media. Reemplazarlo habría sido reescribir código que funciona para no ganar nada. Lo que aporta el adapter es que **el motor deje de nombrarlo**.
+
+**La interfaz es deliberadamente corta.** El plan lista además `sendInteractive` y `sendTypingIndicator`; no están porque hoy hay **una sola implementación**, y una interfaz diseñada contra un único caso se equivoca de forma justo en los métodos que nadie ejerce. Entran cuando el adapter de Telegram los pida.
+
+### Dos decisiones que evitan mandar un mensaje a quien no era
+- **`ChannelRouter::adapter()` lanza en vez de caer a WhatsApp.** Un canal sin adapter es un error de configuración; hacerlo silencioso significaría mandarle el mensaje por WhatsApp a alguien que escribió por Telegram — a un teléfono que puede no existir o, peor, ser el de otra persona. Hay test.
+- **El chequeo de «WhatsApp conectado» solo aplica a WhatsApp.** Exigirlo para otro canal sería bloquearlo por la configuración de un tercero. Hay test que fija que con WhatsApp desconectado, Telegram falla por falta de adapter (502) y no por la conexión (422).
+
+**⚠️ `Messenger::resolveConversation` necesitaba el canal en la clave.** Con el índice único de T0.1, un `firstOrCreate` por `(cuenta, contacto)` puede devolver el hilo de **otro canal** — y el mensaje saldría por donde no era. Ahora recibe `$channel` con default `whatsapp`.
+
+Tests: `OutboundByConversationTest` (7). Suite **488/488 (2308 aserciones)**.
+
 ## F0 (4/n) — T0.2b: el ingestor canal-agnóstico (2026-09-01)
 
 El cambio que `plan_omnicanal.md` llama **«el más riesgoso de F0»**, hecho con las dos redes puestas: el parity test (ronda 2) y el esquema (ronda 3).

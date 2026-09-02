@@ -5,6 +5,8 @@ namespace App\Providers;
 use App\Events\InboxUpdated;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Services\Channels\ChannelRouter;
+use App\Services\Channels\WhatsAppAdapter;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -18,7 +20,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // El registro de adapters es configuración de arranque, no algo que se
+        // rearme en cada envío. WhatsApp va siempre; los canales que se agreguen
+        // se registran acá, condicionados a su configuración.
+        $this->app->singleton(ChannelRouter::class, fn ($app) => (new ChannelRouter)
+            ->register($app->make(WhatsAppAdapter::class)));
     }
 
     /**
