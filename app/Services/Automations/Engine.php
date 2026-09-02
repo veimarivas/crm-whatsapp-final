@@ -9,6 +9,7 @@ use App\Models\AutomationStep;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Tag;
+use App\Services\Channels\ChannelRouter;
 use App\Services\WhatsApp\Messenger;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
@@ -31,7 +32,10 @@ class Engine
 
     public const STEP_TYPES = ['send_message', 'add_tag', 'remove_tag', 'condition', 'wait', 'webhook'];
 
-    public function __construct(private readonly Messenger $messenger)
+    public function __construct(
+        private readonly Messenger $messenger,
+        private readonly ChannelRouter $router,
+    )
     {
     }
 
@@ -245,9 +249,20 @@ class Engine
                 $conversation = isset($context['conversation_id'])
                     ? Conversation::find($context['conversation_id'])
                     : null;
-                $conversation ??= $this->messenger->resolveConversation($contact);
+                // Sin conversación en el contexto, la del contacto con
+                // actividad más reciente — cualquiera sea su canal. Caer
+                // directo a `resolveConversation()` abriría un hilo de WhatsApp
+                // para alguien que quizá solo escribió por Telegram, y le
+                // mandaría el mensaje a un teléfono que no tiene.
+                $conversation ??= $contact->conversations()
+                    ->orderByDesc('last_message_at')
+                    ->first()
+                    ?? $this->messenger->resolveConversation($contact);
 
-                $this->messenger->sendText(
+                // Por el canal de la conversación, no por WhatsApp: una
+                // automatización que responde a un contacto de Telegram tiene
+                // que salir por Telegram.
+                $this->router->forConversation($conversation)->sendText(
                     $conversation,
                     Messenger::interpolate($config['text'] ?? '', $contact),
                 );

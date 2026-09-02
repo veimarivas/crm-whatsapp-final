@@ -13,7 +13,7 @@ use App\Models\User;
 use App\Models\WhatsappConfig;
 use App\Services\Ai\Chunker;
 use App\Services\Ai\ReplyGenerator;
-use App\Services\WhatsApp\Messenger;
+use App\Services\Channels\ChannelRouter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -73,7 +73,7 @@ class AiAudioTranscriptionTest extends TestCase
     private function runBot(): void
     {
         (new AiAutoReplyJob($this->conversation->id))
-            ->handle(app(ReplyGenerator::class), app(Messenger::class));
+            ->handle(app(ReplyGenerator::class), app(ChannelRouter::class));
 
         $this->conversation->refresh();
     }

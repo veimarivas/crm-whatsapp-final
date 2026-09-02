@@ -12,8 +12,10 @@ use RuntimeException;
  * Inbox— piden `forConversation($c)` y reciben con qué enviar. Ninguno vuelve a
  * nombrar a WhatsApp.
  *
- * Se registra como singleton en `AppServiceProvider`: el registro de adapters
- * es configuración de arranque, no algo que se rearme en cada envío.
+ * Se registra en `AppServiceProvider` con `bind` y **no** con `singleton`: un
+ * singleton se quedaría con los adapters —y con el `Messenger` de adentro— del
+ * primer uso, y no vería nada que cambie en el contenedor después. Construirlo
+ * cuesta nada.
  */
 class ChannelRouter
 {

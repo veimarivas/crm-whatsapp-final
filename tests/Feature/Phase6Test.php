@@ -137,13 +137,13 @@ class Phase6Test extends TestCase
             'graph.facebook.com/*' => Http::response(['messages' => [['id' => 'wamid.AI1']]]),
         ]);
 
-        (new AiAutoReplyJob($conversation->id))->handle(app(\App\Services\Ai\ReplyGenerator::class), app(\App\Services\WhatsApp\Messenger::class));
+        (new AiAutoReplyJob($conversation->id))->handle(app(\App\Services\Ai\ReplyGenerator::class), app(\App\Services\Channels\ChannelRouter::class));
 
         $this->assertSame(1, $conversation->fresh()->ai_reply_count);
         $this->assertSame(1, Message::where('sender_type', 'bot')->count());
 
         // Segundo intento: el tope (1) ya se alcanzó → no responde.
-        (new AiAutoReplyJob($conversation->id))->handle(app(\App\Services\Ai\ReplyGenerator::class), app(\App\Services\WhatsApp\Messenger::class));
+        (new AiAutoReplyJob($conversation->id))->handle(app(\App\Services\Ai\ReplyGenerator::class), app(\App\Services\Channels\ChannelRouter::class));
         $this->assertSame(1, Message::where('sender_type', 'bot')->count());
 
         // Y si un agente responde, se apaga para siempre en la conversación.

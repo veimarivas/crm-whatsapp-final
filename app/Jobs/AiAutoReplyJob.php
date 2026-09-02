@@ -12,7 +12,7 @@ use App\Models\User;
 use App\Models\WhatsappConfig;
 use App\Services\Ai\ReplyGenerator;
 use App\Services\Webhooks\Dispatcher;
-use App\Services\WhatsApp\Messenger;
+use App\Services\Channels\ChannelRouter;
 use App\Services\WhatsApp\MetaApi;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -111,7 +111,7 @@ class AiAutoReplyJob implements ShouldQueue
         }
     }
 
-    public function handle(ReplyGenerator $generator, Messenger $messenger): void
+    public function handle(ReplyGenerator $generator, ChannelRouter $router): void
     {
         $conversation = Conversation::find($this->conversationId);
 
@@ -197,7 +197,7 @@ class AiAutoReplyJob implements ShouldQueue
             $lastSent = cache()->get("after_hours_sent:{$conversation->id}:{$todayKey}");
             if (! $lastSent) {
                 try {
-                    $messenger->sendText($conversation, $this->afterHoursText($config));
+                    $router->forConversation($conversation)->sendText($conversation, $this->afterHoursText($config));
                     cache()->put("after_hours_sent:{$conversation->id}:{$todayKey}", true, now()->endOfDay());
                 } catch (\Throwable $e) {
                     Log::warning('After-hours message falló', ['conv_id' => $conversation->id, 'error' => $e->getMessage()]);
@@ -311,7 +311,7 @@ class AiAutoReplyJob implements ShouldQueue
                 return;
             }
 
-            $messenger->sendText($conversation, $reply);
+            $router->forConversation($conversation)->sendText($conversation, $reply);
             AiReplyAttempt::registrar($conversation, 'enviada', mb_substr($reply, 0, 120), $inicio);
             $conversation->increment('ai_reply_count');
             // Una respuesta buena borra el historial de tropiezos: lo que

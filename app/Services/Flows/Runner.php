@@ -9,6 +9,8 @@ use App\Models\FlowNode;
 use App\Models\FlowRun;
 use App\Models\Message;
 use App\Models\Tag;
+use App\Services\Channels\ChannelRouter;
+use App\Services\Channels\ChannelRules;
 use App\Services\WhatsApp\Messenger;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Http;
@@ -36,7 +38,10 @@ class Runner
         'condition', 'set_tag', 'http_fetch', 'handoff', 'end',
     ];
 
-    public function __construct(private readonly Messenger $messenger)
+    public function __construct(
+        private readonly Messenger $messenger,
+        private readonly ChannelRouter $router,
+    )
     {
     }
 
@@ -253,7 +258,7 @@ class Runner
             try {
                 switch ($node->node_type) {
                     case 'send_message':
-                        $this->messenger->sendText($conversation, $this->interpolate($config['text'] ?? '', $run));
+                        $this->router->forConversation($conversation)->sendText($conversation, $this->interpolate($config['text'] ?? '', $run));
                         $this->logEvent($run, 'message_sent', $node->node_key);
                         $nodeKey = $config['next'] ?? null;
                         break;
@@ -275,6 +280,21 @@ class Runner
                         break;
 
                     case 'send_buttons':
+                        // Los interactivos (botones/listas) son de Meta y hoy solo
+                        // los sabe hacer el camino de WhatsApp. En otro canal se
+                        // manda el TEXTO de la pregunta: perder los botones degrada
+                        // la experiencia, pero mandarla por WhatsApp a quien escribió
+                        // por otro lado la manda a la persona equivocada.
+                        if (($conversation->channel ?? ChannelRules::DEFAULT) !== ChannelRules::WHATSAPP) {
+                            $prompt = $this->router->forConversation($conversation)->sendText(
+                                $conversation,
+                                $this->interpolate($config['text'] ?? '', $run),
+                            );
+                            $this->await($run, $node, $prompt);
+
+                            return;
+                        }
+
                         $prompt = $this->messenger->sendInteractive(
                             $conversation,
                             $this->interpolate($config['text'] ?? '', $run),
@@ -289,6 +309,21 @@ class Runner
                         return;
 
                     case 'send_list':
+                        // Los interactivos (botones/listas) son de Meta y hoy solo
+                        // los sabe hacer el camino de WhatsApp. En otro canal se
+                        // manda el TEXTO de la pregunta: perder los botones degrada
+                        // la experiencia, pero mandarla por WhatsApp a quien escribió
+                        // por otro lado la manda a la persona equivocada.
+                        if (($conversation->channel ?? ChannelRules::DEFAULT) !== ChannelRules::WHATSAPP) {
+                            $prompt = $this->router->forConversation($conversation)->sendText(
+                                $conversation,
+                                $this->interpolate($config['text'] ?? '', $run),
+                            );
+                            $this->await($run, $node, $prompt);
+
+                            return;
+                        }
+
                         $prompt = $this->messenger->sendInteractive(
                             $conversation,
                             $this->interpolate($config['text'] ?? '', $run),
@@ -304,7 +339,7 @@ class Runner
                         return;
 
                     case 'collect_input':
-                        $prompt = $this->messenger->sendText(
+                        $prompt = $this->router->forConversation($conversation)->sendText(
                             $conversation,
                             $this->interpolate($config['text'] ?? '', $run),
                         );
@@ -319,7 +354,7 @@ class Runner
 
                     case 'end':
                         if (! empty($config['message'])) {
-                            $this->messenger->sendText($conversation, $this->interpolate($config['message'], $run));
+                            $this->router->forConversation($conversation)->sendText($conversation, $this->interpolate($config['message'], $run));
                         }
                         $this->finish($run, FlowRun::STATUS_COMPLETED, 'completed');
 
@@ -362,7 +397,7 @@ class Runner
     {
         if ($message && $run->conversation) {
             try {
-                $this->messenger->sendText($run->conversation, $this->interpolate($message, $run));
+                $this->router->forConversation($run->conversation)->sendText($run->conversation, $this->interpolate($message, $run));
             } catch (\Throwable) {
                 // el handoff no debe fallar por un error de envío
             }

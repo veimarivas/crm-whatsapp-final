@@ -20,10 +20,17 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // El registro de adapters es configuración de arranque, no algo que se
-        // rearme en cada envío. WhatsApp va siempre; los canales que se agreguen
-        // se registran acá, condicionados a su configuración.
-        $this->app->singleton(ChannelRouter::class, fn ($app) => (new ChannelRouter)
+        // WhatsApp va siempre; los canales que se agreguen se registran acá,
+        // condicionados a su configuración.
+        //
+        // ⚠️ **`bind` y NO `singleton`, a propósito.** Un singleton captura sus
+        // adapters —y con ellos el `Messenger`— en el primer uso y se queda con
+        // esa instancia para siempre. Eso hace que cualquier doble creado
+        // DESPUÉS del primer envío no lo alcance, y el fallo no se parece a su
+        // causa: el envío real intenta salir sin credenciales, falla, y lo que
+        // se ve es un contador de errores que no cuadra. Construirlo cuesta
+        // nada; que refleje el estado actual del contenedor vale mucho más.
+        $this->app->bind(ChannelRouter::class, fn ($app) => (new ChannelRouter)
             ->register($app->make(WhatsAppAdapter::class)));
     }
 

@@ -2,6 +2,22 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## F0 (7/n) — T0.3: los puntos de salida internos pasan por el router (2026-09-02)
+
+**No era cosmético: era un bug esperando a F1.** `AiAutoReplyJob` se encola para **todos** los canales —lo hace el `Ingestor`— pero enviaba con `Messenger`, o sea por Meta. Con Telegram andando, eso habría intentado responderle a un contacto **sin teléfono**: en el mejor caso falla, en el peor le escribe a otra persona. Lo mismo con `Automations\Engine` y `Flows\Runner`.
+
+Los tres resuelven ahora el adapter con `ChannelRouter::forConversation()`.
+
+- **`Engine` ya no abre un hilo de WhatsApp por defecto.** Sin conversación en el contexto tomaba `resolveConversation($contact)`, que crea uno de WhatsApp; ahora usa la conversación del contacto con actividad más reciente, cualquiera sea su canal. Para un contacto de Telegram, lo anterior habría abierto un hilo de WhatsApp y mandado el mensaje a un teléfono que no tiene.
+- **Los pasos interactivos de los flows (`send_buttons`, `send_list`) quedan en `Messenger`, con guarda por canal.** Botones y listas son de Meta y hoy solo los sabe hacer ese camino; en otro canal se manda el **texto** de la pregunta. Perder los botones degrada la experiencia — mandarla por WhatsApp a quien escribió por otro lado la manda a la persona equivocada.
+
+### ⚠️ El router NO puede ser singleton (y lo era)
+Un singleton captura sus adapters —y con ellos el `Messenger`— en el primer uso y se queda con esa instancia para siempre. Cualquier doble creado **después** del primer envío deja de alcanzarlo. Lo detectó `AiFailurePolicyTest`, y **el síntoma no se parecía a la causa**: un contador de fallas de la IA que daba 2 en vez de 0, porque el envío real intentaba salir sin credenciales y el job lo contaba como error. Pasó a `bind`; construirlo cuesta nada y que refleje el estado actual del contenedor vale mucho más. Hay test que fija que dos resoluciones dan instancias distintas.
+
+**Con esto F0 queda cerrada.** Lo único que falta para Telegram es lo propio de Telegram: `TelegramApi`, `TelegramAdapter`, el controlador de webhook y `/settings/channels`.
+
+Tests: `OutboundRoutingTest` (4). Suite **496/496 (2329 aserciones)**.
+
 ## F0 (6/n) — T0.5: el canal se ve y se filtra (2026-09-01)
 
 Hasta acá el sistema ya podía **recibir y responder** por cualquier canal, pero en pantalla todo se veía igual: un hilo de Telegram era indistinguible de uno de WhatsApp. Se hizo antes de F1 justo por eso — estrenar un canal nuevo sin poder distinguirlo es estrenarlo a ciegas.
