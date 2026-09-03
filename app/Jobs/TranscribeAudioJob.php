@@ -50,27 +50,37 @@ class TranscribeAudioJob implements ShouldQueue
             return; // silencioso si no está instalado
         }
 
-        $config = WhatsappConfig::forAccount($message->conversation->account_id)
-            ->where('status', 'connected')
-            ->first();
+        // 1. Conseguir el audio.
+        //
+        // F1: los canales que NO se resuelven por proxy dejan una copia local
+        // (`media_path`) — Telegram, porque su link caduca y lleva el bot token
+        // adentro. Si está, se usa esa y no se le pide nada a Meta: pedírselo
+        // fallaría, porque el `media_url` de esos mensajes es un `file_id` de
+        // otro proveedor.
+        if ($message->media_path && Storage::disk('local')->exists($message->media_path)) {
+            $contents = Storage::disk('local')->get($message->media_path);
+        } else {
+            $config = WhatsappConfig::forAccount($message->conversation->account_id)
+                ->where('status', 'connected')
+                ->first();
 
-        if (! $config) {
-            return;
-        }
-
-        // 1. Descargar el audio desde Meta
-        try {
-            $api = MetaApi::for($config);
-            $url = $api->getMediaUrl($message->media_url);
-            if (! $url) {
-                Log::warning('TranscribeAudioJob: no se pudo obtener URL del media', ['message_id' => $message->id]);
+            if (! $config) {
                 return;
             }
 
-            $contents = $api->downloadMedia($url)->body();
-        } catch (\Throwable $e) {
-            Log::warning('TranscribeAudioJob: falló descarga', ['message_id' => $message->id, 'error' => $e->getMessage()]);
-            return;
+            try {
+                $api = MetaApi::for($config);
+                $url = $api->getMediaUrl($message->media_url);
+                if (! $url) {
+                    Log::warning('TranscribeAudioJob: no se pudo obtener URL del media', ['message_id' => $message->id]);
+                    return;
+                }
+
+                $contents = $api->downloadMedia($url)->body();
+            } catch (\Throwable $e) {
+                Log::warning('TranscribeAudioJob: falló descarga', ['message_id' => $message->id, 'error' => $e->getMessage()]);
+                return;
+            }
         }
 
         // 2. Guardar temporal (whisper.cpp requiere archivo en disco)

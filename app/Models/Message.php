@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'conversation_id', 'channel', 'external_message_id',
     'sender_type', 'sender_id', 'content_type', 'transcript',
-    'content_text', 'media_url', 'referral', 'template_name', 'message_id',
+    'content_text', 'media_url', 'media_path', 'media_mime', 'referral', 'template_name', 'message_id',
     'interactive_reply_id', 'reply_to_message_id', 'status',
 ])]
 class Message extends Model

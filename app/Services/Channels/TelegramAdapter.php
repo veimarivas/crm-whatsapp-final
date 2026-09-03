@@ -6,6 +6,8 @@ use App\Models\ChannelConfig;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\Telegram\TelegramApi;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -32,10 +34,9 @@ final class TelegramAdapter implements ChannelAdapter
     {
         $api = TelegramApi::for($this->config($conversation));
 
-        // El id del chat en Telegram. Es lo que `channel_conversation_id`
-        // guarda desde F0 — el identificador del hilo EN EL SISTEMA DEL CANAL.
-        $chatId = $conversation->channel_conversation_id
-            ?? throw new RuntimeException('La conversación de Telegram no tiene chat_id.');
+        // `channel_conversation_id` guarda desde F0 el identificador del hilo
+        // EN EL SISTEMA DEL CANAL.
+        $chatId = $this->chatId($conversation);
 
         $message = Message::create([
             'conversation_id' => $conversation->id,
@@ -72,18 +73,66 @@ final class TelegramAdapter implements ChannelAdapter
     }
 
     /**
-     * Todavía no.
+     * Envía un archivo. El método de la Bot API se deduce del MIME, igual que
+     * `Messenger` hace con Meta.
      *
-     * Mandar un archivo por Telegram es fácil; **recibirlo** no, y las dos
-     * mitades tienen que diseñarse juntas: Telegram entrega un `file_id` cuyo
-     * link caduca y **lleva el bot token adentro**, así que no se puede
-     * guardar ni exponer como se hace con Meta —que se resuelve por proxy en
-     * vivo— sino que hay que descargarlo a almacenamiento propio. Media una
-     * decisión de almacenamiento que no corresponde improvisar acá.
+     * La copia sale de acá y **también se guarda local** (`media_path`): quien
+     * mire la conversación dentro de un mes tiene que poder ver lo que se
+     * mandó, y del lado de Telegram el link ya no va a existir.
      */
     public function sendMedia(Conversation $conversation, string $contents, string $mimeType, string $filename, ?string $caption = null, string $senderType = Message::SENDER_BOT, ?string $senderId = null): Message
     {
-        throw new RuntimeException('Todavía no se pueden enviar archivos por Telegram: por ahora, solo texto.');
+        $api = TelegramApi::for($this->config($conversation));
+        $chatId = $this->chatId($conversation);
+
+        $tipo = match (true) {
+            str_starts_with($mimeType, 'image/') => 'image',
+            str_starts_with($mimeType, 'video/') => 'video',
+            str_starts_with($mimeType, 'audio/') => 'audio',
+            default => 'document',
+        };
+
+        $path = 'channel-media/'.Str::uuid().'.'.(pathinfo($filename, PATHINFO_EXTENSION) ?: 'bin');
+        Storage::disk('local')->put($path, $contents);
+
+        $message = Message::create([
+            'conversation_id' => $conversation->id,
+            'channel' => ChannelRules::TELEGRAM,
+            'sender_type' => $senderType,
+            'sender_id' => $senderId,
+            'content_type' => $tipo,
+            'content_text' => $caption,
+            'media_path' => $path,
+            'media_mime' => $mimeType,
+            'status' => 'sending',
+        ]);
+
+        try {
+            $result = $api->sendFile($chatId, $tipo, $contents, $filename, $caption);
+        } catch (\Throwable $e) {
+            $message->update(['status' => 'failed']);
+
+            throw new RuntimeException($e->getMessage(), previous: $e);
+        }
+
+        $message->update([
+            'external_message_id' => isset($result['message_id']) ? (string) $result['message_id'] : null,
+            'status' => 'sent',
+        ]);
+
+        $conversation->update([
+            'last_message_text' => $caption ?: "[{$tipo}]",
+            'last_message_at' => now(),
+        ]);
+
+        return $message->fresh();
+    }
+
+    /** El id del chat en Telegram — es a DÓNDE se responde. */
+    private function chatId(Conversation $conversation): string
+    {
+        return $conversation->channel_conversation_id
+            ?? throw new RuntimeException('La conversación de Telegram no tiene chat_id.');
     }
 
     private function config(Conversation $conversation): ChannelConfig

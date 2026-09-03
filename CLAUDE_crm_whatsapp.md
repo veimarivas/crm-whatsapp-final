@@ -2,6 +2,25 @@
 
 Port completa de **wacrm** (CRM de WhatsApp original en Next.js 16 + Supabase, en `C:\xampp_82_12\htdocs\wacrm-main`) a **Laravel 13 + Inertia.js + React 18 + MariaDB 10.11** (XAMPP, PHP 8.3).
 
+## F1.c — Adjuntos de Telegram: entrada, salida y transcripción (2026-09-02)
+
+Lo último que faltaba de F1. **La razón de que quedara para el final está en el diseño, no en el esfuerzo:** el link de descarga de Telegram **caduca (~1 h) y lleva el bot token adentro**, así que —a diferencia de Meta, que se resuelve por proxy en vivo— no se puede ni guardar ni exponer al navegador. Quien lo viera tendría control total del bot. La única salida es bajar el archivo a almacenamiento propio.
+
+- **`messages.media_path` + `media_mime`** — la copia local. Los mensajes de WhatsApp los dejan en NULL y siguen resolviéndose por proxy exactamente como antes.
+- **`TelegramApi::downloadFile()` devuelve el binario, no un link.** La firma misma impide el error de guardar o mandar una URL con el token adentro.
+- **`DownloadTelegramMediaJob` va en cola, no en el webhook.** Telegram reintenta lo que tarda: bajar un video de 20 MB antes de devolver el 200 convertiría un adjunto grande en el mismo mensaje procesado tres veces. Es idempotente por `media_path` — un reintento de la cola no vuelve a pedirle el archivo a Telegram.
+- **`photo` es un ARRAY de tamaños, del más chico al más grande.** Se toma el último: quedarse con el primero guardaría una miniatura ilegible.
+- **El pie de foto ES el texto del mensaje** cuando hay adjunto.
+
+### La transcripción cierra el círculo del audio
+El ingestor **no encola la IA para audios**, a propósito, para que no conteste algo que no escuchó. Con WhatsApp la reactiva `TranscribeAudioJob`; con Telegram no había quién. Ahora la descarga dispara la transcripción al terminar, y **`TranscribeAudioJob` usa la copia local cuando existe** en vez de pedírsela a Meta — pedírsela fallaría, porque el `media_url` de esos mensajes es un `file_id` de otro proveedor.
+
+**`GET /channel-media/{message}`** sirve la copia. **El corte por cuenta va en el controlador**, no en la ruta: un uuid de mensaje es adivinable de a poco, y sin ese corte alguien podría leer el adjunto de otra empresa. Hay test.
+
+**Al enviar también se guarda copia local.** Quien mire la conversación dentro de un mes tiene que poder ver lo que se mandó, y del lado de Telegram el link ya no va a existir.
+
+Tests: `TelegramMediaTest` (7). Suite **523/523 (2440 aserciones)**.
+
 ## F1.b — Conectar Telegram desde la pantalla (2026-09-02)
 
 Hasta acá conectar el bot exigía insertar la fila de `channel_configs` a mano. Eso alcanza para probar; no para entregarlo.

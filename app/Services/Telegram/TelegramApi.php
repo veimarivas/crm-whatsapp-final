@@ -90,6 +90,66 @@ class TelegramApi
         return $this->call('deleteWebhook');
     }
 
+    /**
+     * Descarga un archivo por su `file_id`.
+     *
+     * Son **dos pasos** porque así es la Bot API: `getFile` devuelve un
+     * `file_path` temporal y recién con él se arma la URL de descarga.
+     *
+     * ⚠️ **Esa URL lleva el bot token adentro y caduca (~1 h).** No se puede
+     * guardar en la base ni mandar al navegador: quien la viera tendría control
+     * total del bot. Por eso este método devuelve **el binario**, no un link —
+     * la firma misma impide el error.
+     *
+     * @return array{0:string,1:string} [contenido, nombre de archivo sugerido]
+     */
+    public function downloadFile(string $fileId): array
+    {
+        $file = $this->call('getFile', ['file_id' => $fileId]);
+        $path = $file['file_path'] ?? throw new RuntimeException('Telegram no devolvió la ruta del archivo.');
+
+        $response = Http::timeout(120)->get(self::BASE."/file/bot{$this->botToken}/{$path}");
+
+        if ($response->failed()) {
+            throw new RuntimeException("Telegram: no se pudo descargar el archivo (HTTP {$response->status()}).");
+        }
+
+        return [$response->body(), basename($path)];
+    }
+
+    /** Envía un archivo ya descargado. El tipo decide el método de la Bot API. */
+    public function sendFile(string $chatId, string $tipo, string $contents, string $filename, ?string $caption = null): array
+    {
+        $metodo = match ($tipo) {
+            'image' => 'sendPhoto',
+            'video' => 'sendVideo',
+            'audio' => 'sendAudio',
+            default => 'sendDocument',
+        };
+
+        $campo = match ($tipo) {
+            'image' => 'photo',
+            'video' => 'video',
+            'audio' => 'audio',
+            default => 'document',
+        };
+
+        $response = Http::timeout(120)
+            ->attach($campo, $contents, $filename)
+            ->post(self::BASE."/bot{$this->botToken}/{$metodo}", array_filter([
+                'chat_id' => $chatId,
+                'caption' => $caption,
+            ]));
+
+        $body = $response->json() ?? [];
+
+        if ($response->failed() || ! ($body['ok'] ?? false)) {
+            throw new RuntimeException("Telegram [{$metodo}]: ".($body['description'] ?? "HTTP {$response->status()}"));
+        }
+
+        return $body['result'] ?? [];
+    }
+
     /** @param array<string, mixed> $params */
     private function call(string $method, array $params = []): array
     {

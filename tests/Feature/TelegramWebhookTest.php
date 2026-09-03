@@ -183,15 +183,25 @@ class TelegramWebhookTest extends TestCase
         $this->assertSame('me equivoqué', Message::firstOrFail()->content_text);
     }
 
-    public function test_un_adjunto_deja_rastro_en_vez_de_un_salto_inexplicable(): void
+    public function test_un_adjunto_queda_registrado_y_su_descarga_se_encola(): void
     {
+        // Antes de F1.c esto guardaba un texto de relleno («Archivo
+        // recibido…»). Ahora el adjunto se procesa: el mensaje queda con su
+        // tipo y el `file_id`, y la descarga va a la cola — bajarlo acá haría
+        // que el 200 se demore lo que tarde, y Telegram reintenta lo que tarda.
+        \Illuminate\Support\Facades\Queue::fake();
+
         $update = $this->mensajeDeTexto();
         unset($update['message']['text']);
         $update['message']['photo'] = [['file_id' => 'f1']];
 
         $this->update($update)->assertOk();
 
-        $this->assertStringContainsString('Archivo recibido', Message::firstOrFail()->content_text);
+        $message = Message::firstOrFail();
+        $this->assertSame('image', $message->content_type);
+        $this->assertSame('f1', $message->media_url);
+
+        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\DownloadTelegramMediaJob::class);
     }
 
     public function test_un_update_que_no_procesamos_devuelve_200(): void

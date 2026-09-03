@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Telegram;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\DownloadTelegramMediaJob;
 use App\Models\ChannelConfig;
 use App\Services\Channels\ChannelRules;
 use App\Services\Channels\InboundMessage;
@@ -51,7 +52,13 @@ class WebhookController extends Controller
         $mensaje = $this->parse($accountId, $update);
 
         if ($mensaje) {
-            $ingestor->handle($mensaje);
+            $guardado = $ingestor->handle($mensaje);
+
+            // Después del ingest y no antes: la descarga necesita la fila del
+            // mensaje, y va en cola para que el 200 salga ya.
+            if ($guardado && $mensaje->mediaRef) {
+                DownloadTelegramMediaJob::dispatch($guardado->id);
+            }
         }
 
         // SIEMPRE 200, incluso para lo que no se entiende. Un update de un tipo
@@ -116,23 +123,47 @@ class WebhookController extends Controller
             return null;
         }
 
-        $texto = $mensaje['text'] ?? $mensaje['caption'] ?? null;
-
-        // Sin texto es un adjunto, y los adjuntos todavía no se procesan
-        // (requieren descargar el archivo a almacenamiento propio: el link de
-        // Telegram caduca y lleva el bot token adentro). Se registra el hecho
-        // para que la conversación no muestre un salto inexplicable.
-        if ($texto === null) {
-            $texto = '[Archivo recibido por Telegram — todavía no se puede ver desde acá]';
-        }
+        [$tipo, $fileId] = $this->adjunto($mensaje);
 
         return $this->build($accountId, [
             'from' => $mensaje['from'] ?? [],
             'chat' => $mensaje['chat'] ?? [],
             'message_id' => $mensaje['message_id'] ?? null,
-            'text' => $texto,
+            // El pie de foto ES el texto del mensaje cuando hay adjunto.
+            'text' => $mensaje['text'] ?? $mensaje['caption'] ?? null,
             'reply_to' => $mensaje['reply_to_message']['message_id'] ?? null,
+            'type' => $tipo,
+            'file_id' => $fileId,
         ]);
+    }
+
+    /**
+     * Qué adjunto trae el mensaje, si trae alguno.
+     *
+     * Devuelve el `file_id`, **no el archivo**: bajarlo acá haría que el 200 se
+     * demore lo que tarde la descarga, y Telegram reintenta lo que tarda — un
+     * video de 20 MB se convertiría en el mismo mensaje procesado tres veces.
+     * Lo baja `DownloadTelegramMediaJob`.
+     *
+     * @param  array<string, mixed>  $mensaje
+     * @return array{0:string,1:?string} [content_type, file_id]
+     */
+    private function adjunto(array $mensaje): array
+    {
+        // `photo` es un ARRAY de tamaños, del más chico al más grande. Se toma
+        // el último: los primeros son miniaturas y guardar una en vez del
+        // original daría una imagen ilegible.
+        if ($fotos = $mensaje['photo'] ?? null) {
+            return ['image', end($fotos)['file_id'] ?? null];
+        }
+
+        foreach (['video' => 'video', 'voice' => 'audio', 'audio' => 'audio', 'document' => 'document', 'sticker' => 'sticker'] as $campo => $tipo) {
+            if ($file = $mensaje[$campo]['file_id'] ?? null) {
+                return [$tipo, $file];
+            }
+        }
+
+        return ['text', null];
     }
 
     /** @param array<string, mixed> $datos */
@@ -160,8 +191,11 @@ class WebhookController extends Controller
             // El chat puede no ser el remitente (un grupo), así que se guarda
             // aparte: es a DÓNDE se responde.
             threadExternalId: isset($datos['chat']['id']) ? (string) $datos['chat']['id'] : $senderId,
-            contentType: 'text',
-            contentText: $datos['text'],
+            contentType: $datos['type'] ?? 'text',
+            contentText: $datos['text'] ?? null,
+            // El `file_id` de Telegram. Lo baja `DownloadTelegramMediaJob`;
+            // acá solo se anota cuál es.
+            mediaRef: $datos['file_id'] ?? null,
             externalMessageId: isset($datos['message_id']) ? (string) $datos['message_id'] : null,
             replyToExternalId: isset($datos['reply_to']) ? (string) $datos['reply_to'] : null,
             interactiveReplyId: $interactiveReplyId,

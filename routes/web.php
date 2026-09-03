@@ -220,6 +220,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/settings/whatsapp', [ConfigController::class, 'edit'])->name('settings.whatsapp');
     Route::post('/settings/whatsapp', [ConfigController::class, 'update'])->name('settings.whatsapp.update');
     Route::get('/whatsapp/media/{mediaId}', [MediaController::class, 'show'])->name('whatsapp.media');
+    // Adjuntos con copia local (Telegram). El corte por cuenta va en el
+    // controlador: un uuid de mensaje no alcanza como autorización.
+    Route::get('/channel-media/{message}', [MediaController::class, 'channelMedia'])->name('channel.media');
 });
 
 // SSO ligero del ecosistema - consume tokens de un solo uso emitidos
